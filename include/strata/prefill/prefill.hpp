@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 
-namespace strata::core { class PeerExperts; }
+namespace strata::core { class PeerExperts; class MaxwellExperts; }
 
 namespace strata::prefill {
 
@@ -34,6 +34,7 @@ struct PrefillStats {
     int64_t experts_streamed = 0;   ///< expert blobs copied host -> device
     int64_t experts_dma = 0;        ///< ...of which straight from the pinned arena (no CPU copy)
     int64_t experts_resident = 0;   ///< expert-layer groups served from the VRAM tier
+    int64_t experts_maxwell = 0;    ///< routed entries computed on the Maxwell (sm_50) tiers
     double ms_ple = 0;
 };
 
@@ -125,6 +126,11 @@ public:
     /// rows per layer; the rest of the peer's experts are read by this GPU over P2P).  Allocates the peer's buffers for
     /// chunks of up to init's `chunk` tokens.  Needs P2P between the two cards.
     bool set_peer(core::PeerExperts* peer, int64_t cap_rows, std::string& err);
+
+    /// Maxwell (sm_50) tiers: the experts they hold are computed THERE for every prompt chunk and written into
+    /// the layer's grouped `Dm` rows (via finish_to), so the arena is never read for them and can be released.
+    /// `tiers`/`count` are the driver's MaxwellExperts instances.  Call after init and after the tiers are open.
+    bool set_maxwell(core::MaxwellExperts** tiers, int count, std::string& err);
 
     /// Plan v0.3 P6: called after every chunk with the chunk's final multi-stream residual rows (device,
     /// T x hc*n_embd, valid until the next chunk) and the chunk's first position; the MTP draft layer builds its

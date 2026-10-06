@@ -5,6 +5,7 @@
 #include "strata/core/mtp.hpp"
 #include "strata/core/progress.hpp"
 #include "strata/core/on_device.hpp"
+#include "strata/core/maxwell_experts.hpp"
 
 #include "strata/core/layout.hpp"
 #include "strata/kernels/cpu/expert.hpp"
@@ -584,6 +585,14 @@ struct Prefill::Impl {
     std::vector<int32_t> bounds_host;
     std::unique_ptr<mmq::Context> mmq_ctx;
     std::vector<int32_t> ids_host, slot_host, src_host, cnt, off;
+    // Maxwell (sm_50) tiers: their experts are computed THERE for the prompt chunk (not read from the arena),
+    // and written into the grouped Dm rows before the combine.  on_mw marks them per expert for the layer.
+    core::MaxwellExperts* mw[4] = {};
+    int mw_count = 0;
+    std::vector<char> on_mw;
+    std::vector<strata::kernels::cpu::ActQ> mw_acts;   // one per token of the chunk (the M10s' ActQ contract)
+    std::vector<float> mw_mixed_h;                     // host staging of m.mixed for the ActQ quantisation
+    std::vector<float> mw_block;                       // host block of the tiers' Dm rows (rows_mw * N), one H2D
     // The grouping tables in mapped pinned memory, [ids | slot | src] of T_max * K each, then the MMQ bounds: kernels
     // read and write them in place.  A cudaMemcpyAsync of them queues behind the expert blobs the copy stream already
     // holds (up to `ring` of them, ~70 us each), and the GPU idles meanwhile - measured 4.2 s of a 128K prompt's
@@ -961,7 +970,7 @@ bool Prefill::carve(size_t T, void* alloc) {
     m.max_blocks = ss.qsa_states[ss.qsa_primary()].max_cells / s.idx_block + 2;
     {
         // one region for the attention half's and the MoE half's scratch (see gdn_set_bytes)
-        const bool fz = fused_layout(T, m.src != nullptr);
+        const bool fz = fused_layout(T, m.src != nullptr) && m.mw_count == 0;   // Maxwell: the MMQ layout
         const MoeBufs mb = moe_bufs(T, m.g->n_expert, fz);
         const uint64_t region = std::max({gdn_set_bytes(T), qsa_set_bytes(T, m.cap, m.max_blocks, m.sel_batch,
                                                                            m.attn_batch, s), moe_set_bytes(T, m.g->n_expert, fz)});
@@ -1464,6 +1473,25 @@ bool Prefill::set_peer(core::PeerExperts* peer, int64_t cap_rows, std::string& e
     return true;
 }
 
+bool Prefill::set_maxwell(core::MaxwellExperts** tiers, int count, std::string& err) {
+    Impl& m = *impl_;
+    m.mw_count = 0;
+    if (tiers == nullptr || count <= 0) return true;
+    if (count > 4) count = 4;
+    if (!mmq_plan().any) { err = "prefill maxwell: needs the MMQ prompt path"; return false; }
+    for (int i = 0; i < count; ++i) {
+        if (tiers[i] == nullptr || !tiers[i]->valid()) continue;
+        m.mw[m.mw_count++] = tiers[i];
+    }
+    if (m.mw_count == 0) return true;
+    m.on_mw.assign((size_t) m.g->n_expert, 0);
+    m.mw_acts.resize((size_t) m.T_max);
+    m.mw_block.resize((size_t) m.T_max * (size_t) K * (size_t) N);
+    std::fprintf(stderr, "strata prefill: %d Maxwell tier(s) compute their experts' rows of every prompt chunk "
+                         "(the arena is not read for them)\n", m.mw_count);
+    return true;
+}
+
 void Prefill::set_pinned_share(double share) { g_pinned_share = share; }
 void Prefill::set_ring_override(int slots) { g_ring_override = slots > 0 ? slots : 0; }
 void Prefill::set_ring_budget(int slots, int64_t small_max) {
@@ -1680,6 +1708,12 @@ struct PeTimer {
 bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::string& err) {
     err.clear();
     Impl& m = *impl_;
+    // whether a Maxwell (sm_50) tier owns this (layer, expert): its rows are computed THERE, never read from
+    // the arena (this is what lets the arena be released after startup)
+    auto mw_owns = [&](int64_t l, int32_t e) {
+        for (int i = 0; i < m.mw_count; ++i) if (m.mw[i]->owns(l, e)) return true;
+        return false;
+    };
     const core::OnDevice on_device(m.device);
     const core::ModelGeometry& g = *m.g;
     core::SessionState& ss = *m.ss;
@@ -1774,6 +1808,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         if (should_stop && should_stop()) { err = "cancelled"; return false; }
         if (std::getenv("STRATA_TRACE")) { std::fprintf(stderr, "strata trace: prompt chunk %lld of %lld\n", (long long) c0, (long long) n); std::fflush(stderr); }
         const int64_t T = std::min(m.T, n - c0), p0 = pos0 + c0;
+        if (m.mw_count > 0) m.mw_mixed_h.resize((size_t) T * N);   // the Maxwell path's D2H staging
         core::progress_at("reading the prompt (batched): preparing the chunk from token", p0);   // #251
         ++stats_.chunks;
         pt.mark(kPfStart, cs);
@@ -1956,6 +1991,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 for (int32_t e = 0; e < m.g->n_expert; ++e) {
                     if (m.host_res && m.cache && m.host_res[(size_t) l * m.g->n_expert + e] >= 0) continue;
                     if (m.pp && m.pp->peer && m.pp->peer->has(l, e)) continue;   // multi-GPU: computed on (or read from) the peer
+                    if (m.mw_count > 0 && mw_owns(l, e)) continue; // the Maxwell tier computes it: never read the arena
                     int job = -1;
                     const uint8_t* b = nullptr;
                     if (m.src->transient(l, e)) {   // CS-T: copied by the source into the stager's buffer
@@ -2513,7 +2549,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     const int mmq_dt = lay.native ? lay.fmt[(size_t) l].d_type : 42;
                     // --peer-device: MMQ only, whether or not the peer took the prompt path (set_peer can decline), as
                     // fused_ring() sized the ring and the buffers for it
-                    const bool no_peer = !core::peer_portable();
+                    const bool no_peer = !core::peer_portable() && m.mw_count == 0;   // Maxwell: MMQ, like the peer
                     const bool fused_only = mmq_plan().any && mmq_plan().fo[(size_t) l];
                     const bool fused_nat = (use_mmq || fused_only) && stream_all && no_peer && lay.native && fused::native_supported(mmq_gt, mmq_dt);
                     const bool fused_l = (use_mmq && stream_all && no_peer && !lay.native && fused::enabled()) || fused_nat;
@@ -2626,14 +2662,33 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             }
                             rows_local = T * K - rows_peer;
                         }
+                        // Maxwell (sm_50): the experts a tier owns are computed there; their rows go last in Dm
+                        // (after the peer's), and they never enter `order` (the primary does not compute them).
+                        std::vector<char> on_mw_l;
+                        int64_t rows_mw = 0;
+                        if (m.mw_count > 0) {
+                            on_mw_l.assign((size_t) m.g->n_expert, 0);
+                            for (int32_t e = 0; e < m.g->n_expert; ++e) {
+                                const int32_t c = m.cnt[(size_t) e];
+                                if (c == 0 || (on_peer.size() > 0 && on_peer[(size_t) e] != 0)) continue;
+                                if (m.host_res && m.cache && m.host_res[(size_t) l * m.g->n_expert + e] >= 0) continue;
+                                if (!mw_owns(l, e)) continue;
+                                on_mw_l[(size_t) e] = 1;
+                                rows_mw += c;
+                            }
+                            rows_local -= rows_mw;
+                        }
                         {
                             int32_t r = 0;
                             for (int32_t e = 0; e < m.g->n_expert; ++e)
-                                if (on_peer.empty() || !on_peer[(size_t) e]) { m.off[(size_t) e] = r; r += m.cnt[(size_t) e]; }
+                                if ((on_peer.empty() || !on_peer[(size_t) e]) && (on_mw_l.empty() || !on_mw_l[(size_t) e]))
+                                    { m.off[(size_t) e] = r; r += m.cnt[(size_t) e]; }
                             // the peer's rows in order_peer's order (peer-held, then peer-streamed): its groups need them contiguous
                             for (int kind = 1; kind <= 2 && !on_peer.empty(); ++kind)
                                 for (int32_t e = 0; e < m.g->n_expert; ++e)
                                     if (on_peer[(size_t) e] == kind) { m.off[(size_t) e] = r; r += m.cnt[(size_t) e]; }
+                            for (int32_t e = 0; e < m.g->n_expert; ++e)
+                                if (!on_mw_l.empty() && on_mw_l[(size_t) e]) { m.off[(size_t) e] = r; r += m.cnt[(size_t) e]; }
                             m.off[(size_t) m.g->n_expert] = r;
                         }
                         std::vector<int32_t> fill(m.off.begin(), m.off.end() - 1);
@@ -2646,7 +2701,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         // the experts, in id order: resident ones from VRAM, the others through the staging ring
                         std::vector<int32_t> order, order_peer;
                         for (int32_t e = 0; e < m.g->n_expert; ++e)
-                            if (m.cnt[(size_t) e] > 0 && (on_peer.empty() || on_peer[(size_t) e] != 2))
+                            if (m.cnt[(size_t) e] > 0 && (on_peer.empty() || on_peer[(size_t) e] != 2) &&
+                                (on_mw_l.empty() || !on_mw_l[(size_t) e]))
                                 (!on_peer.empty() && on_peer[(size_t) e] ? order_peer : order).push_back(e);
                         for (int32_t e = 0; e < m.g->n_expert && !on_peer.empty(); ++e)   // the peer-streamed ones last:
                             if (on_peer[(size_t) e] == 2) order_peer.push_back(e);        // their copies get the most time
@@ -2666,6 +2722,36 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             cudaMemcpyAsync(m.src_dev, m.src_host.data(), (size_t) T * K * 4, cudaMemcpyHostToDevice, m.cs);
                         }
                         n_order = order.size();
+                        // Maxwell (sm_50): compute this layer's tier-owned entries on the M10s and write their
+                        // rows into Dm (the tail reserved above).  T <= 64: one window; larger chunks run one
+                        // sub-batch at a time (the tier buffers are shared across sub-batches).
+                        if (!on_mw_l.empty() && rows_mw > 0) {
+                            cudaMemcpyAsync(m.mw_mixed_h.data(), m.mixed, (size_t) T * N * 4,
+                                            cudaMemcpyDeviceToHost, m.cs);
+                            cudaStreamSynchronize(m.cs);
+                            for (int64_t t = 0; t < T; ++t)
+                                strata::kernels::cpu::act_quant_any(m.mw_mixed_h.data() + (size_t) t * N, (int) N,
+                                                                    m.mw_acts[(size_t) t]);
+                            constexpr int64_t MW_SUB = 64;   // the tier's window (n_tok_max)
+                            for (int64_t t0 = 0; t0 < T; t0 += MW_SUB) {
+                                const int64_t nt = std::min(MW_SUB, T - t0);
+                                for (int i = 0; i < m.mw_count; ++i)
+                                    if (!m.mw[i]->begin(l, m.mw_acts.data() + t0, ids_h + t0 * K, nt, K, nullptr,
+                                                        nullptr, err))
+                                        return false;
+                                for (int i = 0; i < m.mw_count; ++i)
+                                    if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
+                                                            N, err))
+                                        return false;
+                            }
+                            // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw)
+                            if (cudaMemcpyAsync(m.Dm + (size_t) rows_local * N, m.mw_block.data(),
+                                                (size_t) rows_mw * N * 4, cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
+                                err = "prefill: the Maxwell rows' upload failed";
+                                return false;
+                            }
+                            stats_.experts_maxwell += rows_mw;
+                        }
                         const size_t mmq_gub = use_mmq ? mmq::matrix_bytes(mmq_gt, 1280, N) : 0;
                         const size_t mmq_db = use_mmq ? mmq::matrix_bytes(mmq_dt, N, 640) : 0;
                         pt.mark(kPfGather, cs);

@@ -145,13 +145,13 @@ bool mapped(size_t bytes, void** h, void** d) {
 #if defined(STRATA_USE_HIP)
     if (g_coherent) {
         if (hipHostMalloc(h, bytes, hipHostMallocMapped | hipHostMallocCoherent |
-                                        (peer_portable() ? hipHostMallocPortable : 0)) != hipSuccess)
+                                        ((peer_portable() || maxwell_portable()) ? hipHostMallocPortable : 0)) != hipSuccess)
             return false;
         std::memset(*h, 0, bytes);
         return cudaHostGetDevicePointer(d, *h, 0) == cudaSuccess;
     }
 #endif
-    if (cudaHostAlloc(h, bytes, cudaHostAllocMapped | (peer_portable() ? cudaHostAllocPortable : 0)) != cudaSuccess) return false;   // multi-GPU: portable only with a peer - the peer card writes its rows into them
+    if (cudaHostAlloc(h, bytes, cudaHostAllocMapped | ((peer_portable() || maxwell_portable()) ? cudaHostAllocPortable : 0)) != cudaSuccess) return false;   // multi-GPU peer / Maxwell tiers: another card writes its rows into them
     std::memset(*h, 0, bytes);
     return cudaHostGetDevicePointer(d, *h, 0) == cudaSuccess;
 }

@@ -46,6 +46,7 @@ namespace strata::core {
 
 class PeerExperts;   // multi-GPU: the second GPU's expert tier (peer_experts.hpp)
 class RemoteExperts;
+class MaxwellExperts;  // Maxwell (sm_50) expert tier (maxwell_experts.hpp)
 struct LoadStats;
 
 namespace detail {
@@ -153,6 +154,20 @@ public:
     /// checked with `pinned`).  The arena answers per layer through its expert 0; the resident RAM mode's compact
     /// copy has no expert 0 when the GPU cache holds it, so it answers for the whole copy.
     virtual bool pcie_layer(int64_t layer) const { return device_alias(layer, 0) != nullptr; }
+
+    /// Release the CUDA pin on this source's resident arena and drop the given (layer, expert) blobs' pages from
+    /// physical RAM.  ONLY the arena source supports it: an arena registered with cudaHostRegister keeps its pages
+    /// pinned, and madvise(MADV_DONTNEED) alone only drops them from RSS - the driver returns the physical memory
+    /// solely on cudaHostUnregister (measured).  Whole-range registrations cannot be split, so the arena is
+    /// unregistered entirely and its device aliases cleared (the direct-PCIe path then falls back to DMA/CPU).
+    /// The caller passes the blobs nobody reads any more (the Maxwell-resident experts, already copied to VRAM).
+    /// `released_bytes` receives the bytes whose pages were dropped.  Returns false with `err` when unsupported.
+    virtual bool release_arena(const std::vector<std::pair<int32_t, int32_t>>& ranges, std::string& err,
+                               size_t& released_bytes) {
+        (void) ranges; (void) released_bytes;
+        err = "release_arena is not supported by this expert source";
+        return false;
+    }
 
     /// CS-T: whether `blob(layer, expert)` would be assembled into a short-lived buffer (a native pack read from its
     /// GGUF shards in place, where an expert's gate, up and down rows are three separate slices).  Such a pointer
@@ -383,6 +398,12 @@ struct ExpertDispatch {
     /// Multi-GPU: the second GPU's tier.  Its experts are computed there instead of on the CPU (kind 2).
     PeerExperts* peer = nullptr;
     int64_t peer_entries = 0;      ///< routed entries the peer served in verify windows
+    /// Maxwell (sm_50, e.g. Tesla M10) tiers: up to 4 devices holding fixed expert subsets.  Their experts
+    /// are computed there instead of on the CPU (kind 3).  Like the peer, but static (no adaptive swaps)
+    /// and with the scalar Maxwell kernel instead of moe_grouped_s2.
+    class MaxwellExperts* maxwell[4] = {};
+    int maxwell_count = 0;
+    int64_t maxwell_entries = 0;   ///< routed entries the Maxwell tier served
     /// Set when `dispatch` could not produce an answer.  The loop itself has no error channel, so this is
     /// where a source failure surfaces: the driver checks it after `session_loop` returns rather than the
     /// engine computing from a half-filled `parts`.
@@ -556,6 +577,11 @@ public:
     /// Mapped reads: asks the OS for these pairs' blobs ahead (platform::advise_willneed).  False when unbuffered,
     /// when read-ahead is off, or before `open`.
     bool advise_pairs(const std::pair<int32_t, int32_t>* pairs, int64_t n) const override;
+    /// The mapped experts' page cache, back to the OS: `madvise(MADV_DONTNEED)` on each mapping (the mapping stays
+    /// open - a later read faults its page back in from the file) then `posix_fadvise(POSIX_FADV_DONTNEED)`.  For a
+    /// run where every expert is on a GPU: the load is over, nothing reads the files at runtime, and the tens of
+    /// GiB the load left in the page cache go back to the system.  False when nothing is mapped or a call fails.
+    bool drop_file_cache(std::string& err);
 
     const uint8_t* blob(int64_t layer, int64_t expert) override;
     /// Windows, opt-in with STRATA_FILE_RELEASE=1: trim the file mapping's full pages after their expert reaches
@@ -723,6 +749,9 @@ public:
     const uint8_t* device_alias(int64_t layer, int64_t expert) const override;
     void prefetch(int64_t layer, int64_t expert) override;
     uint64_t release(int64_t layer, int64_t expert) override;
+    /// Unpin the arena and drop the given (layer, expert) blobs' pages from physical RAM (see ExpertSource).
+    bool release_arena(const std::vector<std::pair<int32_t, int32_t>>& ranges, std::string& err,
+                       size_t& released_bytes) override;
 
     /// What backing was obtained and why, for the startup print.  "The engine adapts to the machine it is on" is
     /// only true if the engine says what it got.
