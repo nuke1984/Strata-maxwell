@@ -59,6 +59,10 @@ public:
     /// Whether this device holds (layer, expert).
     bool owns(int64_t layer, int64_t expert) const;
 
+    /// How many of the layer's routed entries (n_tok * k) this device owns.  Cheap, read-only: used by the
+    /// dispatcher to begin the busiest device FIRST (LPT), so the longest chain starts earliest.
+    int64_t count_owned(int64_t layer, const int32_t* ids, int64_t n_tok, int64_t k) const;
+
     /// Start this device's share of one layer: entries with kind[i] == -1 whose expert this device owns.
     /// `acts` are the engine's ALREADY-QUANTISED activations (one ActQ per token, same objects the CPU pool
     /// uses) - the GPU consumes exactly the same int8/scales/hx, so there is zero quantisation divergence.
@@ -96,7 +100,13 @@ private:
     // launches queue without intermediate sync, one D2H collects all ff, one H2D uploads all ffq,
     // all stage2 launch, one D2H collects results.  4 transfers + 2 syncs per layer, not per expert.
     uint8_t* d_blobs_ = nullptr;    // resident_ * BLOB bytes, the expert blobs
-    uint8_t* d_acts_ = nullptr;     // ONE packed ActQ buffer: [q per token][scale per token][hx per token]
+    // P6.x: ONE contiguous staging region per device: [packed acts][job table].  The host packs the acts at
+    // offset 0 and the job table right after (n_tok * ACTS_STRIDE), the device mirrors the layout, so a
+    // layer costs ONE async upload instead of two (measured: a CUDA call is ~4 us in this VM).
+    uint8_t* d_up_ = nullptr;       // the merged device staging
+    uint8_t* h_up_ = nullptr;       // its pinned host twin
+    size_t up_bytes_ = 0;
+    uint8_t* d_acts_ = nullptr;     // = d_up_ (packed ActQ: [q per token][scale per token][hx per token])
     uint8_t* d_aq_ = nullptr;       // = d_acts_ (int8 codes, H per token)
     float* d_ascale_ = nullptr;     // = d_acts_ + n_tok_max*H
     float* d_ahx_ = nullptr;        // = d_ascale_ + n_tok_max*(H/32)*4

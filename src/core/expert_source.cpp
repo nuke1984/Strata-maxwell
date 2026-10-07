@@ -2677,10 +2677,22 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     // (the jobs loop skips them for the CPU) - which corrupted every reply until here.
     if (d.maxwell_count > 0) {
         static thread_local std::string maxwell_error;
+        // LPT (P6.x): the begin() calls are serial (~21.5 us each in this VM), so the LAST device's chain
+        // starts ~64 us after the first.  Beginning the busiest device FIRST minimises the maximum
+        // completion time (max over devices of start_i + chain_i).  One cheap in-memory scan per device.
+        int order[4] = {0, 1, 2, 3};
+        int64_t cnt[4] = {0, 0, 0, 0};
         for (int m = 0; m < d.maxwell_count; ++m)
+            cnt[m] = d.maxwell[m]->count_owned(d.layers, ids, n_tok, k);
+        for (int a = 0; a < d.maxwell_count; ++a)
+            for (int b = a + 1; b < d.maxwell_count; ++b)
+                if (cnt[order[b]] > cnt[order[a]]) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
+        for (int oi = 0; oi < d.maxwell_count; ++oi) {
+            const int m = order[oi];
             if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, out, maxwell_error)) {
                 d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
+        }
     }
     const auto c2 = std::chrono::steady_clock::now();
     if (any_cpu) {   // CS-T: the experts the CPU computes, fetched together (the GGUF in place reads them on several threads)

@@ -201,15 +201,20 @@ bool MaxwellExperts::open(int device,
     // layer's window uploads only n_tok * ACTS_STRIDE bytes - not the whole 64-token buffer (measured: the
     // full 205 KB copy cost 0.073 ms per device per layer on the M10's slow host link).
     acts_bytes_ = (size_t) n_tok_max_ * (size_t) ACTS_STRIDE;
-    if (!check(cudaMalloc(&d_acts_, acts_bytes_), "cudaMalloc acts", err)) { close(); return false; }
+    const size_t ce = (size_t) cap_entries_;
+    const size_t jobs_bytes = ce * 3 * sizeof(int32_t);
+    // P6.x (measured): ONE contiguous staging region [packed acts][job table] so a layer costs ONE async
+    // upload instead of two.  A CUDA call is ~4 us in this VM; 2 calls -> 1 per device per layer.
+    up_bytes_ = acts_bytes_ + jobs_bytes;
+    if (!check(cudaMalloc(&d_up_, up_bytes_), "cudaMalloc staging", err)) { close(); return false; }
+    if (!check(cudaMallocHost((void**) &h_up_, up_bytes_), "cudaMallocHost staging", err)) { close(); return false; }
+    d_acts_ = d_up_;                 // the packed acts live at offset 0
+    h_acts_ = h_up_;
+    d_jobs_ = (int32_t*) (d_up_ + acts_bytes_);   // re-based per layer in begin_chain (right after the acts)
+    h_jobs_ = (int32_t*) (h_up_ + acts_bytes_);
     d_aq_ = d_acts_;                 // legacy pointers: the batch kernels index by token now
     d_ascale_ = nullptr;
     d_ahx_ = nullptr;
-    h_acts_ = nullptr;
-    if (!check(cudaMallocHost((void**) &h_acts_, acts_bytes_), "cudaMallocHost acts", err)) { close(); return false; }
-    const size_t ce = (size_t) cap_entries_;
-    if (!check(cudaMalloc(&d_jobs_, ce * 3 * sizeof(int32_t)), "cudaMalloc jobs", err)) { close(); return false; }
-    if (!check(cudaMallocHost((void**) &h_jobs_, ce * 3 * sizeof(int32_t)), "cudaMallocHost jobs", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_faq_, ce * FF), "cudaMalloc faq", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_fascale_, ce * (FF/32) * sizeof(float)), "cudaMalloc fascale", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_fahx_, ce * (FF/32) * sizeof(float)), "cudaMalloc fahx", err)) { close(); return false; }
@@ -246,11 +251,10 @@ void MaxwellExperts::close() {
     if (ev_up_) { cudaEventDestroy(ev_up_); ev_up_ = nullptr; }
     if (ev_q_) { cudaEventDestroy(ev_q_); ev_q_ = nullptr; }
     if (d_blobs_) { cudaFree(d_blobs_); d_blobs_ = nullptr; }
-    if (d_acts_) { cudaFree(d_acts_); d_acts_ = nullptr; }
+    if (d_up_) { cudaFree(d_up_); d_up_ = nullptr; }
+    if (h_up_) { cudaFreeHost(h_up_); h_up_ = nullptr; }
+    d_acts_ = nullptr; h_acts_ = nullptr; d_jobs_ = nullptr; h_jobs_ = nullptr;
     d_aq_ = nullptr; d_ascale_ = nullptr; d_ahx_ = nullptr;
-    if (d_jobs_) { cudaFree(d_jobs_); d_jobs_ = nullptr; }
-    if (h_acts_) { cudaFreeHost(h_acts_); h_acts_ = nullptr; }
-    if (h_jobs_) { cudaFreeHost(h_jobs_); h_jobs_ = nullptr; }
     if (d_faq_) { cudaFree(d_faq_); d_faq_ = nullptr; }
     if (d_fascale_) { cudaFree(d_fascale_); d_fascale_ = nullptr; }
     if (d_fahx_) { cudaFree(d_fahx_); d_fahx_ = nullptr; }
@@ -267,6 +271,17 @@ void MaxwellExperts::close() {
 bool MaxwellExperts::owns(int64_t layer, int64_t expert) const {
     if (device_ < 0 || layer < 0 || layer >= n_layers_ || expert < 0 || expert >= n_expert_) return false;
     return res_[(size_t) layer * (size_t) n_expert_ + (size_t) expert] >= 0;
+}
+
+int64_t MaxwellExperts::count_owned(int64_t layer, const int32_t* ids, int64_t n_tok, int64_t k) const {
+    if (device_ < 0 || layer < 0 || layer >= n_layers_) return 0;
+    int64_t c = 0;
+    for (int64_t i = 0; i < n_tok * k; ++i) {
+        const int32_t e = ids[i];
+        if (e < 0 || e >= n_expert_) continue;
+        if (res_[(size_t) layer * (size_t) n_expert_ + (size_t) e] >= 0) ++c;
+    }
+    return c;
 }
 
 bool MaxwellExperts::begin_chain(std::string& err) {
@@ -317,10 +332,13 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         }
     }
 
-    // ---- ONE packed ActQ upload + ONE job table, then ONE launch per stage: the whole layer's jobs are
-    //      processed by the two batched kernels (gup -> quant -> down).  No events, no per-job launches;
-    //      finish() is the single wait per layer. ----
+    // ---- ONE packed upload (acts + job table, contiguous) then ONE launch per stage: the whole layer's
+    //      jobs are processed by the two batched kernels (gup -> quant -> down).  No events, no per-job
+    //      launches; finish() is the single wait per layer. ----
     {
+        // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x)
+        h_jobs_ = (int32_t*) (h_up_ + (size_t) n_tok * ACTS_STRIDE);
+        d_jobs_ = (int32_t*) (d_up_ + (size_t) n_tok * ACTS_STRIDE);
         const size_t nc4 = (size_t) (H / 32) * 4;
         for (int64_t t = 0; t < n_tok; ++t) {
             const auto& A = acts[t];
@@ -329,9 +347,6 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             std::memcpy(at + H, A.scale, nc4);
             std::memcpy(at + H + nc4, A.hx, nc4);
         }
-        // async from pinned memory, stream-ordered before the kernels below; finish() is the only wait
-        if (!check(cudaMemcpyAsync(d_acts_, h_acts_, (size_t) n_tok * ACTS_STRIDE, cudaMemcpyHostToDevice,
-                                   streams_[0]), "copy acts packed", err)) return false;
     }
     // ---- ONE job table + ONE launch per stage: the whole layer's jobs are processed by two batched
     //      kernels (gup -> quant -> down), so per-job launch overhead disappears and the SMs fill. ----
@@ -341,8 +356,9 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         h_jobs_[j * 3 + 2] = jobs[j].row;   // destination row: the token path's entry index.  finish_chain
                                             // rewrites it (and re-uploads) for the prefill's staging order.
     }
-    if (!check(cudaMemcpyAsync(d_jobs_, h_jobs_, jobs.size() * 3 * sizeof(int32_t),
-                               cudaMemcpyHostToDevice, streams_[0]), "copy jobs", err)) return false;
+    // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait
+    if (!check(cudaMemcpyAsync(d_up_, h_up_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
+                               cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
     s2_expert_maxwell_gup_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_ff_, streams_[0]);
     s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
                                      (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
