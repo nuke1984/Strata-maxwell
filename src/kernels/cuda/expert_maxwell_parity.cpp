@@ -272,7 +272,64 @@ int main(int argc, char** argv) {
         if (abs_err > 1e-5 && rel_err > 1e-5) ++bad;
     }
     std::printf("stage2 (down):    max abs %.6g, max rel %.6g, bad %d/%d\n", max_abs, max_rel, bad, H);
-    if (bad1 > 0 || bad > 0) {
+    // ---------------------------------------------------------------------------------------------------
+    // BATCH PATH (what the engine actually runs): ONE job, the packed ActQ layout [q H][scale][hx], the
+    // batched kernels and the device-side FF quantisation - compared against the SAME CPU reference above.
+    // Run this binary twice: once plain (v1 kernels) and once with STRATA_S2_V2=1 (v2 kernels).
+    int batch_bad1 = 0, batch_bad2 = 0;
+    {
+        const size_t stride = (size_t) H + 2 * (H / 32) * 4;
+        std::vector<uint8_t> acts(stride, 0);
+        std::memcpy(acts.data(), aq.data(), H);
+        std::memcpy(acts.data() + H, ascale.data(), (H / 32) * sizeof(float));
+        std::memcpy(acts.data() + H + (H / 32) * 4, ahx.data(), (H / 32) * sizeof(float));
+        uint8_t* d_acts = nullptr;
+        int32_t* d_jobs = nullptr;
+        float* d_ffb = nullptr;
+        int8_t* d_faqb = nullptr;
+        float *d_fascb = nullptr, *d_fahxb = nullptr;
+        float* d_outb = nullptr;
+        check(cudaMalloc(&d_acts, stride), "batch: cudaMalloc acts");
+        check(cudaMalloc(&d_jobs, 3 * sizeof(int32_t)), "batch: cudaMalloc jobs");
+        check(cudaMalloc(&d_ffb, FF * sizeof(float)), "batch: cudaMalloc ff");
+        check(cudaMalloc(&d_faqb, FF), "batch: cudaMalloc faq");
+        check(cudaMalloc(&d_fascb, (FF / 32) * sizeof(float)), "batch: cudaMalloc fasc");
+        check(cudaMalloc(&d_fahxb, (FF / 32) * sizeof(float)), "batch: cudaMalloc fahx");
+        check(cudaMalloc(&d_outb, H * sizeof(float)), "batch: cudaMalloc out");
+        check(cudaMemcpy(d_acts, acts.data(), stride, cudaMemcpyHostToDevice), "batch: copy acts");
+        const int32_t jobs[3] = {0, 0, 0};   // slot 0, token 0, destination row 0
+        check(cudaMemcpy(d_jobs, jobs, sizeof(jobs), cudaMemcpyHostToDevice), "batch: copy jobs");
+        strata::kernels::cuda::s2_expert_maxwell_gup_batch_async(d_blob, d_jobs, 1, d_acts, d_ffb, 0);
+        strata::kernels::cuda::s2_expert_maxwell_quant_ff_async(d_ffb, d_faqb, d_fascb, d_fahxb, FF / 32, 0);
+        strata::kernels::cuda::s2_expert_maxwell_down_batch_async(d_blob, d_jobs, 1, d_faqb, d_fascb, d_fahxb,
+                                                                 d_outb, 0);
+        check(cudaDeviceSynchronize(), "batch: sync");
+        std::vector<float> ffb(FF), outb(H);
+        check(cudaMemcpy(ffb.data(), d_ffb, FF * sizeof(float), cudaMemcpyDeviceToHost), "batch: copy ff");
+        check(cudaMemcpy(outb.data(), d_outb, H * sizeof(float), cudaMemcpyDeviceToHost), "batch: copy out");
+        // stage1: the batch ff (SwiGLU floats) vs the CPU ff
+        double ab1 = 0.0, rl1 = 0.0;
+        for (int i = 0; i < FF; ++i) {
+            const double a = ff_cpu[i], b = ffb[i];
+            const double ae = fabs(a - b), re = (a != 0.0) ? ae / fabs(a) : ae;
+            if (ae > ab1) ab1 = ae;
+            if (re > rl1) rl1 = re;
+            if (ae > 1e-5 && re > 1e-5) ++batch_bad1;
+        }
+        std::printf("batch stage1:     max abs %.6g, max rel %.6g, bad %d/%d\n", ab1, rl1, batch_bad1, FF);
+        // stage2: the batch out vs the CPU out (this one goes through the DEVICE quantisation of ff)
+        double ab2 = 0.0, rl2 = 0.0;
+        for (int i = 0; i < H; ++i) {
+            const double a = out_cpu[i], b = outb[i];
+            const double ae = fabs(a - b), re = (a != 0.0) ? ae / fabs(a) : ae;
+            if (ae > ab2) ab2 = ae;
+            if (re > rl2) rl2 = re;
+            if (ae > 1e-4 && re > 1e-4) ++batch_bad2;   // the device quantisation adds its own rounding
+        }
+        std::printf("batch stage2:     max abs %.6g, max rel %.6g, bad %d/%d\n", ab2, rl2, batch_bad2, H);
+    }
+
+    if (bad1 > 0 || bad > 0 || batch_bad1 > 0 || batch_bad2 > 0) {
         std::fprintf(stderr, "PARITY FAILED\n");
         return 1;
     }

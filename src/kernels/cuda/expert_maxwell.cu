@@ -314,6 +314,196 @@ __global__ void expert_s2_stage2_batch(const uint8_t* __restrict__ blobs, const 
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// v2 (misurato): the v1 batch kernels issue ~640 SCALAR global act loads per row (16 int32 per 64-weight
+// block, see dot32_s2) and chain the four vmad of each dot serially; the SASS shows the result: 810
+// instructions with ~1000 unpack ops, 56 regs, DEPBAR stalls, ~34% of the measured VRAM bandwidth.
+// v2 fixes exactly that:
+//   * the block's rows all belong to ONE job (FF=640 is a multiple of PER_BLOCK), so the token's ActQ is
+//     staged ONCE per block in shared memory and read with 128-bit LDS (no global latency in the loop);
+//   * the integer dot uses FOUR independent vmad chains: integer adds are exact, so the result is
+//     BIT-IDENTICAL to v1 (only the reduction tree of the integer sum changes);
+//   * the weight codes stay 128-bit global loads (already vectorized).
+// Select with STRATA_S2_V2=1 (default off while measuring).
+__device__ __forceinline__ int expand4_s2(int b8) {
+    return ((b8 >> 0) & 3) | (((b8 >> 2) & 3) << 8) | (((b8 >> 4) & 3) << 16) | (((b8 >> 6) & 3) << 24);
+}
+
+__device__ __forceinline__ int dot16_s2_ilp(int c, const int4 q) {
+    const int s0 = dp4a_s32(q.x, expand4_s2(c & 0xFF), 0);
+    const int s1 = dp4a_s32(q.y, expand4_s2((c >> 8) & 0xFF), 0);
+    const int s2 = dp4a_s32(q.z, expand4_s2((c >> 16) & 0xFF), 0);
+    const int s3 = dp4a_s32(q.w, expand4_s2((c >> 24) & 0xFF), 0);
+    return (s0 + s1) + (s2 + s3);
+}
+
+// v2b: same dot, but the 2-bit -> byte-lane expansion comes from a 256-entry table in shared memory
+// (one LDS instead of ~6 ALU ops per 4 codes).  The table is built once per block (256 words, ~0.07
+// ops/weight amortised) and the entries are the same values expand4_s2 computes.
+__device__ __forceinline__ int dot16_s2_lut(int c, const int4 q, const uint32_t* __restrict__ lut) {
+    const int s0 = dp4a_s32(q.x, (int) lut[c & 0xFF], 0);
+    const int s1 = dp4a_s32(q.y, (int) lut[(c >> 8) & 0xFF], 0);
+    const int s2 = dp4a_s32(q.z, (int) lut[(c >> 16) & 0xFF], 0);
+    const int s3 = dp4a_s32(q.w, (int) lut[(c >> 24) & 0xFF], 0);
+    return (s0 + s1) + (s2 + s3);
+}
+
+__device__ __forceinline__ void block_pair_s2_lut(const uint8_t* __restrict__ codes,
+                                                  const int8_t* __restrict__ sq,
+                                                  const uint32_t* __restrict__ lut, int& dot0, int& dot1) {
+    const int4 c4 = *(const int4*) codes;
+    const int4 q0 = *(const int4*) (sq);
+    const int4 q1 = *(const int4*) (sq + 16);
+    const int4 q2 = *(const int4*) (sq + 32);
+    const int4 q3 = *(const int4*) (sq + 48);
+    dot0 = dot16_s2_lut(c4.x, q0, lut) + dot16_s2_lut(c4.y, q1, lut);
+    dot1 = dot16_s2_lut(c4.z, q2, lut) + dot16_s2_lut(c4.w, q3, lut);
+}
+
+__device__ __forceinline__ void block_pair_s2_smem(const uint8_t* __restrict__ codes,
+                                                   const int8_t* __restrict__ sq, int& dot0, int& dot1) {
+    const int4 c4 = *(const int4*) codes;
+    const int4 q0 = *(const int4*) (sq);
+    const int4 q1 = *(const int4*) (sq + 16);
+    const int4 q2 = *(const int4*) (sq + 32);
+    const int4 q3 = *(const int4*) (sq + 48);
+    dot0 = dot16_s2_ilp(c4.x, q0) + dot16_s2_ilp(c4.y, q1);
+    dot1 = dot16_s2_ilp(c4.z, q2) + dot16_s2_ilp(c4.w, q3);
+}
+
+template <int SPLIT>
+__global__ void expert_s2_stage1_batch_v2(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
+                                          int njobs, const uint8_t* __restrict__ acts_base,
+                                          float* __restrict__ ff) {
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    static_assert(FF % PER_BLOCK == 0, "v2 stages one job per block: FF must be a multiple of PER_BLOCK");
+    const int row0 = blockIdx.x * PER_BLOCK;
+    if (row0 >= njobs * FF) return;
+    const int j = row0 / FF;                    // every row of this block is in job j (FF % PER_BLOCK == 0)
+    const MaxJob jd = jobs[j];
+    const uint8_t* blob = blobs + (size_t) jd.slot * BLOB;
+    const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
+    __shared__ __align__(16) int8_t sq[H];
+    __shared__ float ssc[H / 32];
+    __shared__ float shx[H / 32];
+    __shared__ uint32_t slut[256];
+    {
+        const int4* srcq = (const int4*) at;
+        int4* dstq = (int4*) sq;
+        for (int i = (int) threadIdx.x; i < H / 16; i += 128) dstq[i] = srcq[i];
+        const float* ssrc = (const float*) (at + H);
+        for (int i = (int) threadIdx.x; i < H / 32; i += 128) {
+            ssc[i] = ssrc[i];
+            shx[i] = ssrc[H / 32 + i];
+        }
+        for (int i = (int) threadIdx.x; i < 256; i += 128) slut[i] = (uint32_t) expand4_s2(i);
+    }
+    __syncthreads();
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);
+    if (idx >= njobs * FF) return;
+    const int row = idx - j * FF;
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* gc = blob + O_GU_CODES + (size_t) (2 * row) * ROW_GU;
+    const uint8_t* gs = blob + O_GU_SCALES + (size_t) (2 * row) * SC_GU * 2;
+    const uint8_t* uc = blob + O_GU_CODES + (size_t) (2 * row + 1) * ROW_GU;
+    const uint8_t* us = blob + O_GU_SCALES + (size_t) (2 * row + 1) * SC_GU * 2;
+    float accg = 0.f, corg = 0.f, accu = 0.f, coru = 0.f;
+    for (int b = part; b < SC_GU; b += SPLIT) {
+        const float dg = read_scale(gs, b);
+        int d0 = 0, d1 = 0;
+        block_pair_s2_lut(gc + b * 16, sq + (2 * b) * 32, slut, d0, d1);
+        accg += dg * ssc[2 * b] * (float) d0;
+        accg += dg * ssc[2 * b + 1] * (float) d1;
+        corg += dg * (shx[2 * b] + shx[2 * b + 1]);
+        const float du = read_scale(us, b);
+        int e0 = 0, e1 = 0;
+        block_pair_s2_lut(uc + b * 16, sq + (2 * b) * 32, slut, e0, e1);
+        accu += du * ssc[2 * b] * (float) e0;
+        accu += du * ssc[2 * b + 1] * (float) e1;
+        coru += du * (shx[2 * b] + shx[2 * b + 1]);
+    }
+    __shared__ float4 sh[128];
+    sh[threadIdx.x] = make_float4(accg, corg, accu, coru);
+    __syncthreads();
+    if (part == 0) {
+        float ag = 0.f, cg = 0.f, au = 0.f, cu = 0.f;
+        for (int s = 0; s < SPLIT; ++s) {
+            const float4 v = sh[threadIdx.x + s];
+            ag += v.x; cg += v.y; au += v.z; cu += v.w;
+        }
+        const float sg = ag - cg;
+        const float su = au - cu;
+        ff[(size_t) j * FF + row] = (sg / (1.f + __expf(-sg))) * su;
+    }
+}
+
+template <int SPLIT>
+__global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
+                                          int njobs, const int8_t* __restrict__ faq,
+                                          const float* __restrict__ fasc, const float* __restrict__ fahx,
+                                          float* __restrict__ out) {
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    static_assert(H % PER_BLOCK == 0, "v2 stages one job per block: H must be a multiple of PER_BLOCK");
+    const int row0 = blockIdx.x * PER_BLOCK;
+    if (row0 >= njobs * H) return;
+    const int j = row0 / H;
+    const MaxJob jd = jobs[j];
+    const uint8_t* blob = blobs + (size_t) jd.slot * BLOB;
+    __shared__ __align__(16) int8_t sq[FF];
+    __shared__ float ssc[FF / 32];
+    __shared__ float shx[FF / 32];
+    __shared__ uint32_t slut[256];
+    {
+        const int4* srcq = (const int4*) (faq + (size_t) j * FF);
+        int4* dstq = (int4*) sq;
+        for (int i = (int) threadIdx.x; i < FF / 16; i += 128) dstq[i] = srcq[i];
+        const float* sc = fasc + (size_t) j * (FF / 32);
+        const float* hx = fahx + (size_t) j * (FF / 32);
+        for (int i = (int) threadIdx.x; i < FF / 32; i += 128) {
+            ssc[i] = sc[i];
+            shx[i] = hx[i];
+        }
+        for (int i = (int) threadIdx.x; i < 256; i += 128) slut[i] = (uint32_t) expand4_s2(i);
+    }
+    __syncthreads();
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);
+    if (idx >= njobs * H) return;
+    const int row = idx - j * H;
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* dc = blob + O_D_CODES + (size_t) row * ROW_D;
+    const uint8_t* ds = blob + O_D_SCALES + (size_t) row * SC_D * 2;
+    float acc = 0.f, corr = 0.f;
+    for (int b = part; b < SC_D; b += SPLIT) {
+        const float d = read_scale(ds, b);
+        int d0 = 0, d1 = 0;
+        block_pair_s2_lut(dc + b * 16, sq + (2 * b) * 32, slut, d0, d1);
+        acc += d * ssc[2 * b] * (float) d0;
+        acc += d * ssc[2 * b + 1] * (float) d1;
+        corr += d * (shx[2 * b] + shx[2 * b + 1]);
+    }
+    __shared__ float2 sh[128];
+    sh[threadIdx.x] = make_float2(acc, corr);
+    __syncthreads();
+    if (part == 0) {
+        float a0 = 0.f, c0 = 0.f;
+        for (int s = 0; s < SPLIT; ++s) {
+            const float2 v = sh[threadIdx.x + s];
+            a0 += v.x; c0 += v.y;
+        }
+        out[(size_t) jd.dst * H + row] = a0 - c0;
+    }
+}
+
+// v2 is the DEFAULT (measured: ~30% faster kernels, parity-bit-identical, window -8.9% on the engine);
+// STRATA_S2_V2=0 restores the v1 kernels for an A/B.
+inline bool s2_v2_enabled() {
+    static const bool on = [] {
+        const char* e = std::getenv("STRATA_S2_V2");
+        return e == nullptr || e[0] == '\0' || e[0] != '0';
+    }();
+    return on;
+}
+
 }  // namespace
 
 void s2_expert_maxwell(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
@@ -420,6 +610,11 @@ void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_
     constexpr int SPLIT = 4;
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * FF;
+    if (s2_v2_enabled()) {   // STRATA_S2_V2=1: acts staged in smem, 128-bit LDS, 4 independent vmad chains
+        expert_s2_stage1_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+            d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
+        return;
+    }
     expert_s2_stage1_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
 }
@@ -431,6 +626,11 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
+    if (s2_v2_enabled()) {
+        expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+            d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        return;
+    }
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
 }
