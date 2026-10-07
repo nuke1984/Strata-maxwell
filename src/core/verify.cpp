@@ -1739,11 +1739,17 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         const Clock::time_point a = Clock::now();
         auto last_flush = a;
         uint32_t spins = 0;
+        // Leva 1 (attese efficienti): dopo un breve spin il thread host DORME invece di bruciare il core.
+        // STRATA_HOST_WAIT_US (default 20 us) e' la grana del sonno; 0 ripristina lo spin puro.  Il costo e'
+        // la latenza di reazione al ring (~la grana): la GPU ha ~50 us di margine prima della flagB.
+        static const long host_wait_us = [] { const char* v = std::getenv("STRATA_HOST_WAIT_US"); return v ? std::atol(v) : 20L; }();
         progress_at("verify window: waiting for the GPU to reach layer", l);
         while (*seq < want) {
             _mm_pause();
             if ((++spins & 1023u) != 0) continue;
             const auto now = Clock::now();
+            if (host_wait_us > 0 && spins >= 4096u)
+                std::this_thread::sleep_for(std::chrono::microseconds(host_wait_us));
             if (now - last_flush > std::chrono::microseconds(2000)) {
                 last_flush = now;
                 const cudaError_t q = cudaStreamQuery(cs_);
