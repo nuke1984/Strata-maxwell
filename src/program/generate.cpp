@@ -4595,7 +4595,7 @@ int main(int argc, char** argv) {
     void* pool_user = o.no_pool ? nullptr : (void*) &drive;
     std::fprintf(stderr, "strata generate: %d expert-pool workers%s%s\n", pool.workers(),
                  pool.host_works() ? " + the host thread" : "",
-                 o.no_pool ? " (UNUSED: --no-pool)" : "");
+                 o.no_pool ? " (UNUSED: --no-pool)" : " (created on the first CPU expert batch)");
 
     // **THE MISALIGNMENT WARNING THAT STOOD HERE IS GONE, BECAUSE THE MISALIGNMENT IS FIXED.**
     //

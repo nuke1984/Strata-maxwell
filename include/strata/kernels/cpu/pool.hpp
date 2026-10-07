@@ -217,6 +217,10 @@ public:
     static constexpr std::chrono::seconds kStall{60};
 
 private:
+    /// Create the worker threads on the first real batch.  A run whose experts all live on GPUs never publishes
+    /// one, so the threads are not created at all (the old constructor left them parked on a condvar for the
+    /// whole process, the issue #4 "CPU busy while idle" family).
+    void start_workers();
     void worker(int id);
     void drain(int id, ExpertScratch& scratch, uint32_t epoch);
     void run_phase(int mode, int n_tasks);
@@ -232,6 +236,9 @@ private:
 
     int n_ = 0;
     bool host_works_ = true;
+    bool pin_ = true;        ///< the worker threads' core pinning (--pool-affinity); applied in start_workers
+    bool started_ = false;   ///< the worker threads exist: created on the first real batch (lazy; a GPU-only run
+                             ///< never publishes one, so it never leaves N threads parked for nothing)
     ExpertJob* jobs_ = nullptr;
     int njobs_ = 0;
     /// The host's own scratch when `host_works_`.  A separate object rather than a share of `scratch_[i]`,

@@ -270,6 +270,7 @@ bool MaxwellExperts::owns(int64_t layer, int64_t expert) const {
 }
 
 bool MaxwellExperts::begin_chain(std::string& err) {
+    const auto bt0 = std::chrono::steady_clock::now();
     const int64_t layer = w_layer_;
     const strata::kernels::cpu::ActQ* acts = w_acts_;
     const int32_t* ids = w_ids_;
@@ -277,6 +278,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     const int32_t* kind = nullptr;   // collect every entry this device owns
     DeviceScope scope(device_);
     if (!scope.ok) { err = scope.err; return false; }
+    const auto bt1 = std::chrono::steady_clock::now();
     owned_row_.clear();
 
     // P3.1 BATCHED, three phases per layer (not per expert):
@@ -358,6 +360,16 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         owned_row_.push_back(jobs[j].row);
         computed_.fetch_add(1, std::memory_order_relaxed);
     }
+    if (std::getenv("STRATA_MAXWELL_TIMING") != nullptr) {
+        const auto bt2 = std::chrono::steady_clock::now();
+        static thread_local double a_set = 0, a_all = 0;
+        static thread_local long n = 0;
+        a_set += std::chrono::duration<double, std::milli>(bt1 - bt0).count();
+        a_all += std::chrono::duration<double, std::milli>(bt2 - bt0).count();
+        if (++n % 2000 == 0)
+            std::fprintf(stderr, "Maxwell TIMING begin  dev=%d n=%ld setdev=%.1f us total=%.1f us\n",
+                         device_, n, 1000.0 * a_set / (double) n, 1000.0 * a_all / (double) n);
+    }
     return true;
 }
 
@@ -396,10 +408,12 @@ bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int
 
 bool MaxwellExperts::finish_chain(std::string& err) {
     if (owned_row_.empty()) return true;
+    const auto ft0 = std::chrono::steady_clock::now();
     // THIS device, explicitly: without the scope the sync below lands on whatever device the caller had
     // current (the primary GPU, whose graph is waiting for this very host step: a deadlock).
     DeviceScope scope(device_);
     if (!scope.ok) { err = scope.err; return false; }
+    const auto ft1 = std::chrono::steady_clock::now();
     // The down stage: launched at begin() for the token path (see there).  For the prefill it launches NOW,
     // into the staging block, and the host copies the rows out below.  One wait per device per layer.
     if (!down_launched_) {
@@ -411,6 +425,16 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         down_launched_ = true;
     }
     if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;
+    const auto ft2 = std::chrono::steady_clock::now();
+    if (const char* e = std::getenv("STRATA_MAXWELL_TIMING")) {
+        static thread_local double a_set = 0, a_sync = 0;
+        static thread_local long n = 0;
+        a_set += std::chrono::duration<double, std::milli>(ft1 - ft0).count();
+        a_sync += std::chrono::duration<double, std::milli>(ft2 - ft1).count();
+        if (++n % 2000 == 0)
+            std::fprintf(stderr, "Maxwell TIMING finish dev=%d n=%ld setdev=%.1f us sync=%.1f us\n",
+                         device_, n, 1000.0 * a_set / (double) n, 1000.0 * a_sync / (double) n);
+    }
     if (w_dst_mapped_) { owned_row_.clear(); return true; }
     if (!check(cudaMemcpy(h_out_, d_out_, owned_row_.size() * (size_t) w_n_embd_ * sizeof(float),
                           cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
