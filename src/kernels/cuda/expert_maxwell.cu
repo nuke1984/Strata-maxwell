@@ -517,6 +517,25 @@ inline bool s2_v2_enabled() {
     return on;
 }
 
+// A/B hooks for the v2 launch geometry (threads cooperating on one row).  The defaults are the measured
+// best; the env overrides exist so a sweep can rerun without editing/rebuilding the constants.
+inline int s2_split_gup() {
+    static const int v = [] {
+        const char* e = std::getenv("STRATA_S2_SPLIT_GU");
+        const int x = e ? std::atoi(e) : 4;
+        return (x == 2 || x == 4 || x == 8) ? x : 4;
+    }();
+    return v;
+}
+inline int s2_split_down() {
+    static const int v = [] {
+        const char* e = std::getenv("STRATA_S2_SPLIT_D");
+        const int x = e ? std::atoi(e) : 2;
+        return (x == 2 || x == 4 || x == 8) ? x : 2;
+    }();
+    return v;
+}
+
 }  // namespace
 
 void s2_expert_maxwell(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
@@ -616,16 +635,26 @@ void s2_expert_maxwell_quant_ff_async(const float* d_ff, int8_t* d_q, float* d_s
 void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                        const uint8_t* acts_base, float* d_ff, cudaStream_t stream) {
     if (njobs <= 0) return;
-    // P3.5 (misurato sul device, griglia corretta: njobs 4/8/12/16): SPLIT=4 e' gia' al limite pratico.
-    // SPLIT=8 e SPLIT=2 danno lo stesso tempo, SPLIT=16 peggiora (374 vs 271 us a njobs=12); T256 uguale a
-    // T128; la mappatura a chunk consecutivi peggiora.  Insieme a SPLIT=2 del down (nessuna variante lo
-    // batte), i kernel stanno al ~90% del throughput intero teorico della M10: non c'e' margine a questo livello.
+    // SPLIT sweep re-run on the v2 kernels (2026-10-08, warm-clock protocol, njobs 5/6/12): the current
+    // geometry is the measured best -- gate/up SPLIT=4: 102/119/221 us vs 115/135/257 (SPLIT=8) and
+    // 170/190/341 (SPLIT=2); down SPLIT=2: 58/68/127 us vs 75/88/167 (SPLIT=4).  The kernels move
+    // ~52 GB/s of the M10's 75.7 GB/s streaming peak (microbench), not the "~90% of theoretical" an
+    // earlier note claimed.  STRATA_S2_SPLIT_GU / STRATA_S2_SPLIT_D re-run the sweep without edits.
     constexpr int SPLIT = 4;
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * FF;
     if (s2_v2_enabled()) {   // STRATA_S2_V2=1: acts staged in smem, 128-bit LDS, 4 independent vmad chains
-        expert_s2_stage1_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-            d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
+        const int sp = s2_split_gup();
+        if (sp == 2) {
+            expert_s2_stage1_batch_v2<2><<<(rows + 64 - 1) / 64, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
+        } else if (sp == 8) {
+            expert_s2_stage1_batch_v2<8><<<(rows + 16 - 1) / 16, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
+        } else {
+            expert_s2_stage1_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_ff);
+        }
         return;
     }
     expert_s2_stage1_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
@@ -640,8 +669,17 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
     if (s2_v2_enabled()) {
-        expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-            d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        const int sp = s2_split_down();
+        if (sp == 4) {
+            expert_s2_stage2_batch_v2<4><<<(rows + 32 - 1) / 32, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        } else if (sp == 8) {
+            expert_s2_stage2_batch_v2<8><<<(rows + 16 - 1) / 16, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        } else {
+            expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        }
         return;
     }
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
