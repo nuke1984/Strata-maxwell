@@ -2669,8 +2669,13 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
             if (ep && !mw_tok && std::all_of(kind + t * k, kind + (t + 1) * k, [](int32_t v) { return v >= 0; })) continue;
             if (native && strata::kernels::cpu::q2_native_kernels(lay.fmt[(size_t) d.layers].gu_type))   // a native Q2_0 pack: the Q2_0 kernels' activations
                 act_quant_any(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
-            else if (native)
+            else if (native) {
                 native_quant_act(lay.fmt[(size_t) d.layers], x_f + (size_t) t * H, d.nact_multi.data() + (size_t) t * kNativeActBytes);
+                // Maxwell (sm_50): the tier's i-quant kernel consumes the SAME ActQ (ActQ.q is
+                // block_q8_1.qs bit for bit, and the kernel rounds each chunk's scale to the d the
+                // device q8_1 quantizer stores), so a kind-3 token needs it even on an i-quant layer
+                if (mw_tok) act_quant_any(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
+            }
             else
                 act_quant_q8_1(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
         }
