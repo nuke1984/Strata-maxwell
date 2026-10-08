@@ -303,8 +303,12 @@ __global__ void expert_s2_stage1_batch(const uint8_t* __restrict__ blobs, const 
 }
 
 // Batched stage2: one launch for every job of the layer; grid covers njobs*H rows, SPLIT threads per row.
+// `blob_stride`/`d_codes_off`/`d_scales_off` place the blob and its down planes: the S2 (canonical) blob
+// passes the geo constants, a converted native blob its own per-layer offsets (the launchers default them).
 template <int SPLIT>
-__global__ void expert_s2_stage2_batch(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
+__global__ void expert_s2_stage2_batch(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                       size_t d_codes_off, size_t d_scales_off,
+                                       const MaxJob* __restrict__ jobs,
                                        int njobs, const int8_t* __restrict__ faq,
                                        const float* __restrict__ fasc, const float* __restrict__ fahx,
                                        float* __restrict__ out) {
@@ -315,10 +319,10 @@ __global__ void expert_s2_stage2_batch(const uint8_t* __restrict__ blobs, const 
     const int row = idx - j * H;
     const int part = (int) (threadIdx.x % SPLIT);
     const MaxJob jd = jobs[j];
-    const uint8_t* blob = blobs + (size_t) jd.slot * BLOB;
+    const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
     ActQDev a{faq + (size_t) j * FF, fasc + (size_t) j * (FF / 32), fahx + (size_t) j * (FF / 32), FF / 32};
-    const uint8_t* dc = blob + O_D_CODES + (size_t) row * ROW_D;
-    const uint8_t* ds = blob + O_D_SCALES + (size_t) row * SC_D * 2;
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * ROW_D;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * SC_D * 2;
     float acc = 0.f, corr = 0.f;
     for (int b = part; b < SC_D; b += SPLIT) {
         const float d = read_scale(ds, b);
@@ -478,7 +482,9 @@ __global__ void expert_s2_stage1_batch_v2(const uint8_t* __restrict__ blobs, con
 }
 
 template <int SPLIT, bool F16 = false>
-__global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
+__global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                          size_t d_codes_off, size_t d_scales_off,
+                                          const MaxJob* __restrict__ jobs,
                                           int njobs, const int8_t* __restrict__ faq,
                                           const float* __restrict__ fasc, const float* __restrict__ fahx,
                                           float* __restrict__ out) {
@@ -488,7 +494,7 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, con
     if (row0 >= njobs * H) return;
     const int j = row0 / H;
     const MaxJob jd = jobs[j];
-    const uint8_t* blob = blobs + (size_t) jd.slot * BLOB;
+    const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
     __shared__ __align__(16) int8_t sq[FF];
     __shared__ float ssc[FF / 32];
     __shared__ float shx[FF / 32];
@@ -510,8 +516,8 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, con
     if (idx >= njobs * H) return;
     const int row = idx - j * H;
     const int part = (int) (threadIdx.x % SPLIT);
-    const uint8_t* dc = blob + O_D_CODES + (size_t) row * ROW_D;
-    const uint8_t* ds = blob + O_D_SCALES + (size_t) row * SC_D * 2;
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * ROW_D;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * SC_D * 2;
     float acc = 0.f, corr = 0.f;
     for (int b = part; b < SC_D; b += SPLIT) {
         const float d = read_scale(ds, b);
@@ -1046,7 +1052,8 @@ void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_
 
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
-                                        float* d_out, cudaStream_t stream) {
+                                        float* d_out, size_t blob_stride, size_t d_codes_off,
+                                        size_t d_scales_off, cudaStream_t stream) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
@@ -1055,21 +1062,26 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
         const int sp = s2_split_down();
         if (sp == 1) {
             expert_s2_stage2_batch_v2<1><<<(rows + 127) / 128, 128, 0, stream>>>(
-                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+                d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+                d_faq, d_fasc, d_fahx, d_out);
         } else if (sp == 4) {
             expert_s2_stage2_batch_v2<4><<<(rows + 32 - 1) / 32, 128, 0, stream>>>(
-                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+                d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+                d_faq, d_fasc, d_fahx, d_out);
         } else if (sp == 8) {
             expert_s2_stage2_batch_v2<8><<<(rows + 16 - 1) / 16, 128, 0, stream>>>(
-                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+                d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+                d_faq, d_fasc, d_fahx, d_out);
         } else {
             expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+                d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+                d_faq, d_fasc, d_fahx, d_out);
         }
         return;
     }
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-        d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+        d_faq, d_fasc, d_fahx, d_out);
 }
 
 // v2 ONLY: the down stage with fp16 rows - half the uplink bytes when the destination is mapped host
@@ -1077,13 +1089,15 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
 // no fp16 variant, so the caller must not request it with STRATA_S2_V2=0.
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                             const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
-                                            uint16_t* d_out16, cudaStream_t stream) {
+                                            uint16_t* d_out16, size_t blob_stride, size_t d_codes_off,
+                                            size_t d_scales_off, cudaStream_t stream) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
     expert_s2_stage2_batch_v2<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-        d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, (float*) d_out16);
+        d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
+        d_faq, d_fasc, d_fahx, (float*) d_out16);
 }
 
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,

@@ -16,10 +16,16 @@
 
 #include <cuda_runtime.h>
 
+#include "ggml.h"
+#include "ggml-cpu.h"   // ggml_cpu_init (the round-trip gate's to_float tables)
+
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
+#include <random>
+#include <vector>
 
 namespace strata::core {
 namespace {
@@ -32,6 +38,7 @@ using strata::kernels::cuda::s2_expert_maxwell_down_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_batch_f16_async;
 using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
+using strata::kernels::cuda::iq_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_v2;
 using strata::kernels::cuda::s2_expert_maxwell_sync;
 
@@ -86,22 +93,23 @@ bool MaxwellExperts::open(int device,
                           int64_t n_layers, int64_t n_expert, int reserve_mib,
                           std::string& err) {
     close();
-    // GUARD: this tier runs only the Q2_0 (S2) expert form.  A native pack may keep other expert encodings
-    // (the IQ2_XS file: IQ2_S / IQ2_XXS / IQ1_M gate/up), and the blob conversion and the kernels below all
-    // assume Q2_0's geometry - an 18-byte block per 64 weights, the fixed 1,382,400-byte blob.  Reading an
-    // i-quant row with it does not fault: it decodes plausible garbage rows, silently (a whole model that
-    // answers nonsense words - measured, logprob about -6 nats/token where a healthy run gives -0.003).
-    // Refuse instead, naming the first offending layer.  42 is ggml's Q2_0 (tools/gguf_reader.py).
+    // GUARD: this tier runs the expert encodings its kernels take - the Q2_0 (S2) form, and a native
+    // pack's IQ2_S / IQ2_XXS / IQ1_M gate/up over the Q2_0 down (the IQ2_XS file's layers; the down is
+    // converted to the S2 planar form at open()).  Anything else (an encoding a future pack may carry)
+    // would be read with the wrong geometry - plausible garbage rows, silently, never a fault.  Refuse
+    // instead, naming the first offending layer.  42 is ggml's Q2_0 (tools/gguf_reader.py).
     {
         const auto& lay = strata::kernels::cpu::expert_layout();
         if (lay.native) {
             for (size_t L = 0; L < lay.fmt.size(); ++L) {
                 const auto& f = lay.fmt[L];
-                if (f.gu_type != 42 || f.d_type != 42) {
+                if (f.d_type != 42 ||
+                    (f.gu_type != 42 && f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29)) {
                     char buf[256];
                     std::snprintf(buf, sizeof(buf),
                                   "MaxwellExperts (CUDA%d): layer %zu keeps its experts as gate/up ggml type "
-                                  "%d and down type %d; this tier only runs the Q2_0 (type 42) expert form",
+                                  "%d and down type %d; this tier takes Q2_0 (42), and IQ2_S (22) / IQ2_XXS "
+                                  "(16) / IQ1_M (29) gate/up over a Q2_0 down",
                                   device, L, f.gu_type, f.d_type);
                     err = buf;
                     return false;
@@ -112,19 +120,25 @@ bool MaxwellExperts::open(int device,
     DeviceScope scope(device);
     if (!scope.ok) { err = scope.err; return false; }
 
-    // how much fits?
+    // how much fits?  A canonical pack's blobs are all BLOB bytes; a native pack's differ per layer
+    // (the IQ2_XS file: 1,510,400 / 1,305,600 / 1,177,600 B per expert, by its three gate/up encodings),
+    // so the budget is taken in the layer's own blob bytes.
     size_t free_b = 0, total_b = 0;
     if (!check(cudaMemGetInfo(&free_b, &total_b), "cudaMemGetInfo", err)) return false;
     const size_t reserve_b = (size_t) reserve_mib * 1024 * 1024;
     const size_t usable = (free_b > reserve_b) ? (free_b - reserve_b) : 0;
+    const auto& lay = strata::kernels::cpu::expert_layout();
+    const auto blob_of = [&](int64_t layer) -> uint64_t {
+        return lay.native ? lay.blob_bytes(layer) : (uint64_t) BLOB;
+    };
 
-    // take experts in assignment order until the device is full (each blob is BLOB bytes)
+    // take experts in assignment order until the device is full
     std::vector<std::pair<int32_t, int32_t>> mine;
     size_t bytes = 0;
     for (const auto& p : assign) {
-        if (bytes + BLOB > usable) break;
+        if (bytes + blob_of(p.first) > usable) break;
         mine.push_back(p);
-        bytes += BLOB;
+        bytes += blob_of(p.first);
     }
     if (mine.empty()) {
         char buf[256];
@@ -137,27 +151,44 @@ bool MaxwellExperts::open(int device,
     device_ = device;
     n_layers_ = n_layers;
     n_expert_ = n_expert;
-    {
-        // DEBUG: confirm geometry and first assignments
-        std::fprintf(stderr, "Maxwell DEBUG open: dev=%d n_layers=%lld n_expert=%lld assign_size=%zu\n",
-                     device, (long long) n_layers, (long long) n_expert, assign.size());
-        std::fflush(stderr);
-        for (size_t i = 0; i < assign.size() && i < 3; ++i)
-            std::fprintf(stderr, "Maxwell DEBUG open: assign[%zu]=(%d,%d)\n", i, assign[i].first, assign[i].second);
-            std::fflush(stderr);
-    }
     res_.assign((size_t) n_layers * (size_t) n_expert, -1);
 
+    // THE STORE: a native pack keeps each layer's experts in their own contiguous region (the blobs
+    // differ in size per layer, so a flat slot*BLOB walk cannot address them); a canonical pack keeps
+    // today's flat store.  geo_ carries each region's base and the launch geometry; res_ then holds the
+    // slot WITHIN the layer (native) or the flat slot (canonical).
+    if (lay.native) {
+        std::vector<int64_t> count((size_t) n_layers, 0);
+        for (const auto& p : mine) ++count[(size_t) p.first];
+        geo_.assign((size_t) n_layers, LayerGeo{});
+        size_t off = 0;
+        for (int64_t L = 0; L < n_layers; ++L) {
+            const auto& f = lay.fmt[(size_t) L];
+            LayerGeo& g = geo_[(size_t) L];
+            g.gu_type = f.gu_type;
+            g.base = off;
+            g.blob_bytes = (size_t) f.bytes;
+            if (f.gu_type != 42) {   // the i-quant layer: raw GGUF gate/up rows, the down converted
+                g.o_gate = 0;
+                g.o_up = f.up_off;                       // gate rows first, up rows second (as the source)
+                g.gu_row = f.gu_row;
+                g.d_codes_off = f.down_off;               // the down region, de-interleaved to S2 planar
+                g.d_scales_off = f.down_off + (size_t) H * ROW_D;
+            }
+            off += (size_t) count[(size_t) L] * (size_t) f.bytes;
+        }
+    }
     // allocate the blob store on the device
     if (!check(cudaMalloc(&d_blobs_, bytes), "cudaMalloc blobs", err)) { close(); return false; }
 
-    // Convert each native blob to S2 planar FP16 layout on copy.  The source blob for a native pack
-    // is INTERLEAVED (18 bytes per 64-weight block: fp16 scale + 16 codes, row-major with gu_row/d_row
-    // stride); the Maxwell kernel reads PLANAR (codes and scales in separate planes, as the S2 contract).
-    // One-time cost at startup; the kernel then runs on the validated layout.
-    const auto& lay = strata::kernels::cpu::expert_layout();
-    const bool is_native = lay.native;
-    std::vector<uint8_t> staging(BLOB);
+    // Convert each blob on copy.  The source blob for a native pack is INTERLEAVED (18 bytes per
+    // 64-weight block: fp16 scale + 16 codes, rows at gu_row/d_row strides); the S2 kernels read PLANAR.
+    // A Q2_0 layer (native or canonical) is converted to the S2 planar layout as before; an i-quant
+    // layer keeps its gate/up rows EXACTLY as the GGUF stores them (the kernel reads the raw blocks -
+    // an i-quant row cannot be re-expressed in the S2 form, tools/iq_pack.py) and converts only its
+    // Q2_0 down rows to the S2 planar form, inside the blob, at the layer's own offsets.
+    std::vector<int32_t> per_layer_slot(lay.native ? (size_t) n_layers : 0, 0);
+    std::vector<uint8_t> staging(lay.native ? (size_t) lay.max_blob : BLOB);
     for (size_t i = 0; i < mine.size(); ++i) {
         const int64_t L = mine[i].first;
         const uint8_t* src = src_blob(L, mine[i].second, ctx);
@@ -169,23 +200,57 @@ bool MaxwellExperts::open(int device,
             close();
             return false;
         }
-        if (is_native && (size_t) L < lay.fmt.size()) {
-            // native -> S2 planar: de-interleave each row's 18-byte blocks
+        size_t blob_bytes = (size_t) BLOB, dst_off = i * (size_t) BLOB;
+        int32_t slot = (int32_t) i;
+        if (lay.native) {
             const auto& f = lay.fmt[(size_t) L];
-            uint8_t* dst = staging.data();
-            // gate rows: 2*FF? No - FF rows of gate, FF rows of up, H rows of down.
-            // S2 planar offsets (must match expert_maxwell_geo)
-            const size_t ROW_GU = 640, ROW_D = 160, SC_GU = 40, SC_D = 10;
-            const size_t O_D_CODES = 2ull * 640 * ROW_GU;
-            const size_t O_GU_SCALES = O_D_CODES + 2560ull * ROW_D;
-            const size_t O_D_SCALES = O_GU_SCALES + 2ull * 640 * SC_GU * 2;
-            // gate + up rows
-            for (int r = 0; r < 640; ++r) {
-                for (int half = 0; half < 2; ++half) {   // 0 = gate, 1 = up
-                    const uint8_t* srow = src + (half == 0 ? 0 : f.up_off) + (size_t) r * f.gu_row;
-                    uint8_t* dcode = dst + ((size_t) (2 * r + half)) * ROW_GU;
-                    uint8_t* dscale = dst + O_GU_SCALES + ((size_t) (2 * r + half)) * SC_GU * 2;
-                    for (int b = 0; b < 40; ++b) {
+            const LayerGeo& g = geo_[(size_t) L];
+            blob_bytes = (size_t) f.bytes;
+            slot = per_layer_slot[(size_t) L]++;
+            dst_off = g.base + (size_t) slot * blob_bytes;
+            if (f.gu_type == 42) {
+                // native Q2_0 -> S2 planar: de-interleave each row's 18-byte blocks (as before)
+                uint8_t* dst = staging.data();
+                // S2 planar offsets (must match expert_maxwell_geo)
+                const size_t ROW_GU = 640, ROW_D = 160, SC_GU = 40, SC_D = 10;
+                const size_t O_D_CODES = 2ull * 640 * ROW_GU;
+                const size_t O_GU_SCALES = O_D_CODES + 2560ull * ROW_D;
+                const size_t O_D_SCALES = O_GU_SCALES + 2ull * 640 * SC_GU * 2;
+                // gate + up rows
+                for (int r = 0; r < 640; ++r) {
+                    for (int half = 0; half < 2; ++half) {   // 0 = gate, 1 = up
+                        const uint8_t* srow = src + (half == 0 ? 0 : f.up_off) + (size_t) r * f.gu_row;
+                        uint8_t* dcode = dst + ((size_t) (2 * r + half)) * ROW_GU;
+                        uint8_t* dscale = dst + O_GU_SCALES + ((size_t) (2 * r + half)) * SC_GU * 2;
+                        for (int b = 0; b < 40; ++b) {
+                            const uint8_t* blk = srow + (size_t) b * 18;
+                            dscale[b * 2] = blk[0];
+                            dscale[b * 2 + 1] = blk[1];
+                            std::memcpy(dcode + b * 16, blk + 2, 16);
+                        }
+                    }
+                }
+                // down rows
+                for (int r = 0; r < 2560; ++r) {
+                    const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
+                    uint8_t* dcode = dst + O_D_CODES + (size_t) r * ROW_D;
+                    uint8_t* dscale = dst + O_D_SCALES + (size_t) r * SC_D * 2;
+                    for (int b = 0; b < 10; ++b) {
+                        const uint8_t* blk = srow + (size_t) b * 18;
+                        dscale[b * 2] = blk[0];
+                        dscale[b * 2 + 1] = blk[1];
+                        std::memcpy(dcode + b * 16, blk + 2, 16);
+                    }
+                }
+            } else {
+                // the i-quant layer: gate/up rows VERBATIM (the raw GGUF blocks the kernel decodes),
+                // the Q2_0 down rows de-interleaved into the S2 planar form at the blob's own offsets
+                std::memcpy(staging.data(), src, f.down_off);
+                for (int r = 0; r < H; ++r) {
+                    const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
+                    uint8_t* dcode = staging.data() + g.d_codes_off + (size_t) r * ROW_D;
+                    uint8_t* dscale = staging.data() + g.d_scales_off + (size_t) r * SC_D * 2;
+                    for (int b = 0; b < SC_D; ++b) {
                         const uint8_t* blk = srow + (size_t) b * 18;
                         dscale[b * 2] = blk[0];
                         dscale[b * 2 + 1] = blk[1];
@@ -193,26 +258,14 @@ bool MaxwellExperts::open(int device,
                     }
                 }
             }
-            // down rows
-            for (int r = 0; r < 2560; ++r) {
-                const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
-                uint8_t* dcode = dst + O_D_CODES + (size_t) r * ROW_D;
-                uint8_t* dscale = dst + O_D_SCALES + (size_t) r * SC_D * 2;
-                for (int b = 0; b < 10; ++b) {
-                    const uint8_t* blk = srow + (size_t) b * 18;
-                    dscale[b * 2] = blk[0];
-                    dscale[b * 2 + 1] = blk[1];
-                    std::memcpy(dcode + b * 16, blk + 2, 16);
-                }
-            }
         } else {
             // already S2 planar (canonical pack): direct copy
             std::memcpy(staging.data(), src, BLOB);
         }
-        if (!check(cudaMemcpy((uint8_t*) d_blobs_ + i * BLOB, staging.data(), BLOB,
+        if (!check(cudaMemcpy((uint8_t*) d_blobs_ + dst_off, staging.data(), blob_bytes,
                               cudaMemcpyHostToDevice),
                    "copy blob", err)) { close(); return false; }
-        res_[(size_t) mine[i].first * (size_t) n_expert + (size_t) mine[i].second] = (int32_t) i;
+        res_[(size_t) L * (size_t) n_expert + (size_t) mine[i].second] = slot;
         held_.push_back(mine[i]);
     }
     resident_ = (int64_t) mine.size();
@@ -263,6 +316,126 @@ bool MaxwellExperts::open(int device,
     // calls serialise inside the driver, so parallelising them buys nothing, and the per-layer handoff added
     // ~150 us/layer (29.3 vs 22.2 ms/window).  What pays is shrinking the single finish: the down stage now
     // launches there and scatters straight into the mapped destination (no D2H, no host memcpy).
+    //
+    // THE ROUND-TRIP GATE (native packs): the conversion above is checked on the real data before this
+    // tier answers a token.  The failure mode it exists to catch is the one the first IQ2_XS attempt died
+    // of and never isolated: a wrong offset or row stride in the src->blob conversion decodes PLAUSIBLE
+    // garbage - never a fault, a model that answers nonsense words instead.  One held expert of each
+    // distinct gate/up encoding runs the WHOLE chain on the device (the converted blob, the tier's own
+    // packed ActQ, its own launch path) against the raw source blob dequantized by ggml and dotted in
+    // fp64.  The tolerance is the act + FF quantisation noise the 3060's own native path carries
+    // (~1e-2); a conversion bug is ~1.0 and cannot pass it.
+    if (!geo_.empty()) {
+        ggml_cpu_init();   // the to_float tables (idempotent; native_fmt already did this)
+        int seen[4] = {0, 0, 0, 0};   // by gate/up type: 42, 22, 16, 29
+        double worst = 0.0;
+        for (const auto& pr : held_) {
+            const int64_t L = pr.first, e = pr.second;
+            const auto& f = lay.fmt[(size_t) L];
+            const int ti = f.gu_type == 42 ? 0 : (f.gu_type == 22 ? 1 : (f.gu_type == 16 ? 2 : 3));
+            if (ti < 0 || seen[ti]) continue;
+            seen[ti] = 1;
+            const uint8_t* src = src_blob(L, e, ctx);
+            if (src == nullptr) {
+                err = "MaxwellExperts: the round-trip gate lost its source blob";
+                close();
+                return false;
+            }
+            const auto* tg = ggml_get_type_traits((ggml_type) f.gu_type);
+            const auto* td = ggml_get_type_traits((ggml_type) f.d_type);
+            std::vector<float> G((size_t) FF * H), U((size_t) FF * H), D((size_t) H * FF);
+            for (int64_t r = 0; r < FF; ++r) {
+                tg->to_float(src + (size_t) r * f.gu_row, G.data() + (size_t) r * H, H);
+                tg->to_float(src + f.up_off + (size_t) r * f.gu_row, U.data() + (size_t) r * H, H);
+            }
+            for (int64_t r = 0; r < H; ++r)
+                td->to_float(src + f.down_off + (size_t) r * f.d_row, D.data() + (size_t) r * FF, FF);
+            // the activation: deterministic, the engine's own ActQ (what the dispatch hands the tier)
+            std::vector<float> x(H);
+            std::mt19937 rng(1234 + (int) L * 31 + (int) e);
+            std::normal_distribution<float> nd(0.f, 1.f);
+            for (auto& v : x) v = nd(rng);
+            strata::kernels::cpu::ActQ a;
+            strata::kernels::cpu::act_quant_any(x.data(), (int) H, a);
+            // the reference: the float expert (fp64 dots, the SwiGLU in fp32 as the kernels have it)
+            std::vector<float> ref(H), h((size_t) FF);
+            for (int64_t r = 0; r < FF; ++r) {
+                double g = 0, u = 0;
+                for (int64_t i = 0; i < H; ++i) {
+                    g += (double) G[(size_t) r * H + i] * x[i];
+                    u += (double) U[(size_t) r * H + i] * x[i];
+                }
+                h[(size_t) r] = (float) (g / (1.0 + std::exp(-g)) * u);
+            }
+            for (int64_t r = 0; r < H; ++r) {
+                double o = 0;
+                for (int64_t i = 0; i < FF; ++i) o += (double) D[(size_t) r * FF + i] * h[i];
+                ref[(size_t) r] = (float) o;
+            }
+            // the device: one job through the CONVERTED blob, the tier's own launch path
+            const LayerGeo& g = geo_[(size_t) L];
+            const int32_t slot = res_[(size_t) L * (size_t) n_expert_ + (size_t) e];
+            const size_t nc4 = (size_t) (H / 32) * 4;
+            std::memcpy(h_acts_, a.q, H);
+            std::memcpy(h_acts_ + H, a.scale, nc4);
+            std::memcpy(h_acts_ + H + nc4, a.hx, nc4);
+            h_jobs_ = (int32_t*) (h_up_ + (size_t) 1 * ACTS_STRIDE);   // one token, re-based as begin_chain
+            d_jobs_ = (int32_t*) (d_up_ + (size_t) 1 * ACTS_STRIDE);
+            h_jobs_[0] = slot; h_jobs_[1] = 0; h_jobs_[2] = 0;
+            if (!check(cudaMemcpyAsync(d_up_, h_up_, (size_t) 1 * ACTS_STRIDE + 3 * sizeof(int32_t),
+                                       cudaMemcpyHostToDevice, streams_[0]), "round-trip upload", err)) {
+                close();
+                return false;
+            }
+            if (g.gu_type == 42) {
+                if (s2_expert_maxwell_v2()) {
+                    s2_expert_maxwell_gup_quant_batch_async(d_blobs_ + g.base, d_jobs_, 1, d_acts_,
+                                                            d_faq_, d_fascale_, d_fahx_, streams_[0]);
+                } else {
+                    s2_expert_maxwell_gup_batch_async(d_blobs_ + g.base, d_jobs_, 1, d_acts_, d_ff_,
+                                                      streams_[0]);
+                    s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_, FF / 32,
+                                                     streams_[0]);
+                }
+            } else {
+                iq_expert_maxwell_gup_quant_batch_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes,
+                                                        d_jobs_, 1, d_acts_, g.o_gate, g.o_up, g.gu_row,
+                                                        d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0]);
+            }
+            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, 1, d_faq_, d_fascale_, d_fahx_,
+                                               d_out_, g.blob_bytes, g.d_codes_off, g.d_scales_off,
+                                               streams_[0]);
+            if (!check(cudaStreamSynchronize(streams_[0]), "round-trip sync", err)) { close(); return false; }
+            if (!check(cudaMemcpy(h_out_, d_out_, (size_t) H * sizeof(float), cudaMemcpyDeviceToHost),
+                       "round-trip download", err)) { close(); return false; }
+            double num = 0, den = 0;
+            for (int64_t r = 0; r < H; ++r) {
+                num += std::fabs((double) h_out_[r] - ref[(size_t) r]);
+                den += std::fabs((double) ref[(size_t) r]);
+            }
+            const double rv = num / (den + 1e-30);
+            worst = std::max(worst, rv);
+            std::fprintf(stderr, "MaxwellExperts (CUDA%d): round-trip gate layer %lld expert %lld "
+                                 "(%s): rel %.2e vs the float reference\n",
+                         device_, (long long) L, (long long) e,
+                         ggml_type_name((ggml_type) f.gu_type), rv);
+            std::fflush(stderr);
+            if (rv > 3e-2) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                              "MaxwellExperts (CUDA%d): the round-trip gate FAILED on layer %lld "
+                              "expert %lld (%s): rel %.2e > 3e-2 - the conversion is wrong, refusing",
+                              device_, (long long) L, (long long) e,
+                              ggml_type_name((ggml_type) f.gu_type), rv);
+                err = buf;
+                close();
+                return false;
+            }
+        }
+        std::fprintf(stderr, "MaxwellExperts (CUDA%d): round-trip gate PASSED (worst rel %.2e, "
+                             "%lld blobs converted)\n", device_, worst, (long long) resident_);
+        std::fflush(stderr);
+    }
     return true;
 }
 
@@ -387,14 +560,24 @@ bool MaxwellExperts::begin_chain(std::string& err) {
                                cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
-    // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.
-    if (s2_expert_maxwell_v2()) {
-        s2_expert_maxwell_gup_quant_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_faq_,
-                                                d_fascale_, d_fahx_, streams_[0]);
+    // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.  A native pack's
+    // i-quant layers (IQ2_S/IQ2_XXS/IQ1_M) take the IQ kernel - it is fused by construction, and the
+    // STRATA_S2_V2 arm is the S2 form's geometry A/B, not a choice the i-quant path offers.
+    const LayerGeo& g = geo_of(layer);
+    if (g.gu_type == 42) {
+        if (s2_expert_maxwell_v2()) {
+            s2_expert_maxwell_gup_quant_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_acts_,
+                                                    d_faq_, d_fascale_, d_fahx_, streams_[0]);
+        } else {
+            s2_expert_maxwell_gup_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_acts_, d_ff_,
+                                              streams_[0]);
+            s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
+                                             (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
+        }
     } else {
-        s2_expert_maxwell_gup_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_ff_, streams_[0]);
-        s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
-                                         (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
+        iq_expert_maxwell_gup_quant_batch_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_jobs_,
+                                                (int) jobs.size(), d_acts_, g.o_gate, g.o_up, g.gu_row,
+                                                d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0]);
     }
     // The TOKEN path hands begin() the mapped destination: its down stage launches HERE and scatters each row
     // straight into `w_dst_` (the job table already carries every row's destination), so it runs while the
@@ -406,11 +589,13 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // fp16 rows (opt-in): H halves packed into the fp32 row's own slot (the first H/2 floats), so
             // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
             // cross the uplink; the verifier's row copy converts them back (its kind16 flags mark them).
-            s2_expert_maxwell_down_batch_f16_async(d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_,
-                                                   d_fahx_, (uint16_t*) w_dst_, streams_[0]);
+            s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
+                                                   d_fascale_, d_fahx_, (uint16_t*) w_dst_, g.blob_bytes,
+                                                   g.d_codes_off, g.d_scales_off, streams_[0]);
         } else {
-            s2_expert_maxwell_down_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_, d_fahx_,
-                                               w_dst_, streams_[0]);
+            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
+                                               d_fascale_, d_fahx_, w_dst_, g.blob_bytes, g.d_codes_off,
+                                               g.d_scales_off, streams_[0]);
         }
         down_launched_ = true;
     }
@@ -480,8 +665,10 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         for (size_t j = 0; j < owned_row_.size(); ++j) h_jobs_[j * 3 + 2] = (int32_t) j;
         if (!check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                    cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
-        s2_expert_maxwell_down_batch_async(d_blobs_, d_jobs_, (int) owned_row_.size(), d_faq_, d_fascale_, d_fahx_,
-                                           d_out_, streams_[0]);
+        const LayerGeo& g = geo_of(w_layer_);
+        s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
+                                           d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
+                                           g.d_scales_off, streams_[0]);
         down_launched_ = true;
     }
     if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;

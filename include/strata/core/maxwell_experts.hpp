@@ -32,6 +32,7 @@
 #include <cuda_runtime.h>
 
 #include "strata/kernels/cpu/expert.hpp"
+#include "strata/kernels/cuda/expert_maxwell.hpp"   // expert_maxwell_geo (the blob geometry)
 
 namespace strata::core {
 
@@ -99,11 +100,30 @@ private:
     std::atomic<int64_t> computed_{0};
     double gib_ = 0.0;
 
+    // A native pack's per-layer blob geometry (open() builds it): each layer's experts are contiguous
+    // in their own region of d_blobs_ (its blobs differ in size from other layers'), the gate/up rows
+    // keep their RAW GGUF block layouts for the IQ kernel (o_gate/o_up/gu_row), and the down rows are
+    // converted to the S2 planar form at d_codes_off/d_scales_off.  Empty = the canonical Q2_0 pack:
+    // the flat store, the compile-time S2 geometry (the 42/s2_ defaults).
+    struct LayerGeo {
+        int gu_type = 42;
+        size_t base = 0;                                        ///< the region's offset inside d_blobs_
+        size_t blob_bytes = (size_t) strata::kernels::cuda::expert_maxwell_geo::BLOB;
+        size_t o_gate = 0, o_up = 0, gu_row = 0;                ///< the raw GGUF gate/up rows (i-quant layers)
+        size_t d_codes_off = strata::kernels::cuda::expert_maxwell_geo::O_D_CODES;
+        size_t d_scales_off = strata::kernels::cuda::expert_maxwell_geo::O_D_SCALES;
+    };
+    std::vector<LayerGeo> geo_;   ///< per layer (native packs); empty = the canonical flat store
+    const LayerGeo& geo_of(int64_t layer) const {
+        static const LayerGeo canonical{};
+        return geo_.empty() ? canonical : geo_[(size_t) layer];
+    }
+
     // device memory: one contiguous blob store + activation/output/scratch.
     // P3.1 batched: ff/faq/out buffers are per-ENTRY (cap_entries), not per-expert, so all stage1
     // launches queue without intermediate sync, one D2H collects all ff, one H2D uploads all ffq,
     // all stage2 launch, one D2H collects results.  4 transfers + 2 syncs per layer, not per expert.
-    uint8_t* d_blobs_ = nullptr;    // resident_ * BLOB bytes, the expert blobs
+    uint8_t* d_blobs_ = nullptr;    // resident_ blobs: flat (canonical) or per-layer regions (native)
     // P6.x: ONE contiguous staging region per device: [packed acts][job table].  The host packs the acts at
     // offset 0 and the job table right after (n_tok * ACTS_STRIDE), the device mirrors the layout, so a
     // layer costs ONE async upload instead of two (measured: a CUDA call is ~4 us in this VM).

@@ -21,6 +21,28 @@
 
 namespace strata::kernels::cuda {
 
+/// Byte geometry of the blob (exported so the test can build a valid blob without duplicating constants).
+namespace expert_maxwell_geo {
+    inline constexpr int H = 2560;
+    inline constexpr int FF = 640;
+    inline constexpr int QK = 64;
+    inline constexpr int ROW_GU = H * 2 / 8;
+    inline constexpr int ROW_D = FF * 2 / 8;
+    inline constexpr int SC_GU = H / QK;
+    inline constexpr int SC_D = FF / QK;
+    // one expert = gate + up + down rows.  Each 64-weight block is BB=18 bytes (2-byte fp16 scale + 16
+    // code bytes), exactly as in include/strata/kernels/cpu/expert.hpp.  Total = 1,382,400 bytes.
+    inline constexpr size_t BLOB = (2ull * FF * (H / QK) + (size_t) H * (FF / QK)) * 18;
+    inline constexpr size_t O_GU_CODES = 0;
+    inline constexpr size_t O_D_CODES = 2ull * FF * ROW_GU;
+    inline constexpr size_t O_GU_SCALES = O_D_CODES + 1ull * H * ROW_D;
+    // scales are fp16 (2 bytes each), exactly as in the CPU header (SC_GU * 2, SC_D * 2)
+    inline constexpr size_t O_D_SCALES = O_GU_SCALES + 2ull * FF * SC_GU * 2;
+    // one token's packed ActQ for the batch kernels: [q H][scale (H/32)*4][hx (H/32)*4] contiguous, so the
+    // per-layer upload copies only n_tok * ACTS_STRIDE bytes instead of the whole 64-token window.
+    inline constexpr int ACTS_STRIDE = H + 2 * (H / 32) * 4;
+}
+
 /// One S2 expert on a Maxwell device: `out(H) = down( swiglu( gate(x), up(x) ) )`, with the EXACT
 /// integer-dot + hx-correction contract of the CPU pool (row_dot in src/kernels/cpu/expert.cpp).
 ///
@@ -77,38 +99,22 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                                              float* d_ff_dbg = nullptr, cudaStream_t stream = 0);
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
-                                        float* d_out, cudaStream_t stream = 0);
+                                        float* d_out, size_t blob_stride = expert_maxwell_geo::BLOB,
+                                        size_t d_codes_off = expert_maxwell_geo::O_D_CODES,
+                                        size_t d_scales_off = expert_maxwell_geo::O_D_SCALES,
+                                        cudaStream_t stream = 0);
 /// v2 ONLY: the down stage with fp16 rows (half the uplink bytes when the destination is mapped host
 /// memory; the verifier converts them back during its row copy).  `d_out16` holds H halves per entry.
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                             const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
-                                            uint16_t* d_out16, cudaStream_t stream = 0);
+                                            uint16_t* d_out16, size_t blob_stride = expert_maxwell_geo::BLOB,
+                                            size_t d_codes_off = expert_maxwell_geo::O_D_CODES,
+                                            size_t d_scales_off = expert_maxwell_geo::O_D_SCALES,
+                                            cudaStream_t stream = 0);
 void s2_expert_maxwell_sync();
 
 /// Whether the v2 batch kernels are enabled (STRATA_S2_V2, default on): the caller picks the fused
 /// gup_quant call when true, the v1 gup_batch + quant_ff pair otherwise.
 bool s2_expert_maxwell_v2();
-
-/// Byte geometry of the blob (exported so the test can build a valid blob without duplicating constants).
-namespace expert_maxwell_geo {
-    inline constexpr int H = 2560;
-    inline constexpr int FF = 640;
-    inline constexpr int QK = 64;
-    inline constexpr int ROW_GU = H * 2 / 8;
-    inline constexpr int ROW_D = FF * 2 / 8;
-    inline constexpr int SC_GU = H / QK;
-    inline constexpr int SC_D = FF / QK;
-    // one expert = gate + up + down rows.  Each 64-weight block is BB=18 bytes (2-byte fp16 scale + 16
-    // code bytes), exactly as in include/strata/kernels/cpu/expert.hpp.  Total = 1,382,400 bytes.
-    inline constexpr size_t BLOB = (2ull * FF * (H / QK) + (size_t) H * (FF / QK)) * 18;
-    inline constexpr size_t O_GU_CODES = 0;
-    inline constexpr size_t O_D_CODES = 2ull * FF * ROW_GU;
-    inline constexpr size_t O_GU_SCALES = O_D_CODES + 1ull * H * ROW_D;
-    // scales are fp16 (2 bytes each), exactly as in the CPU header (SC_GU * 2, SC_D * 2)
-    inline constexpr size_t O_D_SCALES = O_GU_SCALES + 2ull * FF * SC_GU * 2;
-    // one token's packed ActQ for the batch kernels: [q H][scale (H/32)*4][hx (H/32)*4] contiguous, so the
-    // per-layer upload copies only n_tok * ACTS_STRIDE bytes instead of the whole 64-token window.
-    inline constexpr int ACTS_STRIDE = H + 2 * (H / 32) * 4;
-}
 
 }  // namespace strata::kernels::cuda
