@@ -348,16 +348,22 @@ __device__ __forceinline__ int dot16_s2_lut(int c, const int4 q, const uint32_t*
     return (s0 + s1) + (s2 + s3);
 }
 
-__device__ __forceinline__ void block_pair_s2_lut(const uint8_t* __restrict__ codes,
-                                                  const int8_t* __restrict__ sq,
+// same, with the code block ALREADY loaded (software pipelining)
+__device__ __forceinline__ void block_pair_s2_pre(const int4 c4, const int8_t* __restrict__ sq,
                                                   const uint32_t* __restrict__ lut, int& dot0, int& dot1) {
-    const int4 c4 = *(const int4*) codes;
     const int4 q0 = *(const int4*) (sq);
     const int4 q1 = *(const int4*) (sq + 16);
     const int4 q2 = *(const int4*) (sq + 32);
     const int4 q3 = *(const int4*) (sq + 48);
     dot0 = dot16_s2_lut(c4.x, q0, lut) + dot16_s2_lut(c4.y, q1, lut);
     dot1 = dot16_s2_lut(c4.z, q2, lut) + dot16_s2_lut(c4.w, q3, lut);
+}
+
+__device__ __forceinline__ void block_pair_s2_lut(const uint8_t* __restrict__ codes,
+                                                  const int8_t* __restrict__ sq,
+                                                  const uint32_t* __restrict__ lut, int& dot0, int& dot1) {
+    const int4 c4 = *(const int4*) codes;
+    block_pair_s2_pre(c4, sq, lut, dot0, dot1);
 }
 
 __device__ __forceinline__ void block_pair_s2_smem(const uint8_t* __restrict__ codes,
@@ -408,16 +414,23 @@ __global__ void expert_s2_stage1_batch_v2(const uint8_t* __restrict__ blobs, con
     const uint8_t* uc = blob + O_GU_CODES + (size_t) (2 * row + 1) * ROW_GU;
     const uint8_t* us = blob + O_GU_SCALES + (size_t) (2 * row + 1) * SC_GU * 2;
     float accg = 0.f, corg = 0.f, accu = 0.f, coru = 0.f;
+    // software pipeline: the next iteration's code blocks are loaded BEFORE the current dot runs, so the
+    // global latency overlaps the vmad work (the measured gap between the pure-load pattern and the kernel).
+    int4 ng = make_int4(0,0,0,0), nu = make_int4(0,0,0,0);
+    if (part < SC_GU) { ng = *(const int4*) (gc + part * 16); nu = *(const int4*) (uc + part * 16); }
     for (int b = part; b < SC_GU; b += SPLIT) {
+        const int4 cg4 = ng, cu4 = nu;
+        const int nb = b + SPLIT;
+        if (nb < SC_GU) { ng = *(const int4*) (gc + nb * 16); nu = *(const int4*) (uc + nb * 16); }
         const float dg = read_scale(gs, b);
         int d0 = 0, d1 = 0;
-        block_pair_s2_lut(gc + b * 16, sq + (2 * b) * 32, slut, d0, d1);
+        block_pair_s2_pre(cg4, sq + (2 * b) * 32, slut, d0, d1);
         accg += dg * ssc[2 * b] * (float) d0;
         accg += dg * ssc[2 * b + 1] * (float) d1;
         corg += dg * (shx[2 * b] + shx[2 * b + 1]);
         const float du = read_scale(us, b);
         int e0 = 0, e1 = 0;
-        block_pair_s2_lut(uc + b * 16, sq + (2 * b) * 32, slut, e0, e1);
+        block_pair_s2_pre(cu4, sq + (2 * b) * 32, slut, e0, e1);
         accu += du * ssc[2 * b] * (float) e0;
         accu += du * ssc[2 * b + 1] * (float) e1;
         coru += du * (shx[2 * b] + shx[2 * b + 1]);
