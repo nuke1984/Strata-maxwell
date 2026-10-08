@@ -86,6 +86,29 @@ bool MaxwellExperts::open(int device,
                           int64_t n_layers, int64_t n_expert, int reserve_mib,
                           std::string& err) {
     close();
+    // GUARD: this tier runs only the Q2_0 (S2) expert form.  A native pack may keep other expert encodings
+    // (the IQ2_XS file: IQ2_S / IQ2_XXS / IQ1_M gate/up), and the blob conversion and the kernels below all
+    // assume Q2_0's geometry - an 18-byte block per 64 weights, the fixed 1,382,400-byte blob.  Reading an
+    // i-quant row with it does not fault: it decodes plausible garbage rows, silently (a whole model that
+    // answers nonsense words - measured, logprob about -6 nats/token where a healthy run gives -0.003).
+    // Refuse instead, naming the first offending layer.  42 is ggml's Q2_0 (tools/gguf_reader.py).
+    {
+        const auto& lay = strata::kernels::cpu::expert_layout();
+        if (lay.native) {
+            for (size_t L = 0; L < lay.fmt.size(); ++L) {
+                const auto& f = lay.fmt[L];
+                if (f.gu_type != 42 || f.d_type != 42) {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                                  "MaxwellExperts (CUDA%d): layer %zu keeps its experts as gate/up ggml type "
+                                  "%d and down type %d; this tier only runs the Q2_0 (type 42) expert form",
+                                  device, L, f.gu_type, f.d_type);
+                    err = buf;
+                    return false;
+                }
+            }
+        }
+    }
     DeviceScope scope(device);
     if (!scope.ok) { err = scope.err; return false; }
 
