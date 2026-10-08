@@ -507,6 +507,110 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, con
     }
 }
 
+// v2 + FUSED quantisation: identical to expert_s2_stage1_batch_v2 except that the SwiGLU output is
+// quantised in the epilogue instead of being written to ff.  With SPLIT=4 the block covers exactly one
+// 32-value quant chunk of its job (PER_BLOCK=32, FF/32=20 chunks per job), and the epilogue runs the SAME
+// code as expert_s2_quant_ff over the block's 32 values (one warp, the same shuffle tree), so faq/fasc/fahx
+// are BIT-IDENTICAL to the separate quant kernel and the caller drops that launch entirely.
+template <int SPLIT>
+__global__ void expert_s2_stage1_batch_v2q(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
+                                           int njobs, const uint8_t* __restrict__ acts_base,
+                                           int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                           float* __restrict__ fahx) {
+    static_assert(SPLIT == 4, "the fused quant needs the block to cover exactly one 32-value chunk");
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    static_assert(FF % PER_BLOCK == 0, "v2 stages one job per block: FF must be a multiple of PER_BLOCK");
+    const int row0 = blockIdx.x * PER_BLOCK;
+    if (row0 >= njobs * FF) return;
+    const int j = row0 / FF;                    // every row of this block is in job j (FF % PER_BLOCK == 0)
+    const MaxJob jd = jobs[j];
+    const uint8_t* blob = blobs + (size_t) jd.slot * BLOB;
+    const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
+    __shared__ __align__(16) int8_t sq[H];
+    __shared__ float ssc[H / 32];
+    __shared__ float shx[H / 32];
+    __shared__ uint32_t slut[256];
+    {
+        const int4* srcq = (const int4*) at;
+        int4* dstq = (int4*) sq;
+        for (int i = (int) threadIdx.x; i < H / 16; i += 128) dstq[i] = srcq[i];
+        const float* ssrc = (const float*) (at + H);
+        for (int i = (int) threadIdx.x; i < H / 32; i += 128) {
+            ssc[i] = ssrc[i];
+            shx[i] = ssrc[H / 32 + i];
+        }
+        for (int i = (int) threadIdx.x; i < 256; i += 128) slut[i] = (uint32_t) expand4_s2(i);
+    }
+    __syncthreads();
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);
+    if (idx >= njobs * FF) return;
+    const int row = idx - j * FF;
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* gc = blob + O_GU_CODES + (size_t) (2 * row) * ROW_GU;
+    const uint8_t* gs = blob + O_GU_SCALES + (size_t) (2 * row) * SC_GU * 2;
+    const uint8_t* uc = blob + O_GU_CODES + (size_t) (2 * row + 1) * ROW_GU;
+    const uint8_t* us = blob + O_GU_SCALES + (size_t) (2 * row + 1) * SC_GU * 2;
+    float accg = 0.f, corg = 0.f, accu = 0.f, coru = 0.f;
+    int4 ng = make_int4(0,0,0,0), nu = make_int4(0,0,0,0);
+    if (part < SC_GU) { ng = *(const int4*) (gc + part * 16); nu = *(const int4*) (uc + part * 16); }
+    for (int b = part; b < SC_GU; b += SPLIT) {
+        const int4 cg4 = ng, cu4 = nu;
+        const int nb = b + SPLIT;
+        if (nb < SC_GU) { ng = *(const int4*) (gc + nb * 16); nu = *(const int4*) (uc + nb * 16); }
+        const float dg = read_scale(gs, b);
+        int d0 = 0, d1 = 0;
+        block_pair_s2_pre(cg4, sq + (2 * b) * 32, slut, d0, d1);
+        accg += dg * ssc[2 * b] * (float) d0;
+        accg += dg * ssc[2 * b + 1] * (float) d1;
+        corg += dg * (shx[2 * b] + shx[2 * b + 1]);
+        const float du = read_scale(us, b);
+        int e0 = 0, e1 = 0;
+        block_pair_s2_pre(cu4, sq + (2 * b) * 32, slut, e0, e1);
+        accu += du * ssc[2 * b] * (float) e0;
+        accu += du * ssc[2 * b + 1] * (float) e1;
+        coru += du * (shx[2 * b] + shx[2 * b + 1]);
+    }
+    __shared__ float4 sh[128];
+    __shared__ float sx[32];
+    sh[threadIdx.x] = make_float4(accg, corg, accu, coru);
+    __syncthreads();
+    if (part == 0) {
+        float ag = 0.f, cg = 0.f, au = 0.f, cu = 0.f;
+        for (int s = 0; s < SPLIT; ++s) {
+            const float4 v = sh[threadIdx.x + s];
+            ag += v.x; cg += v.y; au += v.z; cu += v.w;
+        }
+        const float sg = ag - cg;
+        const float su = au - cu;
+        sx[threadIdx.x / SPLIT] = (sg / (1.f + __expf(-sg))) * su;   // row-group order == chunk lane order
+    }
+    __syncthreads();
+    // ONE warp quantises the block's chunk: the exact body of expert_s2_quant_ff (same tree, same roundings)
+    if (threadIdx.x < 32) {
+        const int lane = (int) threadIdx.x;
+        const int chunk = (int) (j * (FF / 32) + (row0 % FF) / PER_BLOCK);
+        const float v = sx[lane];
+        float av = fabsf(v);
+#pragma unroll
+        for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
+        const float amax = __shfl(av, 0);
+        const float sc = amax > 0.f ? amax / 127.f : 0.f;
+        const float inv = sc > 0.f ? 1.f / sc : 0.f;
+        const float t = __fmul_rn(v, inv);
+        const float r = __fadd_rn(t, (t >= 0.f) ? 0.5f : -0.5f);
+        int qi = __float2int_rz(r);
+        qi = qi < -127 ? -127 : (qi > 127 ? 127 : qi);
+        faq[(size_t) chunk * 32 + lane] = (int8_t) qi;
+        int ssum = qi;
+#pragma unroll
+        for (int s = 16; s > 0; s >>= 1) ssum += __shfl_down(ssum, s);
+        if (lane == 0) {
+            fasc[chunk] = sc;
+            fahx[chunk] = __fmul_rn(sc, (float) ssum);
+        }
+    }
+}
+
 // v2 is the DEFAULT (measured: ~30% faster kernels, parity-bit-identical, window -8.9% on the engine);
 // STRATA_S2_V2=0 restores the v1 kernels for an A/B.
 inline bool s2_v2_enabled() {
@@ -537,6 +641,8 @@ inline int s2_split_down() {
 }
 
 }  // namespace
+
+bool s2_expert_maxwell_v2() { return s2_v2_enabled(); }
 
 void s2_expert_maxwell(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
                        const float* d_ahx, float* d_out) {
@@ -687,6 +793,17 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     }
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+}
+
+void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                             const uint8_t* acts_base, int8_t* d_faq, float* d_fasc,
+                                             float* d_fahx, cudaStream_t stream) {
+    if (njobs <= 0) return;
+    constexpr int SPLIT = 4;   // the fusion requires the block to cover exactly one 32-value chunk
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    const int rows = njobs * FF;
+    expert_s2_stage1_batch_v2q<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+        d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_faq, d_fasc, d_fahx);
 }
 
 void s2_expert_maxwell_down(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,

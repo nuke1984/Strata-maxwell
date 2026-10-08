@@ -30,6 +30,8 @@ using strata::kernels::cuda::s2_expert_maxwell_down_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
+using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
+using strata::kernels::cuda::s2_expert_maxwell_v2;
 using strata::kernels::cuda::s2_expert_maxwell_sync;
 
 constexpr int H = 2560;
@@ -359,9 +361,17 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait
     if (!check(cudaMemcpyAsync(d_up_, h_up_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
                                cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
-    s2_expert_maxwell_gup_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_ff_, streams_[0]);
-    s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
-                                     (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
+    // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
+    // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
+    // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.
+    if (s2_expert_maxwell_v2()) {
+        s2_expert_maxwell_gup_quant_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_faq_,
+                                                d_fascale_, d_fahx_, streams_[0]);
+    } else {
+        s2_expert_maxwell_gup_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_acts_, d_ff_, streams_[0]);
+        s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
+                                         (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
+    }
     // The TOKEN path hands begin() the mapped destination: its down stage launches HERE and scatters each row
     // straight into `w_dst_` (the job table already carries every row's destination), so it runs while the
     // caller finishes the layer - no D2H copy and no host scatter.  The prefill's destination is only known at

@@ -53,10 +53,23 @@ void s2_expert_maxwell_quant_ff_async(const float* d_ff, int8_t* d_q, float* d_s
 /// and the per-job buffers are contiguous (d_ff + j*FF, d_out + j*H, ...).
 void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                        const uint8_t* acts_base, float* d_ff, cudaStream_t stream = 0);
+/// v2 ONLY: gate+up AND the FF-wide quantisation in ONE launch.  The v2 kernel's block covers exactly one
+/// 32-value quant chunk of its job (FF/32 = 20 chunks per job, PER_BLOCK = 32), so the SwiGLU output is
+/// quantised in the epilogue with the SAME shuffle tree as s2_expert_maxwell_quant_ff_async - bit-identical,
+/// and the caller drops the separate quant_ff launch (measured: ~4 us of API per device per layer in this VM
+/// plus the quant kernel off the chain).  Callers use this when s2_expert_maxwell_v2() is true and fall back
+/// to gup_batch + quant_ff otherwise.
+void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                             const uint8_t* acts_base, int8_t* d_faq, float* d_fasc,
+                                             float* d_fahx, cudaStream_t stream = 0);
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, cudaStream_t stream = 0);
 void s2_expert_maxwell_sync();
+
+/// Whether the v2 batch kernels are enabled (STRATA_S2_V2, default on): the caller picks the fused
+/// gup_quant call when true, the v1 gup_batch + quant_ff pair otherwise.
+bool s2_expert_maxwell_v2();
 
 /// Byte geometry of the blob (exported so the test can build a valid blob without duplicating constants).
 namespace expert_maxwell_geo {

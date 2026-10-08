@@ -327,6 +327,46 @@ int main(int argc, char** argv) {
             if (ae > 1e-4 && re > 1e-4) ++batch_bad2;   // the device quantisation adds its own rounding
         }
         std::printf("batch stage2:     max abs %.6g, max rel %.6g, bad %d/%d\n", ab2, rl2, batch_bad2, H);
+
+        // FUSED PATH (v2 default): gate+up and the FF quantisation in ONE launch.  The quantised
+        // intermediate must be BIT-IDENTICAL to the pair above (same shuffle tree, same roundings) and the
+        // final rows must match too.
+        if (strata::kernels::cuda::s2_expert_maxwell_v2()) {
+            int8_t* d_faqb2 = nullptr;
+            float *d_fascb2 = nullptr, *d_fahxb2 = nullptr;
+            float* d_outb2 = nullptr;
+            check(cudaMalloc(&d_faqb2, FF), "fused: cudaMalloc faq");
+            check(cudaMalloc(&d_fascb2, (FF / 32) * sizeof(float)), "fused: cudaMalloc fasc");
+            check(cudaMalloc(&d_fahxb2, (FF / 32) * sizeof(float)), "fused: cudaMalloc fahx");
+            check(cudaMalloc(&d_outb2, H * sizeof(float)), "fused: cudaMalloc out");
+            strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async(d_blob, d_jobs, 1, d_acts, d_faqb2,
+                                                                           d_fascb2, d_fahxb2, 0);
+            strata::kernels::cuda::s2_expert_maxwell_down_batch_async(d_blob, d_jobs, 1, d_faqb2, d_fascb2,
+                                                                      d_fahxb2, d_outb2, 0);
+            check(cudaDeviceSynchronize(), "fused: sync");
+            std::vector<int8_t> faqb(FF), faqb2(FF);
+            std::vector<float> fascb(FF / 32), fascb2(FF / 32), fahxb(FF / 32), fahxb2(FF / 32), outb2(H);
+            check(cudaMemcpy(faqb.data(), d_faqb, FF, cudaMemcpyDeviceToHost), "batch: copy faq");
+            check(cudaMemcpy(fascb.data(), d_fascb, (FF / 32) * sizeof(float), cudaMemcpyDeviceToHost), "batch: copy fasc");
+            check(cudaMemcpy(fahxb.data(), d_fahxb, (FF / 32) * sizeof(float), cudaMemcpyDeviceToHost), "batch: copy fahx");
+            check(cudaMemcpy(faqb2.data(), d_faqb2, FF, cudaMemcpyDeviceToHost), "fused: copy faq");
+            check(cudaMemcpy(fascb2.data(), d_fascb2, (FF / 32) * sizeof(float), cudaMemcpyDeviceToHost), "fused: copy fasc");
+            check(cudaMemcpy(fahxb2.data(), d_fahxb2, (FF / 32) * sizeof(float), cudaMemcpyDeviceToHost), "fused: copy fahx");
+            check(cudaMemcpy(outb2.data(), d_outb2, H * sizeof(float), cudaMemcpyDeviceToHost), "fused: copy out");
+            int diff_q = 0, diff_s = 0, diff_h = 0, diff_o = 0;
+            for (int i = 0; i < FF; ++i) if (faqb[i] != faqb2[i]) ++diff_q;
+            for (int i = 0; i < FF / 32; ++i) {
+                if (std::memcmp(&fascb[i], &fascb2[i], 4) != 0) ++diff_s;
+                if (std::memcmp(&fahxb[i], &fahxb2[i], 4) != 0) ++diff_h;
+            }
+            for (int i = 0; i < H; ++i) if (std::memcmp(&outb[i], &outb2[i], 4) != 0) ++diff_o;
+            std::printf("fused vs pair:   q %d/%d, scale %d/%d, hx %d/%d, out %d/%d diff (0 expected)\n",
+                        diff_q, FF, diff_s, FF / 32, diff_h, FF / 32, diff_o, H);
+            if (diff_q || diff_s || diff_h || diff_o) {
+                std::fprintf(stderr, "FUSED PATH NOT BIT-IDENTICAL\n");
+                return 1;
+            }
+        }
     }
 
     if (bad1 > 0 || bad > 0 || batch_bad1 > 0 || batch_bad2 > 0) {
