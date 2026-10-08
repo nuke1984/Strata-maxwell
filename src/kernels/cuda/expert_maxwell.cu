@@ -531,7 +531,7 @@ inline int s2_split_down() {
     static const int v = [] {
         const char* e = std::getenv("STRATA_S2_SPLIT_D");
         const int x = e ? std::atoi(e) : 2;
-        return (x == 2 || x == 4 || x == 8) ? x : 2;
+        return (x == 1 || x == 2 || x == 4 || x == 8) ? x : 2;
     }();
     return v;
 }
@@ -670,7 +670,10 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     const int rows = njobs * H;
     if (s2_v2_enabled()) {
         const int sp = s2_split_down();
-        if (sp == 4) {
+        if (sp == 1) {
+            expert_s2_stage2_batch_v2<1><<<(rows + 127) / 128, 128, 0, stream>>>(
+                d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+        } else if (sp == 4) {
             expert_s2_stage2_batch_v2<4><<<(rows + 32 - 1) / 32, 128, 0, stream>>>(
                 d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
         } else if (sp == 8) {
