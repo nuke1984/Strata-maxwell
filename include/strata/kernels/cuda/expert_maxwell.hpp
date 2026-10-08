@@ -62,6 +62,19 @@ void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                              const uint8_t* acts_base, int8_t* d_faq, float* d_fasc,
                                              float* d_fahx, cudaStream_t stream = 0);
+/// A native pack's i-quant layer's gate/up + the SAME fused FF quantisation, for the blobs the tier
+/// converts at open() (see MaxwellExperts): the gate/up rows keep their RAW GGUF block layouts at
+/// `o_gate`/`o_up`, `gu_row` bytes per row, `blob_stride` bytes per blob (a native pack's blob size is
+/// per layer).  `acts_base` is the same packed ActQ the S2 call reads: ActQ.q is block_q8_1.qs bit for
+/// bit and the kernel rounds each chunk's scale to the d the device q8_1 quantizer stores, so the
+/// numbers match the 3060's native expert path.  `gu_type`: 22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M; anything
+/// else refuses.  The FF image (faq/fasc/fahx) is bit-identical to the S2 path's, so the down stage
+/// consumes it unchanged.
+void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
+                                             const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
+                                             size_t o_gate, size_t o_up, size_t gu_row,
+                                             int8_t* d_faq, float* d_fasc, float* d_fahx,
+                                             float* d_ff_dbg = nullptr, cudaStream_t stream = 0);
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, cudaStream_t stream = 0);

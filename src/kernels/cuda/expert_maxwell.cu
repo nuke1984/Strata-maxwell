@@ -17,6 +17,15 @@
 #include <cstdio>
 #include <cstdlib>
 
+// The i-quant block layouts, the codebook grids and the iq1m scale union, exactly as the engine's own
+// i-quant kernels take them (src/kernels/cuda/iq_kernels.cu includes the same file the same way): the
+// grids are __device__ tables defined by GGML_COMMON_IMPL_CUDA and land in this sm_50 translation unit.
+// MIT license, third_party/ggml (see its LICENSE and VERSION.txt).
+#include <cuda_fp16.h>
+#define GGML_COMMON_DECL_CUDA
+#define GGML_COMMON_IMPL_CUDA
+#include "ggml-common.h"
+
 namespace strata::kernels::cuda {
 namespace {
 
@@ -660,6 +669,254 @@ inline int s2_split_down() {
     return v;
 }
 
+// ---------------------------------------------------------------------------------------------------------
+// IQ gate/up (a native pack's i-quant layers).  An i-quant row cannot be re-expressed in the S2 pack
+// form (tools/iq_pack.py refuses it), so the blob's gate/up rows keep their RAW GGUF block layouts and
+// the dot products below are the engine's own (src/kernels/cuda/iq_kernels.cu, transcribed from
+// llama.cpp's vecdotq.cuh), with exactly one change per body: ggml_cuda_dp4a -> dp4a_s32 (the PTX vmad
+// the S2 kernels above already use; llama.cpp's m10-final.patch made the same swap).  The activations
+// are the tier's staged ActQ (the same packed upload the S2 kernels read): ActQ.q IS block_q8_1.qs bit
+// for bit (act_quant_q8_1 and quantize_q8_1_rows compute the same codes - amax/127, +-0.5 away from
+// zero, truncate, clamp +-127), so each q8_1 block is rebuilt in shared memory with
+// d = f2h_rn(scale): the same d bits the device q8_1 quantizer stores, the #606 clamp (|d| past 65504)
+// keeping it finite.  The s half of ds is left zero: none of these three dots reads it (IQ1_M takes its
+// delta sum from the qs bytes themselves, sumy below).
+//
+// fp16 -> fp32 by bits (h2f_dev/low2f_dev), NOT the __half2float intrinsic: __float2half was measured on
+// this M10 compiling to a stub that returns zero (the f2h_rn comment above), so no fp16 conversion
+// intrinsic is trusted here; fp16_to_fp32_dev is bit-identical to the host's strata::fp16_to_fp32.
+__device__ __forceinline__ int get_int_b2(const void* x, const int& i32) {
+    const uint16_t* x16 = (const uint16_t*) x;
+    int x32 = x16[2 * i32 + 0] << 0;
+    x32 |= x16[2 * i32 + 1] << 16;
+    return x32;
+}
+__device__ __forceinline__ int get_int_b4(const void* x, const int& i32) { return ((const int*) x)[i32]; }
+__device__ __forceinline__ uint32_t unpack_ksigns(const uint8_t v) {
+    const uint32_t p = __popc(v) & 1;
+    const uint32_t s = v ^ p << 7;
+    return s * 0x01010101;
+}
+__device__ __forceinline__ float h2f_dev(half h) {
+    return fp16_to_fp32_dev(*reinterpret_cast<const uint16_t*>(&h));
+}
+__device__ __forceinline__ float low2f_dev(half2 h) {
+    return fp16_to_fp32_dev(reinterpret_cast<const uint16_t*>(&h)[0]);
+}
+
+// ---- the dot products (vecdotq.cuh): ggml_cuda_dp4a -> dp4a_s32, __half2float -> h2f_dev,
+// __low2float -> low2f_dev; every other line verbatim from src/kernels/cuda/iq_kernels.cu.
+__device__ __forceinline__ float vec_dot_iq2_xxs_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                      const int& kbx, const int& iqs) {
+    const block_iq2_xxs* bq2 = (const block_iq2_xxs*) vbq + kbx;
+    const int q2 = get_int_b2(bq2->qs, iqs);
+    const uint8_t* aux8 = (const uint8_t*) &q2;
+    const uint32_t aux32 = get_int_b2(bq2->qs, iqs + 1);
+    int sumi = 0;
+#pragma unroll
+    for (int k0 = 0; k0 < 8; k0 += 2) {
+        const uint2 grid_pos = ((const uint2*) iq2xxs_grid)[aux8[k0 / 2]];
+        const uint32_t signs = unpack_ksigns(aux32 >> (7 * k0 / 2));
+        const int signs0 = __vcmpne4(signs & 0x08040201, 0);
+        const int grid0 = __vsub4(grid_pos.x ^ signs0, signs0);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, k0 + 0);
+        sumi = dp4a_s32(grid0, u0, sumi);
+        const int signs1 = __vcmpne4(signs & 0x80402010, 0);
+        const int grid1 = __vsub4(grid_pos.y ^ signs1, signs1);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, k0 + 1);
+        sumi = dp4a_s32(grid1, u1, sumi);
+    }
+    const int ls = aux32 >> 27 | 1;
+    sumi = sumi * ls / 8;
+    const float d = h2f_dev(bq2->d) * low2f_dev(bq8_1[iqs / 2].ds);
+    return d * sumi;
+}
+
+__device__ __forceinline__ float vec_dot_iq2_s_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                    const int& kbx, const int& iqs) {
+    const block_iq2_s* bq2 = (const block_iq2_s*) vbq + kbx;
+    const int qs_packed = get_int_b2(bq2->qs, iqs / 2);
+    const uint8_t* qs = (const uint8_t*) &qs_packed;
+    const int qh = bq2->qh[iqs / 2];
+    const int signs_packed_32 = get_int_b2(bq2->qs, QK_K / 32 + iqs / 2);
+    const uint8_t* signs_packed_8 = (const uint8_t*) &signs_packed_32;
+    const int ls0 = bq2->scales[iqs / 2] & 0x0F;
+    const int ls1 = bq2->scales[iqs / 2] >> 4;
+    int sumi0 = 0, sumi1 = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const int* grid_pos = (const int*) (iq2s_grid + (qs[l0 / 2] | ((qh << (8 - l0)) & 0x300)));
+        const int signs0 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x03) << 7) | ((signs_packed_8[l0 / 2] & 0x0C) << 21), 0x00000000);
+        const int signs1 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x30) << 3) | ((signs_packed_8[l0 / 2] & 0xC0) << 17), 0x00000000);
+        const int grid_l = __vsub4(grid_pos[0] ^ signs0, signs0);
+        const int grid_h = __vsub4(grid_pos[1] ^ signs1, signs1);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        if (l0 < 4) {
+            sumi0 = dp4a_s32(grid_l, u0, sumi0);
+            sumi0 = dp4a_s32(grid_h, u1, sumi0);
+        } else {
+            sumi1 = dp4a_s32(grid_l, u0, sumi1);
+            sumi1 = dp4a_s32(grid_h, u1, sumi1);
+        }
+    }
+    const int sumi = (sumi0 * ls0 + sumi1 * ls1 + (sumi0 + sumi1) / 2) / 4;
+    const float d = h2f_dev(bq2->d) * low2f_dev(bq8_1[iqs / 2].ds);
+    return d * sumi;
+}
+
+__device__ __forceinline__ float vec_dot_iq1_m_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                    const int& kbx, const int& iqs) {
+    const block_iq1_m* bq1 = (const block_iq1_m*) vbq + kbx;
+    const int qs_packed = get_int_b4(bq1->qs, iqs);
+    const uint8_t* qs = (const uint8_t*) &qs_packed;
+    int sumi[2] = {0, 0};
+    float sumf[2] = {0.0f, 0.0f};
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const int qhl = bq1->qh[2 * iqs + l0 / 4] >> (4 * ((l0 / 2) % 2));
+        const int grid = iq1s_grid_gpu[qs[l0 / 2] | ((qhl & 0x07) << 8)];
+        const int grid0 = (grid >> 0) & 0x0F0F0F0F;
+        const int grid1 = (grid >> 4) & 0x0F0F0F0F;
+        const int u0 = get_int_b4(bq8_1[iqs].qs, l0 + 0);
+        const int u1 = get_int_b4(bq8_1[iqs].qs, l0 + 1);
+        sumi[l0 / 4] = dp4a_s32(grid0, u0, sumi[l0 / 4]);
+        sumi[l0 / 4] = dp4a_s32(grid1, u1, sumi[l0 / 4]);
+        const float delta = -1.0f + IQ1M_DELTA - (qhl & 0x08) * (2.0f * IQ1M_DELTA / 0x08);
+        int sumy = 0;
+        sumy = dp4a_s32(u0, 0x01010101, sumy);
+        sumy = dp4a_s32(u1, 0x01010101, sumy);
+        sumf[l0 / 4] += delta * sumy;
+    }
+    const uint16_t* sc = (const uint16_t*) bq1->scales;
+    iq1m_scale_t scale;
+    scale.u16 = (sc[0] >> 12) | ((sc[1] >> 8) & 0x00F0) | ((sc[2] >> 4) & 0x0F00) | (sc[3] & 0xF000);
+    const float d = h2f_dev(scale.f16) * low2f_dev(bq8_1[iqs].ds);
+    const int tmp = sc[iqs / 2] >> (6 * (iqs % 2));
+    const int sc0 = 2 * ((tmp >> 0) & 0x07) + 1;
+    const int sc1 = 2 * ((tmp >> 3) & 0x07) + 1;
+    return d * ((sumi[0] + sumf[0]) * sc0 + (sumi[1] + sumf[1]) * sc1);
+}
+
+// The formats of the i-quant layers this tier takes (as iq_kernels.cu's Fmt<>): qk = values per block,
+// ipb = dot calls per block, step = the iqs stride between calls.  22 = IQ2_S, 16 = IQ2_XXS, 29 = IQ1_M
+// (the IQ2_XS model file's three gate/up encodings; down is Q2_0 everywhere, the S2 kernel above).
+template <int TY> struct IqFmt;
+template <> struct IqFmt<22> {
+    static constexpr int qk = 256, ipb = 8, step = 2;
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
+        return vec_dot_iq2_s_q8_1(v, y, kbx, iqs);
+    }
+};
+template <> struct IqFmt<16> {
+    static constexpr int qk = 256, ipb = 8, step = 2;
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
+        return vec_dot_iq2_xxs_q8_1(v, y, kbx, iqs);
+    }
+};
+template <> struct IqFmt<29> {
+    static constexpr int qk = 256, ipb = 8, step = 1;
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
+        return vec_dot_iq1_m_q8_1(v, y, kbx, iqs);
+    }
+};
+
+// The IQ gup kernel: the same batched geometry as expert_s2_stage1_batch_v2q (one job's 32 rows per
+// CUDA block, SPLIT=4 threads per row, the SwiGLU output quantised in the SAME epilogue - the same
+// shuffle tree, the same roundings - so the down stage's faq/fasc/fahx are bit-identical to the S2
+// path's and the S2 down kernel consumes them unchanged).  The differences are exactly three: the
+// blob's gate/up rows are raw GGUF blocks at o_gate/o_up with the layer's gu_row stride (not the S2
+// planes), the row walk is lane-strided DOT CALLS (k = part; k < nb*ipb; k += SPLIT, kbx = k/ipb,
+// iqs = step*(k%ipb), exactly the engine's row_dot), and there is no hx correction term (the i-quant
+// grids carry their own signs; the act's d rides inside the dot).
+template <int TY>
+__global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                           const MaxJob* __restrict__ jobs, int njobs,
+                                           const uint8_t* __restrict__ acts_base,
+                                           size_t o_gate, size_t o_up, size_t gu_row,
+                                           int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                           float* __restrict__ fahx, float* __restrict__ ff_dbg) {
+    using F = IqFmt<TY>;
+    constexpr int SPLIT = 4;                 // the fused quant needs the block to cover exactly one chunk
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
+    const int row0 = blockIdx.x * PER_BLOCK;
+    if (row0 >= njobs * FF) return;
+    const int j = row0 / FF;                 // every row of this block is in job j (FF % PER_BLOCK == 0)
+    const MaxJob jd = jobs[j];
+    const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
+    const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
+    __shared__ __align__(16) block_q8_1 sact[H / 32];
+    {
+        // the job's token's activation as q8_1 blocks: ActQ.q verbatim (8 int32 per block, the act is
+        // 4-aligned here), d = f2h_rn(scale) with the #606 clamp, s = 0 (unused by these dots).
+        const int* src = (const int*) at;
+        const float* sc = (const float*) (at + H);
+        for (int k = (int) threadIdx.x; k < H / 32; k += 128) {
+            int* dst = (int*) &sact[k].qs[0];
+            for (int w = 0; w < 8; ++w) dst[w] = src[k * 8 + w];
+            float d = sc[k];
+            d = fabsf(d) > 65504.f ? copysignf(65504.f, d) : d;
+            uint16_t* ds = (uint16_t*) &sact[k].ds;
+            ds[0] = f2h_rn(d);
+            ds[1] = 0;
+        }
+    }
+    __syncthreads();
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (FF % PER_BLOCK == 0)
+    const int row = idx - j * FF;
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* gr = blob + o_gate + (size_t) row * gu_row;
+    const uint8_t* ur = blob + o_up + (size_t) row * gu_row;
+    const int nb = H / F::qk;                // 256-value weight blocks per row (10)
+    float accg = 0.f, accu = 0.f;
+    for (int k = part; k < nb * F::ipb; k += SPLIT) {
+        const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+        accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs);
+        accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs);
+    }
+    __shared__ float2 sh[128];
+    __shared__ float sx[32];
+    sh[threadIdx.x] = make_float2(accg, accu);
+    __syncthreads();
+    if (part == 0) {
+        float ag = 0.f, au = 0.f;
+        for (int s = 0; s < SPLIT; ++s) {
+            const float2 v = sh[threadIdx.x + s];
+            ag += v.x; au += v.y;
+        }
+        const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
+        sx[threadIdx.x / SPLIT] = sxv;
+        if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + row] = sxv;   // the parity tool reads the pre-quant dots
+    }
+    __syncthreads();
+    // ONE warp quantises the block's chunk: the exact body of expert_s2_stage1_batch_v2q's epilogue
+    // (same tree, same roundings), so faq/fasc/fahx are bit-identical to the S2 path's.
+    if (threadIdx.x < 32) {
+        const int lane = (int) threadIdx.x;
+        const int chunk = (int) (j * (FF / 32) + (row0 % FF) / PER_BLOCK);
+        const float v = sx[lane];
+        float av = fabsf(v);
+#pragma unroll
+        for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
+        const float amax = __shfl(av, 0);
+        const float sc = amax > 0.f ? amax / 127.f : 0.f;
+        const float inv = sc > 0.f ? 1.f / sc : 0.f;
+        const float t = __fmul_rn(v, inv);
+        const float r = __fadd_rn(t, (t >= 0.f) ? 0.5f : -0.5f);
+        int qi = __float2int_rz(r);
+        qi = qi < -127 ? -127 : (qi > 127 ? 127 : qi);
+        faq[(size_t) chunk * 32 + lane] = (int8_t) qi;
+        int ssum = qi;
+#pragma unroll
+        for (int s = 16; s > 0; s >>= 1) ssum += __shfl_down(ssum, s);
+        if (lane == 0) {
+            fasc[chunk] = sc;
+            fahx[chunk] = __fmul_rn(sc, (float) ssum);
+        }
+    }
+}
+
 }  // namespace
 
 bool s2_expert_maxwell_v2() { return s2_v2_enabled(); }
@@ -838,6 +1095,40 @@ void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32
     const int rows = njobs * FF;
     expert_s2_stage1_batch_v2q<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_faq, d_fasc, d_fahx);
+}
+
+void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
+                                             const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
+                                             size_t o_gate, size_t o_up, size_t gu_row,
+                                             int8_t* d_faq, float* d_fasc, float* d_fahx,
+                                             float* d_ff_dbg, cudaStream_t stream) {
+    if (njobs <= 0) return;
+    constexpr int SPLIT = 4;   // the fusion requires the block to cover exactly one 32-value chunk
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    const int rows = njobs * FF;
+    const int blocks = (rows + PER_BLOCK - 1) / PER_BLOCK;
+    switch (gu_type) {
+        case 22:   // IQ2_S
+            expert_iq_stage1_batch_v2q<22><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            break;
+        case 16:   // IQ2_XXS
+            expert_iq_stage1_batch_v2q<16><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            break;
+        case 29:   // IQ1_M
+            expert_iq_stage1_batch_v2q<29><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            break;
+        default:
+            std::fprintf(stderr, "iq_expert_maxwell_gup_quant_batch_async: ggml type %d is not an "
+                                 "i-quant this tier's kernels take (22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M)\n",
+                         gu_type);
+            std::exit(1);
+    }
 }
 
 void s2_expert_maxwell_down(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
