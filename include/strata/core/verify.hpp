@@ -240,6 +240,9 @@ public:
     /// The GPU plan the pool writes each layer (VRAM hits + the PCIe share of the misses); give it to the
     /// dispatch (`ExpertDispatch::plan`) before the first `run`.
     GpuPlanSink* plan_sink() { return &sink_; }
+    /// Whether the Maxwell tier writes fp16 rows (the opt-in STRATA_MW_ROWS_F16 path): give it to the
+    /// dispatch (`ExpertDispatch::rows_f16`) before the first `run`.
+    bool rows_f16() const { return h_kind16_ != nullptr; }
     /// Plan v0.3 P6: split the window into two token groups and pipeline the CPU experts of one with the GPU work
     /// of the other (default on).  Set before the first `run`.
     void set_split(bool on) { split_ = on; }
@@ -410,6 +413,10 @@ private:
     bool split_ = false;   // opt-in (--spec-split): exact but slower, see the overlap study
     int groups_[9] = {};
     float* h_ymiss_ = nullptr;   float* m_ymiss_ = nullptr;     // T * k * n_embd
+    /// fp16 expert rows (opt-in, STRATA_MW_ROWS_F16): the Maxwell tier writes its rows as H packed fp16
+    /// halves inside their fp32 row slots and the row copy converts them back (half the uplink bytes).
+    /// `h_kind16_` marks, per entry, which rows are fp16; null = fp32 rows, the default.
+    uint8_t* h_kind16_ = nullptr;    uint8_t* m_kind16_ = nullptr;     // T * k per plan slot
 
     // device
     void* arena_ = nullptr;

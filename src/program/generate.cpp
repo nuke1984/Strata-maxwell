@@ -980,6 +980,7 @@ struct SplitDrive {
     int n = 0;                                    ///< stages
     int64_t end[kMax] = {};                       ///< stage i runs the layers from end[i - 1] (0) below end[i]
     strata::core::GpuPlanSink* plan[kMax] = {};
+    bool rows_f16[kMax] = {};
     const uint8_t* cache_base[kMax] = {};
     const uint64_t* cache_slot_off[kMax] = {};
     int pcie_num[kMax] = {};
@@ -991,6 +992,7 @@ void drive_pool_split(void* user, const float* x_f, const int32_t* ids, int64_t 
     while (st + 1 < s->n && layer >= s->end[st]) ++st;
     Drive& d = *s->base;
     d.d.plan = s->plan[st];
+    d.d.rows_f16 = s->rows_f16[st];
     d.d.cache_base = s->cache_base[st];
     d.d.cache_slot_off = s->cache_slot_off[st];
     d.d.pcie_num = s->pcie_num[st];
@@ -6350,6 +6352,7 @@ int main(int argc, char** argv) {
         }
         for (int st = 0; st < n_stages && n_stages > 1; ++st) {
             split_drive.plan[st] = stage_ver(st).plan_sink();
+            split_drive.rows_f16[st] = stage_ver(st).rows_f16();
             if (st > 0) {
                 stage_ver(st).set_split(o.spec_split);
                 stage_ver(st).set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
@@ -6359,6 +6362,8 @@ int main(int argc, char** argv) {
             split_drive_b = split_drive;
             split_drive_b.plan[0] = ver_b.plan_sink();
             split_drive_b.plan[1] = stages[0]->ver_b.plan_sink();
+            split_drive_b.rows_f16[0] = ver_b.rows_f16();
+            split_drive_b.rows_f16[1] = stages[0]->ver_b.rows_f16();
             stages[0]->ver_b.set_split(o.spec_split);
             stages[0]->ver_b.set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
             ver_b.set_split(o.spec_split);
@@ -6834,6 +6839,7 @@ int main(int argc, char** argv) {
             }
         }
         drive.d.plan = ver.plan_sink();
+        drive.d.rows_f16 = ver.rows_f16();
         drive.d.pcie_num = std::max(0, std::min(256, (int) (o.pcie_frac * 256.0 + 0.5)));
         const bool all_experts_resident = !host_res.empty() &&
             std::all_of(host_res.begin(), host_res.end(), [](int32_t r) { return r >= 0; });
@@ -10671,6 +10677,7 @@ int main(int argc, char** argv) {
         // kernel needs no host CUDA call there, and costs ~1-3% decode on IQ3_S (45.3 -> 44.8 tok/s, 8 requests).
         ver.set_pcie_mode(o.pcie_mode == "dma" ? 0 : o.pcie_mode == "direct" ? 1 : 2);
         drive.d.plan = ver.plan_sink();
+        drive.d.rows_f16 = ver.rows_f16();
         drive.d.pcie_num = (int) (o.pcie_frac * 256.0 + 0.5);
         if (drive.d.pcie_num < 0) drive.d.pcie_num = 0;
         if (drive.d.pcie_num > 256) drive.d.pcie_num = 256;

@@ -246,6 +246,9 @@ struct GpuPlanSink {
     int32_t* start = nullptr;              ///< cap + 1
     int32_t* dst = nullptr;                ///< cap: the entry's row of parts (token * k + j)
     int32_t* tok = nullptr;                ///< cap: the entry's token
+    /// fp16 rows (opt-in, STRATA_MW_ROWS_F16): per entry, 1 = the row was written by a Maxwell device into
+    /// the fp16 buffer (`ExpertDispatch::ymiss16`) and the row copy must convert it back.
+    uint8_t* kind16 = nullptr;
     unsigned long long* ptr = nullptr;     ///< cap: the group's blob, device address
     /// Plan v0.3 P6 (DMA): the PCIe share is a second list of groups - `ptr2[q]` is staging slot q, `start2` indexes
     /// the same dst/tok entries - computed by the GPU after `fetch` has copied their blobs into staging with the
@@ -384,6 +387,10 @@ struct ExpertDispatch {
     /// Plan v0.3 P6: the verify window's GPU plan (VRAM hits + the PCIe share of the misses); `pcie_num`/256 of
     /// each layer's distinct missed experts (the last ones in routing order) are read by the GPU over PCIe.
     GpuPlanSink* plan = nullptr;
+    /// fp16 expert rows (opt-in): when true the Maxwell tier writes its rows as H packed fp16 halves inside
+    /// their fp32 row slots (half the uplink bytes) and marks them in `plan->kind16`; the verifier's row copy
+    /// converts them back.  False = fp32 rows, the default.
+    bool rows_f16 = false;
     int pcie_num = 0;
     int64_t pcie_experts = 0;      ///< distinct experts the GPU read over PCIe in verify windows
     /// #588: routed (token, expert) entries the GPU computed from outside its cache in verify windows: read over PCIe

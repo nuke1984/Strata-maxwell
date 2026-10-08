@@ -442,6 +442,27 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
               mapped(64, (void**) &h_plan_err_, (void**) &m_plan_err_) &&
               mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
+    // STRATA_MW_ROWS_F16=1: the Maxwell tier's expert rows travel as fp16 (half the uplink bytes) and the
+    // dec_batch row copy converts them back.  Only that copy path knows the conversion, so the opt-in is
+    // refused (and the M10s keep writing fp32 rows, which every path expects) when another path is active.
+    {
+        const char* f16e = std::getenv("STRATA_MW_ROWS_F16");
+        const bool want = f16e != nullptr && std::atoi(f16e) != 0;
+        if (want) {
+            static const bool dec_batch_on = [] { const char* v = std::getenv("STRATA_DEC_BATCH"); return v == nullptr || std::atoi(v) != 0; }();
+            const bool remote_on = remote_opt_ != nullptr;
+            const bool dp_on = [] { const char* v = std::getenv("STRATA_VERIFY_DEVICE_PLAN"); return v != nullptr && std::atoi(v) != 0; }();
+            if (!dec_batch_on || remote_on || dp_on) {
+                std::fprintf(stderr, "strata verify: STRATA_MW_ROWS_F16 needs the dec_batch row copy (no remote_opt, "
+                                     "no device plan); keeping fp32 rows\n");
+            } else if (!mapped((size_t) (2 * T * K + 16), (void**) &h_kind16_, (void**) &m_kind16_)) {
+                std::fprintf(stderr, "strata verify: fp16 rows allocation failed; keeping fp32 rows\n");
+                h_kind16_ = nullptr; m_kind16_ = nullptr;
+            } else {
+                std::fprintf(stderr, "strata verify: Maxwell rows in fp16 (STRATA_MW_ROWS_F16)\n");
+            }
+        }
+    }
     if (!ok) { err = "verify: mapped staging allocation failed"; return false; }
     // the GPU plan: counts(4) | start(cap+1) | dst(cap) | tok(cap) | pad | ptr(cap u64) | ptr2(cap u64) | start2(cap+1)
     {
@@ -461,6 +482,7 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         sink_.ptr2 = sink_.ptr + cap;
         sink_.start2 = h_plan_ + ptr_off + 4 * cap;
         sink_.cap = cap;
+        sink_.kind16 = h_kind16_;   // fp16 rows: slot 0; set_plan_slot applies the group offset
         sink_.publish = &Verifier::publish_plan;
         sink_.fetch = &Verifier::fetch_dma;
         sink_.ctx = this;
@@ -1282,9 +1304,18 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 stamp(l, 23, grp);
                 if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
                     remote_opt_->copy_rows(parts_out, m_ymiss_ + (size_t) tb * K * N, tb, n, p_dst, p_counts + 1, cs);
-                else if (dec_batch)   // only the CPU rows cross PCIe (p_dst[0, counts[1]) = the GPU's own rows)
-                    copy_rows_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
-                                          p_dst, p_counts + 1, cs);
+                else if (dec_batch) {  // only the CPU rows cross PCIe (p_dst[0, counts[1]) = the GPU's own rows)
+                    // fp16 rows (opt-in, STRATA_MW_ROWS_F16): the Maxwell tier's rows are H halves packed
+                    // into their fp32 slots, marked per entry in kind16 (group-local, like p_dst); convert.
+                    if (h_kind16_ != nullptr)
+                        copy_rows_from_mapped_f16(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                                  p_dst, p_counts + 1,
+                                                  (const uint16_t*) (m_ymiss_ + (size_t) tb * K * N),
+                                                  sink_.kind16, cs);
+                    else
+                        copy_rows_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                              p_dst, p_counts + 1, cs);
+                }
                 else
                     copy_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K * N, cs);
             }
@@ -1895,6 +1926,7 @@ void Verifier::set_plan_slot(int grp) {
     sink_.ptr = (unsigned long long*) (base + ptr_off);
     sink_.ptr2 = sink_.ptr + cap;
     sink_.start2 = base + ptr_off + 4 * cap;
+    sink_.kind16 = (h_kind16_ != nullptr) ? h_kind16_ + (size_t) grp * (size_t) cap : nullptr;
     const int G = last_batch_ ? 1 : (groups_[last_t_] > 0 ? groups_[last_t_] : 1);
     const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
     sink_.staging = (unsigned long long) (staging_ + (size_t) (grp * per) * strata::kernels::cpu::expert_layout().max_blob);

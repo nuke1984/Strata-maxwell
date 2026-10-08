@@ -70,8 +70,12 @@ public:
     /// device-accessible: the down stage is then launched HERE, scattering each row straight into its
     /// destination while the caller keeps working - no D2H copy, no host scatter.  Null for the prefill, whose
     /// destination is only known at finish_to (the down then launches there, into the staging block).
+    /// `rows_f16` (v2 only, opt-in): the down stage writes each row as H fp16 halves PACKED INTO ITS OWN
+    /// fp32 row slot (the first H/2 floats) instead of the full-width fp32 row - half the uplink bytes.  The
+    /// verifier's row copy converts them back (it publishes the per-entry `kind16` flags that mark them), and
+    /// the per-group destination offset keeps working because the fp16 rows ride the same `dst_mapped`.
     bool begin(int64_t layer, const strata::kernels::cpu::ActQ* acts, const int32_t* ids, int64_t n_tok,
-               int64_t k, const int32_t* kind, float* dst_mapped, std::string& err);
+               int64_t k, const int32_t* kind, float* dst_mapped, bool rows_f16, std::string& err);
     /// Wait for this device's staged rows and write them into `out` (row i = entry i, n_embd floats) - the
     /// mapped destination handed to begin().  Only the sync remains here.
     bool finish(float* out, std::string& err);
@@ -152,6 +156,7 @@ private:
     int32_t w_row_base_ = 0;
     int64_t w_n_embd_ = 0;
     bool w_dst_mapped_ = false;   // the destination is device-accessible: the down kernel writes it directly
+    bool w_rows_f16_ = false;     // the down writes fp16 rows packed into the fp32 row slots, see begin()
     bool down_launched_ = false;  // the down stage of this layer already ran at begin() time
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);

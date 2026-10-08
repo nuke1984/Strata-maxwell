@@ -29,6 +29,7 @@ using strata::kernels::cuda::s2_expert_maxwell_gup_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_batch_async;
+using strata::kernels::cuda::s2_expert_maxwell_down_batch_f16_async;
 using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::s2_expert_maxwell_v2;
@@ -378,8 +379,16 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // finish_to, so ITS down launches there, into the staging block.
     down_launched_ = false;
     if (w_dst_mapped_) {
-        s2_expert_maxwell_down_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_, d_fahx_,
-                                           w_dst_, streams_[0]);
+        if (w_rows_f16_) {
+            // fp16 rows (opt-in): H halves packed into the fp32 row's own slot (the first H/2 floats), so
+            // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
+            // cross the uplink; the verifier's row copy converts them back (its kind16 flags mark them).
+            s2_expert_maxwell_down_batch_f16_async(d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_,
+                                                   d_fahx_, (uint16_t*) w_dst_, streams_[0]);
+        } else {
+            s2_expert_maxwell_down_batch_async(d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_, d_fahx_,
+                                               w_dst_, streams_[0]);
+        }
         down_launched_ = true;
     }
     for (size_t j = 0; j < jobs.size(); ++j) {
@@ -400,7 +409,8 @@ bool MaxwellExperts::begin_chain(std::string& err) {
 }
 
 bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts, const int32_t* ids,
-                           int64_t n_tok, int64_t k, const int32_t* /*kind*/, float* dst_mapped, std::string& err) {
+                           int64_t n_tok, int64_t k, const int32_t* /*kind*/, float* dst_mapped,
+                           bool rows_f16, std::string& err) {
     (void) err;
     if (device_ < 0) return true;
     if (n_tok > n_tok_max_ || n_tok * k > cap_entries_) {
@@ -413,6 +423,7 @@ bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts
     w_layer_ = layer; w_acts_ = acts; w_ids_ = ids; w_n_tok_ = n_tok; w_k_ = k;
     w_dst_ = dst_mapped;
     w_dst_mapped_ = dst_mapped != nullptr;
+    w_rows_f16_ = rows_f16 && dst_mapped != nullptr;   // fp16 applies to the token path only
     w_row_of_ = nullptr;
     w_row_base_ = 0;
     w_n_embd_ = H;

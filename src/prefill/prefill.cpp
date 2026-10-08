@@ -2737,7 +2737,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                 const int64_t nt = std::min(MW_SUB, T - t0);
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->begin(l, m.mw_acts.data() + t0, ids_h + t0 * K, nt, K, nullptr,
-                                                        nullptr, err))
+                                                        nullptr, false, err))
                                         return false;
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,

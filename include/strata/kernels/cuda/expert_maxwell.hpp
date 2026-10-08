@@ -65,6 +65,11 @@ void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, cudaStream_t stream = 0);
+/// v2 ONLY: the down stage with fp16 rows (half the uplink bytes when the destination is mapped host
+/// memory; the verifier converts them back during its row copy).  `d_out16` holds H halves per entry.
+void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                            const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
+                                            uint16_t* d_out16, cudaStream_t stream = 0);
 void s2_expert_maxwell_sync();
 
 /// Whether the v2 batch kernels are enabled (STRATA_S2_V2, default on): the caller picks the fused

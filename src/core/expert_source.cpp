@@ -2375,7 +2375,7 @@ void expert_pool_dispatch(void* user, const float* x_f, const int32_t* ids, cons
         static thread_local std::string maxwell_error;
         // NOTE: d.act was quantised above (act_quant_q8_1); the M10s consume the SAME ActQ.
         for (int m = 0; m < d.maxwell_count; ++m)
-            if (!d.maxwell[m]->begin(d.layers, &d.act, ids, 1, k, maxwell_kind, out, maxwell_error)) {
+            if (!d.maxwell[m]->begin(d.layers, &d.act, ids, 1, k, maxwell_kind, out, false, maxwell_error)) {
                 d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
     }
@@ -2621,6 +2621,10 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
             kind[i] = kd;
         }
     }
+    // fp16 rows (opt-in): publish which entries the Maxwell tier wrote into the fp16 buffer, so the
+    // verifier's row copy converts exactly those rows and leaves the CPU's fp32 rows alone.  n bytes/layer.
+    if (d.plan != nullptr && d.plan->kind16 != nullptr && d.rows_f16)
+        for (int64_t i = 0; i < n; ++i) d.plan->kind16[i] = (uint8_t) (kind[i] == 3);
     if (d.peer != nullptr) {                 // multi-GPU: start the second GPU's share before the CPU's own work
         std::string perr;
         if (!d.peer->launch(d.layers, x_f, ids, n_tok, k, kind, perr, out)) {
@@ -2689,7 +2693,7 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 if (cnt[order[b]] > cnt[order[a]]) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
         for (int oi = 0; oi < d.maxwell_count; ++oi) {
             const int m = order[oi];
-            if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, out, maxwell_error)) {
+            if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, out, d.rows_f16, maxwell_error)) {
                 d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
         }

@@ -22,6 +22,24 @@ namespace {
 
 using namespace expert_maxwell_geo;
 
+// fp32 -> fp16, round-to-nearest-even.  Hand-rolled: Maxwell has no fp16 arithmetic (the CUDA intrinsic
+// is a stub there, verified on the M10: it compiles but returns zero).  Denormals flush to zero (an
+// absolute error below 6e-5, irrelevant for expert rows); inf/nan map to inf/nan.
+__device__ __forceinline__ uint16_t f2h_rn(float x) {
+    const uint32_t u = __float_as_uint(x);
+    const uint32_t sign = (u >> 16) & 0x8000u;
+    const uint32_t ex = (u >> 23) & 0xFFu;
+    const uint32_t m = u & 0x7FFFFFu;
+    if (ex == 0xFFu) return (uint16_t) (sign | 0x7C00u | (m ? 0x200u : 0u));
+    const int32_t e = (int32_t) ex - 127 + 15;
+    if (e <= 0) return (uint16_t) sign;
+    if (e >= 31) return (uint16_t) (sign | 0x7C00u);
+    uint32_t h = sign | ((uint32_t) e << 10) | (m >> 13);
+    const uint32_t rest = m & 0x1FFFu;
+    if (rest > 0x1000u || (rest == 0x1000u && (h & 1u))) ++h;
+    return (uint16_t) h;
+}
+
 // Maxwell has no native __dp4a.  PTX vmad.s32.s32.s32 does a signed 4-byte dot product with byte selectors -
 // the same primitive llama.cpp's m10-final.patch added to ggml_cuda_dp4a for the Tesla M10.  On cc >= 6.1 we
 // use the hardware instruction; elsewhere (host-side compile paths) a scalar fallback keeps the code valid.
@@ -450,7 +468,7 @@ __global__ void expert_s2_stage1_batch_v2(const uint8_t* __restrict__ blobs, con
     }
 }
 
-template <int SPLIT>
+template <int SPLIT, bool F16 = false>
 __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, const MaxJob* __restrict__ jobs,
                                           int njobs, const int8_t* __restrict__ faq,
                                           const float* __restrict__ fasc, const float* __restrict__ fahx,
@@ -503,7 +521,9 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, con
             const float2 v = sh[threadIdx.x + s];
             a0 += v.x; c0 += v.y;
         }
-        out[(size_t) jd.dst * H + row] = a0 - c0;
+        const float r = a0 - c0;
+        if (F16) ((uint16_t*) out)[(size_t) jd.dst * H + row] = f2h_rn(r);   // half the uplink bytes
+        else     out[(size_t) jd.dst * H + row] = r;
     }
 }
 
@@ -793,6 +813,20 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     }
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, d_out);
+}
+
+// v2 ONLY: the down stage with fp16 rows - half the uplink bytes when the destination is mapped host
+// memory.  d_out16 holds H halves per entry; the verifier converts them back during its row copy.  v1 has
+// no fp16 variant, so the caller must not request it with STRATA_S2_V2=0.
+void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                            const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
+                                            uint16_t* d_out16, cudaStream_t stream) {
+    if (njobs <= 0) return;
+    constexpr int SPLIT = 2;
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    const int rows = njobs * H;
+    expert_s2_stage2_batch_v2<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+        d_blobs, (const MaxJob*) d_jobs, njobs, d_faq, d_fasc, d_fahx, (float*) d_out16);
 }
 
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
