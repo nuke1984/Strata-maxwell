@@ -2970,6 +2970,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     double cpu_ms = 0;                    // the thread's time (the measured share)
                     std::future<bool> cpu_fut;
                     int64_t rows_cpu = 0, n_cpu = 0, n_stream = 0;
+                    int64_t rows_mw = 0;   // the Maxwell tiers' rows of this half (their block of Dm, before the CPU's)
                     bool cpu_arm = true;                  // auto: this layer may share (false: the arm without)
                     int cpu_set = -1;                     // auto: the wall events' set, -1 when not measured
                     bool cpu_cold = false;                // auto: one-time costs in the window (no reading)
@@ -3220,7 +3221,6 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         // Maxwell (sm_50): the experts a tier owns are computed there; their rows go last in Dm
                         // (after the peer's), and they never enter `order` (the primary does not compute them).
                         std::vector<char> on_mw_l;
-                        int64_t rows_mw = 0;
                         if (m.mw_count > 0) {
                             on_mw_l.assign((size_t) m.g->n_expert, 0);
                             for (int32_t e = 0; e < m.g->n_expert; ++e) {

@@ -3666,6 +3666,11 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 const int32_t e = ids[distinct[q]];
                 if (e < 0 || e >= d.n_expert || minr[q] < tail_rank) continue;
                 if (d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) continue;   // resident
+                if (d.maxwell_count > 0) {   // a Maxwell tier holds it in VRAM too: not a miss to skip
+                    bool mw_held = false;
+                    for (int m2 = 0; m2 < d.maxwell_count; ++m2) mw_held |= d.maxwell[m2]->owns(d.layers, e);
+                    if (mw_held) continue;
+                }
                 skip_d[q] = true;
                 --nmiss;
                 ++d.tail_experts;
