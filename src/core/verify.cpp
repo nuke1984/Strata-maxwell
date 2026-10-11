@@ -2014,20 +2014,6 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     if (!capture(T, err) || !capture_commit(err)) return false;
     VDBG("captured; staging\n");
     const Clock::time_point t0 = Clock::now();
-    struct MwProf {
-        std::chrono::steady_clock::time_point t;
-        double stage = 0, launch = 0, loop = 0, sync = 0, pool = 0, rest = 0, wait = 0;
-        int64_t n = 0;
-        bool on = std::getenv("STRATA_MW_PROF") != nullptr;
-        void sec(double& acc, const Clock::time_point a) { if (on) acc += std::chrono::duration<double, std::milli>(Clock::now() - a).count(); }
-        void report() {
-            if (!on || ++n % 256 != 0) return;
-            std::fprintf(stderr, "MWPROF windows %lld: stage %.2f launch %.3f loop %.2f sync %.2f | wait %.2f pool %.2f rest %.2f ms/window\n",
-                         (long long) n, stage / n, launch / n, loop / n, sync / n, wait / n, pool / n, rest / n);
-        }
-    };
-    static thread_local MwProf mwp;
-    const Clock::time_point mwp_t = Clock::now();
     if (!staged_) stage_inputs(T, tokens, pos0);
     staged_ = false;
     const bool do_ple = ss.ple.ready() && ple_stage();
@@ -2045,10 +2031,8 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     std::atomic_thread_fence(std::memory_order_seq_cst);
     trace_ev("WINDOW", -1, -1, pos0 * 16 + T);
     ms_host += ms_since(t0);
-    mwp.sec(mwp.stage, mwp_t);
     VDBG("staged; launching\n");
     if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
-    const Clock::time_point mwp_l = Clock::now();
     const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[T] : exec_[T], cs_);
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
@@ -2071,9 +2055,8 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         } else {
             *flag = 1;
         }
-    } else {
-        const Clock::time_point mwp_k = Clock::now();
-        for (int64_t k = 0; k < steps; ++k) {
+    } else
+    for (int64_t k = 0; k < steps; ++k) {
         const int64_t l = lb_ + k / G;
         const int grp = (int) (k % G);
         const uint32_t want = (uint32_t) (k + 1);
@@ -2124,11 +2107,9 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         const int tb = gtb[grp], n = gte[grp] - gtb[grp];
         progress_at("verify window: the CPU experts of layer", l);
         if (remote_opt_) remote_opt_->begin(h_w_ + (size_t) tb * ss.k, tb, n);
-        const Clock::time_point mwp_p = Clock::now();
         if (pool != nullptr)
             pool(user, h_x_ + (size_t) tb * g.n_embd, h_ids_ + (size_t) tb * ss.k, n, ss.k,
                  h_ymiss_ + (size_t) tb * ss.k * g.n_embd, l);
-        if (mwp.on) mwp.pool += std::chrono::duration<double, std::milli>(Clock::now() - mwp_p).count();
         if (remote_opt_) remote_opt_->end();
         VDBG("layer %lld served\n", (long long) l);
         if (g_trace) trace_ev(*(volatile uint32_t*) h_flagA_ == want ? "SERVED" : "SERVED-NO-PLAN-YET", k, l,
@@ -2158,17 +2139,8 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
             ms_host += ms_since(tp);
         }
         if (!(test_stall && k + 1 == steps)) *flag = want;
-        const Clock::time_point mwp_e = Clock::now();
         ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
         ms_pool += ms_since(b);
-        if (mwp.on) {
-            const double w = std::chrono::duration<double, std::milli>(b - a).count();
-            const double pc = std::chrono::duration<double, std::milli>(Clock::now() - mwp_p).count();
-            mwp.wait += w;
-            mwp.rest += std::chrono::duration<double, std::milli>(mwp_e - b).count() - pc;
-        }
-        }
-        mwp.sec(mwp.loop, mwp_k);
     }
     // (#646 staged the next stage's inputs here; 0.1.39b keeps the layer split's order: each stage stages its own)
     progress_at("verify window: waiting for the GPU to finish the window (flags A/B/M raised)", (int64_t) T);
@@ -2178,10 +2150,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     // itself stays a blocking sync: a cudaStreamQuery poll here cost IQ3_S ~3% decode (a core calling the driver
     // beside the expert workers).
     trace_ev("SYNC", -1, -1, 0);
-    const Clock::time_point mwp_s = Clock::now();
     const cudaError_t se = cudaStreamSynchronize(cs_);
-    mwp.sec(mwp.sync, mwp_s);
-    mwp.report();
     trace_ev("SYNCED", -1, -1, (int64_t) se);
     if (se != cudaSuccess) { err = std::string("verify: ") + cudaGetErrorString(se); return false; }
     if (ar_on() && h_plan_err_ != nullptr && *(volatile uint32_t*) h_plan_err_ != 0) {   // #871: refresh_ar saw the table whole

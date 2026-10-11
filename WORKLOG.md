@@ -4,6 +4,37 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — sessione del 2026-10-11 (notte): CAUSA TROVATA E RISOLTA — il port 0.1.42 è a parità**
+>
+> **Causa radice**: 0.1.42 introduce una **sonda PLE all'avvio** che misura la lettura *direct* della tabella
+> (qui: 4.731–5.721 rows/s ≈ 19–23 MB/s random 4 KiB) e, sotto 15.000 rows/s, **passa da sola a `--ple-io
+> mmap`** ("using --ple-io mmap instead"). Sulla macchina da 64 GB dell'upstream le pagine della tabella
+> (19 GB) restano nella page cache; **qui (7,7 GiB di RAM) la cache è sempre buttata fuori dai 34 GB di
+> letture esperti del load**, quindi ogni `gather_batch` del k==0 di ogni finestra decodifica fa **fault di
+> pagina sincroni da NVMe lento**: ~44–68 ms/finestra persi in `folio_wait_bit_common` (main thread in D).
+> 0.1.40 usava `direct` (pipeline di pread asincroni che maschera la latenza) e per questo era veloce.
+> **Non era un problema del port**: il codice era identico — era un knob deciso dalla nuova sonda.
+>
+> **Individuazione** (per il metodo, non rifare i miei errori): strace ha mostrato 40.738 `MADV_WILLNEED`
+> (tutti a load: NativeHead/Dense/Embed + advise_pairs — innocenti); l'istogramma dei return-address su
+> `file_read_bytes_` (24.576 chiamate = tutti gli esperti, a load, via `copy_blob` del tier M10 — legittimo)
+> ha smentito il "57 GB per richiesta" del log (**quel contatore è cumulativo da avvio in 0.1.42**, non per
+> richiesta: i 79k "major faults" includevano il load); il delta reale per richiesta era ~1.7k fault. La
+> strada giusta è stata il A/B dei `--ple-io`: direct → **finestra 46,6 ms calda** (era 92–121).
+>
+> **Riscontro finale (produzione, stesso protocollo: burn + 3 prompt × 3 run)**:
+> - **Q2_0**: 41,3–57,0 tok/s, media **50,9** (maxwell-0.1.40: 43,8–55,9, media 51,1 — **parità**, picco più alto);
+> - **IQ2_XS** (@4096): 38,8–41,3 tok/s su chat reali (banda validata 35–40 — **a/oltre la banda**);
+> - correttezza 391 / 9999 / Paris / 23 ✓; `expert_maxwell_parity` PARITY OK; `maxwell_iq_parity` 0 failure;
+>   tail skip 0 (guardia `cff9c68e` attiva); round-trip gate PASSED ×4 a ogni avvio.
+>
+> **La correzione**: `--ple-io direct` in **entrambe** le config (`strata-q2_0.json`, `strata-iq2xs.json` —
+> sono gitignore: questa riga è l'unica traccia durable, insieme al backup dei file). Con RAM piena
+> (≥64 GB) il default mmap di 0.1.42 va bene e la sonda ha ragione; **su questa macchina no**.
+>
+> **Nota upstream-grade (futuro)**: la sonda misura solo `direct`, mai `mmap`: non può accorgersi che mmap
+> è peggio. Un confronto entrambe-le-mode prima di scegliere sarebbe la correzione giusta a monte.
+
 > **AGGIORNAMENTO — sessione del 2026-10-11 (sera): IL PORT 0.1.42 È LENTO — REGRESSIONE MISURATA, CAUSA IN SEGUITO**
 >
 > **Misura (protocollo: burn + 3 prompt fissi × 3 run, stessi prompt su entrambi i binari)**:
