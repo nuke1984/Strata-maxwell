@@ -4,6 +4,26 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — sweep miglioramenti su IQ2_XS @4096, split M10@150 (2026-10-12)**
+>
+> **Baseline (3 prompt calibrati × 3 run, protocollo burn+3×3)**: story **36,6** · fib **46,8** · code
+> **42,9** · media **42,1 tok/s** — con lo split 22.702 esperti su M10 (riserva 150) + 1.874 in cache,
+> 4,17 GiB di VRAM 3060 liberi, "+83–87% su PCIe" (più voci sulla catena M10: il prezzo dichiarato).
+>
+> **T1 — STRATA_HOST_WAIT_US=10** (20→10): story 37,1 · fib 46,7 · code 43,4 · media **42,4 (+0,7%)** —
+> marginale, dentro il rumore, ma gratuito e mai negativo: **tenuto** (ora nell'`env` della config).
+> **T3 — STRATA_MW_ROWS_F16=1**: warm ~42,0, misto (story −0,6, fib −2,3, code +2,6) e lunghezze di
+> generazione cambiate (fib 387 vs 354 — la numerica fp16 sposta l'output): **scartato**, conferma
+> l'era-0.1.40 ("sotto il rumore, resta opt-in"). 391 ✓ anche con fp16.
+> **T4 — sweep SPLIT del kernel gup IQ** (ora `STRATA_MW_IQ_SPLIT`, default 4; epilogo a chunk multipli
+> bit-identico, parità 0 failure per 4/2/1 su sintetico E righe reali): **SPLIT=2 = 28,1 / 32,5 / 31,2
+> (−23…−31%) — RIFIUTATO**; SPLIT=1 non misurato: stessa direzione strutturale (il doppio del lavoro
+> seriale di dot per thread di nuovo, su 5 SM) — monotonia. **SPLIT=4 resta l'ottimo misurato.**
+>
+> **Config finale**: `--maxwell-reserve-mib 150`, `--expert-cache 1800`, `env.STRATA_HOST_WAIT_US=10`,
+> SPLIT default. Conferma finale: 37,0 / 46,8 / 43,4, media 42,4, lunghezze identiche alla baseline
+> (numerica invariata), 391 ✓.
+
 > **AGGIORNAMENTO — chiusura del port (2026-10-11, notte): `--ple-io direct` è il DEFAULT del ramo**
 >
 > La guardia vive nel codice (`generate.cpp`, blocco della sonda PLE): con un tier Maxwell configurato la

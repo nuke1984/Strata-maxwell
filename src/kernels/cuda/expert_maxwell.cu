@@ -835,7 +835,7 @@ template <> struct IqFmt<29> {
 // planes), the row walk is lane-strided DOT CALLS (k = part; k < nb*ipb; k += SPLIT, kbx = k/ipb,
 // iqs = step*(k%ipb), exactly the engine's row_dot), and there is no hx correction term (the i-quant
 // grids carry their own signs; the act's d rides inside the dot).
-template <int TY>
+template <int TY, int SPLIT>
 __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
                                            const MaxJob* __restrict__ jobs, int njobs,
                                            const uint8_t* __restrict__ acts_base,
@@ -843,7 +843,10 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
                                            int8_t* __restrict__ faq, float* __restrict__ fasc,
                                            float* __restrict__ fahx, float* __restrict__ ff_dbg) {
     using F = IqFmt<TY>;
-    constexpr int SPLIT = 4;                 // the fused quant needs the block to cover exactly one chunk
+    // SPLIT is the sweep knob (STRATA_MW_IQ_SPLIT, default 4).  The fused quant epilogue below walks
+    // PER_BLOCK/32 chunks, so any SPLIT that divides 32 keeps the chunk tree bit-identical: with 4 it
+    // compiles to exactly the one-chunk body this kernel shipped with.
+    static_assert(SPLIT == 1 || SPLIT == 2 || SPLIT == 4, "the IQ gup kernel takes SPLIT 1, 2 or 4");
     constexpr int PER_BLOCK = 128 / SPLIT;
     static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
     const int row0 = blockIdx.x * PER_BLOCK;
@@ -882,7 +885,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs);
     }
     __shared__ float2 sh[128];
-    __shared__ float sx[32];
+    __shared__ float sx[PER_BLOCK];
     sh[threadIdx.x] = make_float2(accg, accu);
     __syncthreads();
     if (part == 0) {
@@ -896,12 +899,17 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + row] = sxv;   // the parity tool reads the pre-quant dots
     }
     __syncthreads();
-    // ONE warp quantises the block's chunk: the exact body of expert_s2_stage1_batch_v2q's epilogue
-    // (same tree, same roundings), so faq/fasc/fahx are bit-identical to the S2 path's.
+    // ONE warp quantises the block's chunks (PER_BLOCK/32 of them; exactly one at SPLIT=4): the exact
+    // body of expert_s2_stage1_batch_v2q's epilogue (same tree, same roundings) per chunk, so
+    // faq/fasc/fahx are bit-identical to the S2 path's whatever SPLIT is.
     if (threadIdx.x < 32) {
         const int lane = (int) threadIdx.x;
-        const int chunk = (int) (j * (FF / 32) + (row0 % FF) / PER_BLOCK);
-        const float v = sx[lane];
+        constexpr int CHUNKS = PER_BLOCK / 32;
+        const int chunk0 = (int) (j * (FF / 32) + (row0 % FF) / 32);
+#pragma unroll
+        for (int c = 0; c < CHUNKS; ++c) {
+        const int chunk = chunk0 + c;
+        const float v = sx[c * 32 + lane];
         float av = fabsf(v);
 #pragma unroll
         for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
@@ -919,6 +927,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         if (lane == 0) {
             fasc[chunk] = sc;
             fahx[chunk] = __fmul_rn(sc, (float) ssum);
+        }
         }
     }
 }
@@ -1117,23 +1126,50 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                                              int8_t* d_faq, float* d_fasc, float* d_fahx,
                                              float* d_ff_dbg, cudaStream_t stream) {
     if (njobs <= 0) return;
-    constexpr int SPLIT = 4;   // the fusion requires the block to cover exactly one 32-value chunk
-    constexpr int PER_BLOCK = 128 / SPLIT;
+    // STRATA_MW_IQ_SPLIT: the gup geometry sweep knob (default 4, the fused design's original value;
+    // 2 and 1 put more rows per block - fewer blocks, more dot work per thread).  The epilogue walks
+    // PER_BLOCK/32 chunks, so every value's faq/fasc/fahx image is bit-identical (maxwell_iq_parity
+    // gates each of them).
+    static const int split = [] {
+        const char* e = std::getenv("STRATA_MW_IQ_SPLIT");
+        const int v = e != nullptr ? std::atoi(e) : 4;
+        return (v == 1 || v == 2 || v == 4) ? v : 4;
+    }();
+    if (split != 4)
+        std::fprintf(stderr, "strata maxwell: IQ gup SPLIT %d (STRATA_MW_IQ_SPLIT; 4 is the default)\n", split);
     const int rows = njobs * FF;
-    const int blocks = (rows + PER_BLOCK - 1) / PER_BLOCK;
+    const int blocks = (rows + 128 / split - 1) / (128 / split);
     switch (gu_type) {
         case 22:   // IQ2_S
-            expert_iq_stage1_batch_v2q<22><<<blocks, 128, 0, stream>>>(
+            if (split == 4) expert_iq_stage1_batch_v2q<22, 4><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else if (split == 2) expert_iq_stage1_batch_v2q<22, 2><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else expert_iq_stage1_batch_v2q<22, 1><<<blocks, 128, 0, stream>>>(
                 d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
                 d_faq, d_fasc, d_fahx, d_ff_dbg);
             break;
         case 16:   // IQ2_XXS
-            expert_iq_stage1_batch_v2q<16><<<blocks, 128, 0, stream>>>(
+            if (split == 4) expert_iq_stage1_batch_v2q<16, 4><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else if (split == 2) expert_iq_stage1_batch_v2q<16, 2><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else expert_iq_stage1_batch_v2q<16, 1><<<blocks, 128, 0, stream>>>(
                 d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
                 d_faq, d_fasc, d_fahx, d_ff_dbg);
             break;
         case 29:   // IQ1_M
-            expert_iq_stage1_batch_v2q<29><<<blocks, 128, 0, stream>>>(
+            if (split == 4) expert_iq_stage1_batch_v2q<29, 4><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else if (split == 2) expert_iq_stage1_batch_v2q<29, 2><<<blocks, 128, 0, stream>>>(
+                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            else expert_iq_stage1_batch_v2q<29, 1><<<blocks, 128, 0, stream>>>(
                 d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
                 d_faq, d_fasc, d_fahx, d_ff_dbg);
             break;
