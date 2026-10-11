@@ -3118,13 +3118,27 @@ int main(int argc, char** argv) {
         }
         // Recommend, never force: when the default direct reads measure slow, switch to the mapped reads (40-100x
         // faster on the reporters' drives); an explicit --ple-io direct is kept and only warned about.
+        //
+        // MEASURED HERE, DO NOT RE-LEARN IT (2026-10-11, the Maxwell M10 rig: RTX 3060 + 4x Tesla M10,
+        // 7.7 GiB of RAM, the PLE table 19 GiB read through mmap'd storage): this probe measured direct at
+        // 4.7-5.7k rows/s and switched to mmap - and mmap was the very stall the probe exists to avoid.
+        // The table is far larger than the RAM, and the expert load's ~34 GB of reads thrash the page
+        // cache after every start, so every decode window's k==0 gather took SYNCHRONOUS NVMe page
+        // faults: 44-68 ms/window lost in folio_wait_bit_common, windows 92-121 ms, -45% tok/s.  Direct's
+        // async pre-read pipeline (--ple-inflight) hides the same latency: 46.6 ms windows, parity with
+        // 0.1.40.  So on a rig with a Maxwell tier the switch is refused: direct is the default here.
+        //
+        // TODO: the probe measures only direct, never mmap - by construction it cannot see that mmap is
+        // the worse choice on a machine whose RAM cannot hold the table.  The proper fix is to measure
+        // BOTH modes (or gate on MemAvailable vs the table's bytes) before switching; until then the
+        // maxwell guard below keeps this rig on direct.
         if (pio.mode == strata::kernels::PleIo::Direct && std::getenv("STRATA_PLE_PROBE") == nullptr) {
             constexpr double kSlowRowsPerS = 15000.0;   // ~60 MB/s of 4 KiB pages; a healthy NVMe is >100k
             const double rps = ple_direct_rows_per_s(ple_table);
             if (rps >= kSlowRowsPerS)
                 std::fprintf(stderr, "strata generate: PLE direct read probe: %.0f rows/s (fine)\n", rps);
             if (rps > 0 && rps < kSlowRowsPerS) {
-                if (!o.ple_io_explicit) {
+                if (!o.ple_io_explicit && o.maxwell_devices.empty()) {
                     std::fprintf(stderr, "strata generate: --ple-io direct measures slow here (%.0f rows/s, about %.0f MB/s of "
                                          "random 4 KiB reads): using --ple-io mmap instead (the OS file cache holds the pages; "
                                          "--ple-io direct forces the old mode, --ple-io ram keeps the table in RAM)\n",
@@ -3136,6 +3150,10 @@ int main(int argc, char** argv) {
                         std::fprintf(stderr, "strata generate: %s\n", err.c_str());
                         return 1;
                     }
+                } else if (!o.ple_io_explicit) {
+                    std::fprintf(stderr, "strata generate: PLE direct read probe: %.0f rows/s - keeping direct (a Maxwell "
+                                         "tier is configured; on a rig whose RAM cannot hold the table the mmap switch "
+                                         "measured 44-68 ms/window of synchronous faults - see the probe's comment)\n", rps);
                 } else {
                     std::fprintf(stderr, "strata generate: WARNING: --ple-io direct measures slow here (%.0f rows/s, about %.0f "
                                          "MB/s of random 4 KiB reads): a prompt can spend minutes reading layer 1 and trip the "

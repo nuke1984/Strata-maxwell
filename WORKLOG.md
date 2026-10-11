@@ -4,6 +4,17 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — chiusura del port (2026-10-11, notte): `--ple-io direct` è il DEFAULT del ramo**
+>
+> La guardia vive nel codice (`generate.cpp`, blocco della sonda PLE): con un tier Maxwell configurato la
+> sonda **non passa mai a mmap**, stampa la riga "keeping direct" con il perché, e il commento in codice
+> registra la misura completa (44–68 ms/finestra di fault sincroni, finestre 92–121 ms, −45% tok/s; direct
+> 46,6 ms = parità 0.1.40) più il **TODO del fix upstream-grade** (misurare entrambe le mode, o gate su
+> MemAvailable vs byte della tabella — la sonda attuale misura solo direct e non può vedere che mmap è
+> peggio dove la RAM non tiene la tabella). Le config non portano più il flag (è il default); i backup
+> con il flag restano in `/tmp/*.fix-backup`. Tag di chiusura del port:
+> **`maxwell-v.0.1.42-Q2_0-IQ2_XS-OK`**.
+
 > **AGGIORNAMENTO — sessione del 2026-10-11 (notte): CAUSA TROVATA E RISOLTA — il port 0.1.42 è a parità**
 >
 > **Causa radice**: 0.1.42 introduce una **sonda PLE all'avvio** che misura la lettura *direct* della tabella
