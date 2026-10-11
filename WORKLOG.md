@@ -4,6 +4,31 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — sessione del 2026-10-11 (sera): IL PORT 0.1.42 È LENTO — REGRESSIONE MISURATA, CAUSA IN SEGUITO**
+>
+> **Misura (protocollo: burn + 3 prompt fissi × 3 run, stessi prompt su entrambi i binari)**:
+> - maxwell-0.1.40 (`strata.bak-0140`): **43,8–55,9 tok/s** (media ~51);
+> - maxwell-0.1.42: **18,1–53,1 tok/s** (media ~28) — **−45%**, con varianza enorme per richiesta.
+> **Firma della regressione** (`STRATA_DECODE_TIMING=1` + strumentazione MWPROF aggiunta a run() e a
+> `expert_pool_dispatch_multi`): il loop decodifica passa da ~45–54 a ~90–107 ms/finestra; i timer interni
+> del dispatch (plan/actq/jobs/run) e l'attesa GPU-reach sono IDENTICI ai 0.1.40; il tempo in più il main
+> thread lo passa **bloccato nel kernel su page fault della mappa del file esperti**
+> (`folio_wait_bit_common`, stato D al 40% dei campioni): **57 GB letti da storage e ~79k major fault per
+> richiesta** contro **0,4 GB e 3–7k** del 0.1.40. Il contatore del file tier conta "33980,8 MB di expert
+> reads" a richiesta anche con ogni esperto su GPU — contabilità di `blob_stable`/`io_blob` (nuove in
+> 0.1.42: contano i byte dell'intero layer per chiamata).
+> **Scartate con misura**: kernel Maxwell (identici byte a byte), dispatch/callback (0,39 ms/call), tail
+> skip (0 skip dopo `cff9c68e`), PLE gather (non chiamato in decodifica), predittore lookahead
+> (STRATA_LOOKAHEAD=0: nessun recupero), pcie-frac auto (single-GPU), route-resident/prior (opt-in),
+> io_fill_ (STRATA_IO_PF_STAGE=1: nessun recupero).
+> **Non isolato (onestà)**: il punto esatto che tocca la mappa per richiesta richiede perf (bloccato da
+> perf_event_paranoid=4, nessun root). Il sospetto primario è l'interazione tra il nuovo anello
+> io-prefetch/staging del file tier (0.1.42) e la RAM di 7,7 GiB di questa macchina: il working set
+> richiesto non sta nella page cache, e ogni tocco freddo costa un fault da NVMe lento (19 MB/s random).
+> **Decisione**: produzione su **maxwell-0.1.40** (`engine/strata` = `strata.bak-0140`); il port resta sul
+> ramo `maxwell-0.1.42` (tag `maxwell-0.1.42-IQ2_XS` = stato "corretto ma lento"), da riprendere quando il
+> path I/O sarà chiaro (o con perf abilitato, o su una macchina con RAM piena).
+
 > **AGGIORNAMENTO — sessione del 2026-10-11 (pomeriggio): PORT SUL v0.1.42 — FATTO E VALIDATO**
 >
 > **Politica**: il v0.1.42 resta verbatim; il lavoro Maxwell è uno strato opt-in sopra (i ganci tutti
