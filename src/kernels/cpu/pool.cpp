@@ -435,7 +435,7 @@ void ExpertPool::diag(std::FILE* f) const {
 }
 
 ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity affinity, int tasks)
-    : tasks_(tasks), host_works_(host_works), affinity_(affinity), topo_(detect_cpu_topology(true, affinity)) {
+    : tasks_(tasks), host_works_(host_works), pin_(pin), affinity_(affinity), topo_(detect_cpu_topology(true, affinity)) {
     if (tasks < 0 || tasks > kMaxTasks) throw std::invalid_argument("expert pool tasks must be in 0..4096");
     if (const char* e = std::getenv("STRATA_POOL_SPIN_US"))   // a test knob; see kSpinBeforeSleep
         spin_before_sleep_ = std::chrono::microseconds((std::max)(0, std::atoi(e)));
@@ -455,9 +455,17 @@ ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity af
     strata::core::diag_pool_fn().store(&diag_active_pool);
     split_.resize((size_t) kMaxSplit);
     split_multi_.resize((size_t) kMaxSplitMulti);
+    // The worker threads are NOT created here: start_workers() does it on the first real batch.  A run with every
+    // expert on a GPU never publishes one, and the old constructor left `n_` threads parked on `sleep_cv_` for
+    // the whole process for no reason.
+}
+
+void ExpertPool::start_workers() {
+    if (started_) return;
+    started_ = true;
     threads_.reserve((size_t) n_);
     for (int i = 0; i < n_; ++i) {
-        const int core = pin ? (i < (int) topo_.worker_cores.size() ? topo_.worker_cores[(size_t) i] : -1) : -1;
+        const int core = pin_ ? (i < (int) topo_.worker_cores.size() ? topo_.worker_cores[(size_t) i] : -1) : -1;
         threads_.emplace_back([this, i, core] {
             strata::aux_cpus::note_owned_thread();   // --aux-cpus never moves a worker
             pin_this_thread(core, i);
@@ -469,6 +477,7 @@ ExpertPool::ExpertPool(int n_workers, bool pin, bool host_works, PoolAffinity af
 ExpertPool::~ExpertPool() {
     const ExpertPool* self = this;
     g_diag_pool.compare_exchange_strong(self, nullptr);
+    if (!started_) return;   // no worker was ever created: nothing to stop or join
     stop_.store(true, std::memory_order_release);
     // Bump the epoch so a PARKED worker notices the stop flag rather than sleeping through it.
     publish();
@@ -688,6 +697,7 @@ void ExpertPool::drain(int id, ExpertScratch& scratch, uint32_t epoch) {
 }
 
 void ExpertPool::run_phase(int mode, int n_tasks) {
+    start_workers();
     wait_parked("before a phase");
     mode_ = mode;
     njobs_ = n_tasks;
@@ -795,6 +805,7 @@ void ExpertPool::run(ExpertJob* jobs, int n) {
         for (int i = 0; i < n; ++i) s2_expert_vnni_q(jobs[i].blob, *jobs[i].act, jobs[i].out, scratch_[0]);
         return;
     }
+    start_workers();
     // Wait for every worker to be parked BEFORE touching the batch, so the publish below is the only thing
     // that can move a worker into the drain loop.
     //

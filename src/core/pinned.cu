@@ -500,7 +500,8 @@ PinnedArena::~PinnedArena() {
         if (locked_bytes) strata::platform::unlock_resident((uint8_t*) base + (slice_bytes ? registered_bytes : 0), locked_bytes);
         if (slice_bytes) {
             for (uint64_t off : slice_starts) cudaHostUnregister((uint8_t*) base + off);
-        } else {
+        } else if (registered_bytes > 0) {
+            // release_arena() may have unregistered and zeroed registered_bytes already: do not unregister twice
             cudaHostUnregister(base);
         }
         release(mapping_base ? mapping_base : base, mapping_bytes ? mapping_bytes : capacity);

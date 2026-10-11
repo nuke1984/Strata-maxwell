@@ -2492,7 +2492,24 @@ def child_env(cfg: dict) -> dict:
         env["HIP_VISIBLE_DEVICES"] = ",".join(str(i) for i in hip_visible(cfg))
     elif gpu_list(cfg):                              # issue #51: the GPU(s) to run on, numbered as nvidia-smi does; CUDA's
         env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"      # own default order (fastest first) can number the cards otherwise
-        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in ordered_gpus(cfg))
+        visible = list(ordered_gpus(cfg))
+        # Maxwell (sm_50) tiers: the --maxwell-devices in the engine args must also be visible, or the
+        # engine's cudaSetDevice fails with "invalid device ordinal"
+        for a in (cfg.get("args") or []):
+            if isinstance(a, str) and a.startswith("--maxwell-devices"):
+                val = a.split("=", 1)[1] if "=" in a else None
+                if val is None:
+                    try:
+                        val = (cfg.get("args") or [])[(cfg.get("args") or []).index(a) + 1]
+                    except (ValueError, IndexError):
+                        val = None
+                if val:
+                    for tok in str(val).split(","):
+                        tok = tok.strip()
+                        if tok and tok.lstrip("-").isdigit() and int(tok) not in visible:
+                            visible.append(int(tok))
+                break
+        env["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in visible)
     for k, v in (cfg.get("env") or {}).items():      # engine settings the config carries (AMD: the GEMM tuning table)
         env[str(k)] = str(v)
     dirs = [d for d in cfg.get("lib_dirs") or [] if Path(d).is_dir()]

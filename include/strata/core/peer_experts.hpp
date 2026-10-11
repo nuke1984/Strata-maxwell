@@ -31,6 +31,11 @@ namespace strata::core {
 /// the peer card writes into are then allocated with cudaHostAllocPortable; without a peer the flag stays off.
 void set_peer_portable(bool on);
 bool peer_portable();
+/// The Maxwell (sm_50) tiers' down kernels scatter their rows STRAIGHT into the verifier's mapped host rows
+/// (no D2H, no host copy), so those buffers must be pinned for every context - i.e. allocated Portable.  Kept
+/// separate from peer_portable(): the prefill's fused-ring decisions key off that one.  Set before any allocation.
+void set_maxwell_portable(bool on);
+bool maxwell_portable();
 
 class PeerExperts {
 public:

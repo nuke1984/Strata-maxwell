@@ -108,6 +108,10 @@ void copy_from_mapped(float* dst, const float* src, int64_t n, void* stream);
 void scatter_rows_f32(const float* src, float* dst, const int32_t* rows, int64_t n, int64_t width, void* stream);
 void copy_rows_from_mapped(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,
                            const int32_t* count, void* stream);
+/// The same, but rows whose kind16[row] is non-zero are read from `src16` as fp16 and converted (the Maxwell
+/// tier's rows, half the uplink bytes: see STRATA_MW_ROWS_F16).
+void copy_rows_from_mapped_f16(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,
+                               const int32_t* count, const uint16_t* src16, const uint8_t* kind16, void* stream);
 
 /// Plan v0.3 P3: the doorbell's payload and its ring in ONE kernel.  Copies `x` (n floats), `ids` and `weights`
 /// (k each) into the mapped host regions, fences, and increments the mapped sequence number - replacing three

@@ -473,9 +473,18 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
     src/core/remote_expert_opt.cu
     src/core/expert_cache.cpp src/core/native_head.cpp src/core/native_dense.cpp src/core/verify.cpp src/core/mtp.cpp
     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp src/core/peer_experts.cpp
-    src/core/arch_defaults.cpp src/core/vmm.cpp src/core/conversation_file.cpp)
+    src/core/arch_defaults.cpp src/core/vmm.cpp src/core/conversation_file.cpp src/core/maxwell_experts.cpp)
   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   target_link_libraries(strata_engine PUBLIC strata_core strata_kernels strata_kernels_cpu ${_strata_gpu_runtime_target})
+  # Maxwell (sm_50) expert kernel: compiled for sm_50 ONLY, in its own library, because the engine's kernels
+  # target sm_75+.  The Maxwell kernel uses no instruction Maxwell lacks, so it links cleanly beside them.
+  add_library(strata_maxwell STATIC src/kernels/cuda/expert_maxwell.cu)
+  target_include_directories(strata_maxwell PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  # the i-quant gate/up dots take llama.cpp's block layouts and codebook grids (ggml-common.h, as
+  # strata_kernels does at line ~381): MIT, third_party/ggml (its LICENSE and VERSION.txt)
+  target_include_directories(strata_maxwell PRIVATE third_party/ggml)
+  set_target_properties(strata_maxwell PROPERTIES CUDA_ARCHITECTURES 50)
+  target_link_libraries(strata_engine PUBLIC strata_maxwell)
   if(STRATA_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/exchange_storage_test.cpp")
     add_executable(exchange_storage_test tests/core/exchange_storage_test.cpp)
     target_include_directories(exchange_storage_test PRIVATE include)
@@ -1481,6 +1490,15 @@ if(STRATA_NATIVE_EXPERTS)
     add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
     target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
     target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+    if(STRATA_ENABLE_CUDA)
+      # The Maxwell (sm_50) tier's i-quant gate/up kernel against the 3060's own production dots
+      # (iq_mmvq + the device q8_1 quantizer) on real shard rows and on synthetic weights: the tool finds
+      # both cards (an M10 and a cc 7+ one) and refuses when either is missing.
+      add_executable(maxwell_iq_parity src/kernels/cuda/expert_maxwell_iq_parity.cpp)
+      target_include_directories(maxwell_iq_parity PRIVATE ${_strata_gpu_include_directories})
+      target_link_libraries(maxwell_iq_parity PRIVATE strata_maxwell strata_kernels strata_kernels_cpu
+        strata_artifact ${_strata_gpu_runtime_target})
+    endif()
     if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
       # Unsloth UD-Q4_K_XL's three expert pairs (and Q8_0 alone, its embedding) on synthetic ggml-quantized weights
       # at 2560/640: GPU and CPU experts against the float reference, GPU dequantizers against to_float.
