@@ -4,7 +4,43 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
-> **AGGIORNAMENTO — sessione del 2026-10-11: ANCORAGGIO DELLO STATO (housekeeping)**
+> **AGGIORNAMENTO — sessione del 2026-10-11 (pomeriggio): PORT SUL v0.1.42 — FATTO E VALIDATO**
+>
+> **Politica**: il v0.1.42 resta verbatim; il lavoro Maxwell è uno strato opt-in sopra (i ganci tutti
+> sotto guardia, inerti senza `--maxwell-devices`). Merge `baf71a10` di `maxwell-0.1.40` (tag
+> `maxwell-0.1.40-IQ2_XS`) su `v0.1.42` nel ramo nuovo **`maxwell-0.1.42`**; 8 file in conflitto risolti
+> "vince l'upstream" (prefill: blocco CPU-share nuovo + blocco Maxwell, il layout Dm è blocco principale →
+> righe Maxwell → righe CPU; generate: swap Foresight nuovo accanto al binding rows_f16, binding split
+> N-stage dell'upstream al posto del vecchio 2-stage; pool: ctor upstream con `tasks`/`phase_tasks` + il
+> nostro start lazy; server.py: `ordered_gpus` + le device Maxwell aggiunte alla visibilità).
+>
+> **Una interazione semantica trovata e chiusa** (`cff9c68e`): il tail skip nuovo di 0.1.42 (default 7 su
+> CUDA) guarda solo `host_res` (la copia RAM): gli esperti dei tier Maxwell sembravano miss PCIe e venivano
+> **azzerati** (44.582 skip nella prima run). Ora un esperto tenuto da un tier è "in VRAM" e non si salta;
+> senza `--maxwell-devices` il comportamento è lo stock 0.1.42.
+>
+> **Validazione (tutta su questo motore)**:
+> - parità kernel: `expert_maxwell_parity` **PARITY OK** (0/640, 0/2560); `maxwell_iq_parity` **0 failure**
+>   su sintetico (iq2_s/iq2_xxs/iq1_m) e su righe reali del GGUF (layer 0/1/8), rel ~1,7e-07 vs i punti di
+>   produzione della 3060 — come prima del merge;
+> - round-trip gate **PASSED ×4** su entrambi i pack (Q2_0 e IQ2_XS), "expert file cache dropped (every
+>   expert is on a GPU)" su entrambi;
+> - correttezza: Q2_0 17×23=**391** ✓ (240k di contesto), IQ2_XS **391 / 9999 / Paris / 23** ✓ (@4096);
+>   expert cache 100%, skip del tail a **0** dopo la correzione;
+> - logpos A/B (stessi id di GEN al motore nuovo e al binario validato 0.1.40 `strata.bak-0140`): **23/23
+>   argmax concordi**, delta medio **+0,02** nats/token — le differenze residue sono le cambi numeriche
+>   dell'upstream 0.1.41/42 (clamp q8_1 alle emit, kernel verify), identiche per i due sistemi;
+> - velocità: nelle bande attese (Q2_0 42–65 tok/s visti; IQ2_XS 25–40 tok/s su chat reali, spec 4).
+>
+> **Non misurato (onestà)**: nessuna card Pascal/Volta in macchina — "il v0.1.42 per Pascal/Volta non
+> cambia" vale *per costruzione* (arch flag intoccate, ganci inerti) più il controllo su Ampere, non per
+> misura diretta. Il logpos assoluto del prompt GEN a mano (−6,0) non è paragonabile ai −1,648 del
+> WORKLOG (prompt loro): conta il delta A/B, non la media.
+>
+> **Prossimi passi**: le voci in sospeso di sotto (scaling contesto, needle, sweep SPLIT) ora su base
+> 0.1.42; il binario di produzione è `engine/strata` (backup del 0.1.40: `engine/strata.bak-0140`).
+
+> **AGGIORNAMENTO — sessione del 2026-10-11 (mattina): ANCORAGGIO DELLO STATO (housekeeping)**
 >
 > - **Tag**: lo stato validato IQ2_XS è ancorato — **`maxwell-0.1.40-IQ2_XS` → `c7157a7`** (annotato, gemello
 >   di `maxwell-0.1.40-Q2_0` → `4ea6ce2`). Il binario in `engine/strata` è costruito da questo commit
