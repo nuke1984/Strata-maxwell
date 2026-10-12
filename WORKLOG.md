@@ -4,6 +4,23 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — diagnostica nsys della catena M10 (2026-10-12): il collo è il kernel gup IQ**
+>
+> Profilo CUPTI (nsys, corsa engine-direct, GEN 40 ≈ 20 finestre; **conteggi, non tempi** — regola del
+> profilo): per finestra per M10 **98 kernel** (48 gup + 48 down) ≈ 0,3–0,4 ms di API di lancio = **~1,5%
+> della finestra** → il "launch overhead" da 32% di llama.cpp **non è il nostro problema**: le nostre
+> finestre batched per layer lo hanno già risolto per costruzione. Il GPU-reach wait (22,5 ms) È la
+> catena M10: busy per M10 ≈ 22,7 ms/finestra, di cui **gup IQ = 81%** (down 16%, ~87 µs/launch).
+>
+> **Il gup IQ in decodifica** (mediana 333 µs, top ~1,4 ms = finestre prompt): IQ2_S 2.771 launch,
+> media 393 µs, ~6,6 job, 40 registri · IQ2_XXS 907 / 298 µs / 46 reg · IQ1_M 249 / 445 µs / 48 reg.
+> Stima banda (IQ2_S, ~8 MB/launch): **~21 GB/s contro il soffio pratico di 83** → il kernel è
+> latency/ALU-bound sul percorso codebook, NON saturo di banda: c'è margine reale.
+>
+> **Prossima sessione (design contro il gup)**: ncu per stalli/occupancy (spiegare, non misurare);
+> struttura ILP del loop lane-strided; riuso di `sact` su più job per blocco; interazione con SPLIT.
+> Le leve già chiuse: SPLIT 4>2>1 (misurato), prefetch L2 (veleno, da M10-TEST), VMAD (già ovunque).
+
 > **AGGIORNAMENTO — metodologia da M10-TEST-FINAL.md + re-baseline in persistence mode (2026-10-12)**
 >
 > **Incrocio con M10-TEST-FINAL.md** (la campagna llama.cpp/gemma4 sugli STESSI M10): le due patch vincenti
