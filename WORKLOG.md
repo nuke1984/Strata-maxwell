@@ -4,6 +4,29 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — campagna gup IQ, vittoria 1: le griglie codebook in shared memory (2026-10-12)**
+>
+> **Harness nuovo**: `iq_gup_bench` (target CMake accanto a maxwell_iq_parity) — il kernel di
+> produzione su righe GGUF reali, job da decodifica, burn 2 s + cudaEvent: l'iterazione del kernel scende
+> da ~8 min (engine reload) a ~40 s. Baseline microbench (layer 0 IQ2_S, 6 job): **430 µs/launch,
+> 14,6 GB/s** — coerente col profilo engine (393 µs).
+>
+> **La scoperta**: i punti di tabella (`iq2s_grid` 8 KB, `iq2xxs_grid` 2 KB, `iq1s_grid_gpu` 8 KB) sono
+> `static const __device__` in **memoria globale**, indicizzati dai dati: catene di carichi
+> latency-esposti dentro ogni dot. **Staging in shared una volta per blocco** (copie int4 coalesced,
+> coperto dal syncthreads esistente): microbench **430 → ~290–320 µs (−25…−33%)**; IQ1_M 445 → 320.
+> Parity: 0 failure su tutto (bit-identico per costruzione: stessa tabella, stessa matematica).
+> **Misurato e scartato**: `__ldg` sui carichi del blob (302–388 µs: nullo/peggiorativo — i carichi
+> semplici già passano da L1).
+>
+> **Engine A/B (stesso protocollo 3×3)**: story **40,6** (+8,6%) · fib **50,9** (+9,5%) · code **46,4**
+> (+6,9%) · **media 46,0 vs 42,4 = +8,4%** — ben oltre ogni soglia. Lunghezze di generazione identiche
+> alla baseline (numerica invariata), 391 ✓, round-trip gate PASSED ×4.
+>
+> **Prossima leva (documentata)**: software pipelining dei carichi di codice nel loop k (la lezione S2
+> di 287a708 valeva −5% lì); richiede la scomposizione load/compute dei tre dot. Il banco (`iq_gup_bench`)
+> è lo strumento: ~286 µs restanti contro il floor di banda ~72 µs (6 MB @ 83 GB/s) — margine ancora 4×.
+
 > **AGGIORNAMENTO — diagnostica nsys della catena M10 (2026-10-12): il collo è il kernel gup IQ**
 >
 > Profilo CUPTI (nsys, corsa engine-direct, GEN 40 ≈ 20 finestre; **conteggi, non tempi** — regola del

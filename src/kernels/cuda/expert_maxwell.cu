@@ -713,7 +713,7 @@ __device__ __forceinline__ float low2f_dev(half2 h) {
 // ---- the dot products (vecdotq.cuh): ggml_cuda_dp4a -> dp4a_s32, __half2float -> h2f_dev,
 // __low2float -> low2f_dev; every other line verbatim from src/kernels/cuda/iq_kernels.cu.
 __device__ __forceinline__ float vec_dot_iq2_xxs_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
-                                                      const int& kbx, const int& iqs) {
+                                                      const int& kbx, const int& iqs, const uint2* __restrict__ grid_sh) {
     const block_iq2_xxs* bq2 = (const block_iq2_xxs*) vbq + kbx;
     const int q2 = get_int_b2(bq2->qs, iqs);
     const uint8_t* aux8 = (const uint8_t*) &q2;
@@ -721,7 +721,7 @@ __device__ __forceinline__ float vec_dot_iq2_xxs_q8_1(const void* __restrict__ v
     int sumi = 0;
 #pragma unroll
     for (int k0 = 0; k0 < 8; k0 += 2) {
-        const uint2 grid_pos = ((const uint2*) iq2xxs_grid)[aux8[k0 / 2]];
+        const uint2 grid_pos = grid_sh[aux8[k0 / 2]];
         const uint32_t signs = unpack_ksigns(aux32 >> (7 * k0 / 2));
         const int signs0 = __vcmpne4(signs & 0x08040201, 0);
         const int grid0 = __vsub4(grid_pos.x ^ signs0, signs0);
@@ -739,7 +739,7 @@ __device__ __forceinline__ float vec_dot_iq2_xxs_q8_1(const void* __restrict__ v
 }
 
 __device__ __forceinline__ float vec_dot_iq2_s_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
-                                                    const int& kbx, const int& iqs) {
+                                                    const int& kbx, const int& iqs, const uint64_t* __restrict__ grid_sh) {
     const block_iq2_s* bq2 = (const block_iq2_s*) vbq + kbx;
     const int qs_packed = get_int_b2(bq2->qs, iqs / 2);
     const uint8_t* qs = (const uint8_t*) &qs_packed;
@@ -751,7 +751,7 @@ __device__ __forceinline__ float vec_dot_iq2_s_q8_1(const void* __restrict__ vbq
     int sumi0 = 0, sumi1 = 0;
 #pragma unroll
     for (int l0 = 0; l0 < 8; l0 += 2) {
-        const int* grid_pos = (const int*) (iq2s_grid + (qs[l0 / 2] | ((qh << (8 - l0)) & 0x300)));
+        const int* grid_pos = (const int*) (grid_sh + (qs[l0 / 2] | ((qh << (8 - l0)) & 0x300)));
         const int signs0 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x03) << 7) | ((signs_packed_8[l0 / 2] & 0x0C) << 21), 0x00000000);
         const int signs1 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x30) << 3) | ((signs_packed_8[l0 / 2] & 0xC0) << 17), 0x00000000);
         const int grid_l = __vsub4(grid_pos[0] ^ signs0, signs0);
@@ -772,7 +772,7 @@ __device__ __forceinline__ float vec_dot_iq2_s_q8_1(const void* __restrict__ vbq
 }
 
 __device__ __forceinline__ float vec_dot_iq1_m_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
-                                                    const int& kbx, const int& iqs) {
+                                                    const int& kbx, const int& iqs, const uint32_t* __restrict__ grid_sh) {
     const block_iq1_m* bq1 = (const block_iq1_m*) vbq + kbx;
     const int qs_packed = get_int_b4(bq1->qs, iqs);
     const uint8_t* qs = (const uint8_t*) &qs_packed;
@@ -781,7 +781,7 @@ __device__ __forceinline__ float vec_dot_iq1_m_q8_1(const void* __restrict__ vbq
 #pragma unroll
     for (int l0 = 0; l0 < 8; l0 += 2) {
         const int qhl = bq1->qh[2 * iqs + l0 / 4] >> (4 * ((l0 / 2) % 2));
-        const int grid = iq1s_grid_gpu[qs[l0 / 2] | ((qhl & 0x07) << 8)];
+        const int grid = grid_sh[qs[l0 / 2] | ((qhl & 0x07) << 8)];
         const int grid0 = (grid >> 0) & 0x0F0F0F0F;
         const int grid1 = (grid >> 4) & 0x0F0F0F0F;
         const int u0 = get_int_b4(bq8_1[iqs].qs, l0 + 0);
@@ -810,20 +810,26 @@ __device__ __forceinline__ float vec_dot_iq1_m_q8_1(const void* __restrict__ vbq
 template <int TY> struct IqFmt;
 template <> struct IqFmt<22> {
     static constexpr int qk = 256, ipb = 8, step = 2;
-    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
-        return vec_dot_iq2_s_q8_1(v, y, kbx, iqs);
+    static constexpr int grid_bytes = 1024 * 8;   // iq2s_grid: uint64 x 1024
+    __device__ static const void* grid_dev() { return (const void*) iq2s_grid; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq2_s_q8_1(v, y, kbx, iqs, (const uint64_t*) gsh);
     }
 };
 template <> struct IqFmt<16> {
     static constexpr int qk = 256, ipb = 8, step = 2;
-    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
-        return vec_dot_iq2_xxs_q8_1(v, y, kbx, iqs);
+    static constexpr int grid_bytes = 256 * 8;   // iq2xxs_grid: uint2 x 256
+    __device__ static const void* grid_dev() { return (const void*) iq2xxs_grid; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq2_xxs_q8_1(v, y, kbx, iqs, (const uint2*) gsh);
     }
 };
 template <> struct IqFmt<29> {
     static constexpr int qk = 256, ipb = 8, step = 1;
-    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs) {
-        return vec_dot_iq1_m_q8_1(v, y, kbx, iqs);
+    static constexpr int grid_bytes = 2048 * 4;   // iq1s_grid_gpu: uint32 x 2048
+    __device__ static const void* grid_dev() { return (const void*) iq1s_grid_gpu; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq1_m_q8_1(v, y, kbx, iqs, (const uint32_t*) gsh);
     }
 };
 
@@ -871,6 +877,16 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
             ds[1] = 0;
         }
     }
+    // the codebook grids staged once per block: the dots hit them at data-dependent indices, and a
+    // shared copy turns those latency-exposed global reads (~21 GB/s measured, 18% of the ceiling)
+    // into shared lookups.  2 KB (IQ2_XXS) or 8 KB (IQ2_S / IQ1_M); staged coalesced.
+    __shared__ __align__(16) uint8_t sgrid[F::grid_bytes];
+    {
+        const int4* g = (const int4*) F::grid_dev();
+        int4* d = (int4*) sgrid;
+#pragma unroll
+        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += 128) d[i] = g[i];
+    }
     __syncthreads();
     const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (FF % PER_BLOCK == 0)
     const int row = idx - j * FF;
@@ -881,8 +897,8 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
     float accg = 0.f, accu = 0.f;
     for (int k = part; k < nb * F::ipb; k += SPLIT) {
         const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs);
-        accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs);
+        accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
+        accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
     }
     __shared__ float2 sh[128];
     __shared__ float sx[PER_BLOCK];

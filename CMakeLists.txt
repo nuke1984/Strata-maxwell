@@ -1498,6 +1498,11 @@ if(STRATA_NATIVE_EXPERTS)
       target_include_directories(maxwell_iq_parity PRIVATE ${_strata_gpu_include_directories})
       target_link_libraries(maxwell_iq_parity PRIVATE strata_maxwell strata_kernels strata_kernels_cpu
         strata_artifact ${_strata_gpu_runtime_target})
+      # the gup timing harness: the production kernel on real GGUF rows at decode-like job counts
+      add_executable(iq_gup_bench src/kernels/cuda/iq_gup_bench.cpp)
+      target_include_directories(iq_gup_bench PRIVATE ${_strata_gpu_include_directories})
+      target_link_libraries(iq_gup_bench PRIVATE strata_maxwell strata_kernels strata_kernels_cpu
+        strata_artifact ${_strata_gpu_runtime_target})
     endif()
     if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
       # Unsloth UD-Q4_K_XL's three expert pairs (and Q8_0 alone, its embedding) on synthetic ggml-quantized weights
