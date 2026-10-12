@@ -3961,6 +3961,29 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     d.ms_actq += ms(c1, c2);
     d.ms_jobs += ms(c2, c3);
     d.ms_run += ms(c3, c4);
+    // T1 (2026-10-12): the per-layer roundtrip decomposition.  STRATA_MW_LAYERPROF=1 prints the phase
+    // averages every 1920 layers (40 windows): plan (kind assignment + act quant), actq (the Maxwell
+    // begin: staging, uploads, gup launch), jobs, run (down launch + M10 finish syncs + scatter).
+    // The ring wait, the pool wall and the post-pool -> flag span print from verify.cpp's loop; the
+    // remainder of the layer wall is the 3060's own compute.
+    {
+        static struct LProf {
+            double plan = 0, actq = 0, jobs = 0, run = 0;
+            int64_t n = 0;
+            bool on = std::getenv("STRATA_MW_LAYERPROF") != nullptr;
+        } lp;
+        if (lp.on) {
+            lp.plan += ms(c0, c1); lp.actq += ms(c1, c2); lp.jobs += ms(c2, c3); lp.run += ms(c3, c4);
+            if (++lp.n % 1920 == 0) {
+                std::fprintf(stderr, "MWPROF layer %lld: plan %.1f actq %.1f jobs %.1f run %.1f us/layer "
+                                     "(dispatch span %.1f)\n", (long long) lp.n,
+                             lp.plan / lp.n * 1000.0, lp.actq / lp.n * 1000.0,
+                             lp.jobs / lp.n * 1000.0, lp.run / lp.n * 1000.0,
+                             (lp.plan + lp.actq + lp.jobs + lp.run) / lp.n * 1000.0);
+                std::fflush(stderr);
+            }
+        }
+    }
     for (int64_t i = 0; i < n_tok * k; ++i) {
         const int64_t e = ids[i];
         if (e >= 0 && e < d.n_expert) d.job_of[(size_t) e] = -1;

@@ -2110,6 +2110,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         if (pool != nullptr)
             pool(user, h_x_ + (size_t) tb * g.n_embd, h_ids_ + (size_t) tb * ss.k, n, ss.k,
                  h_ymiss_ + (size_t) tb * ss.k * g.n_embd, l);
+        const Clock::time_point mwp_poolend_ = Clock::now();
         if (remote_opt_) remote_opt_->end();
         VDBG("layer %lld served\n", (long long) l);
         if (g_trace) trace_ev(*(volatile uint32_t*) h_flagA_ == want ? "SERVED" : "SERVED-NO-PLAN-YET", k, l,
@@ -2141,6 +2142,27 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         if (!(test_stall && k + 1 == steps)) *flag = want;
         ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
         ms_pool += ms_since(b);
+        // T1: the verifier-side phases of the layer roundtrip - ring wait (a->b), pool wall (the whole
+        // callback), post (PLE gather + flag writes).  The pool's internals print from the dispatch.
+        {
+            static struct VProf {
+                double wait = 0, pool = 0, post = 0;
+                int64_t n = 0;
+                bool on = std::getenv("STRATA_MW_LAYERPROF") != nullptr;
+            } vp;
+            if (vp.on) {
+                vp.wait += std::chrono::duration<double, std::milli>(b - a).count();
+                const double pw = ms_since(b) - ms_since(mwp_poolend_);
+                vp.pool += pw > 0 ? pw : 0;
+                vp.post += ms_since(mwp_poolend_);
+                if (++vp.n % 1920 == 0) {
+                    std::fprintf(stderr, "MWPROF vlayer %lld: ring %.1f pool %.1f post %.1f us/layer\n",
+                                 (long long) vp.n, vp.wait / vp.n * 1000.0, vp.pool / vp.n * 1000.0,
+                                 vp.post / vp.n * 1000.0);
+                    std::fflush(stderr);
+                }
+            }
+        }
     }
     // (#646 staged the next stage's inputs here; 0.1.39b keeps the layer split's order: each stage stages its own)
     progress_at("verify window: waiting for the GPU to finish the window (flags A/B/M raised)", (int64_t) T);

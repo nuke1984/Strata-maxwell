@@ -4,6 +4,38 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — T1: il budget per-layer del roundtrip, etichettato (2026-10-12, notte)**
+>
+> **Strumento**: `STRATA_MW_LAYERPROF=1` (resta nel codice): timestamp per fase nel servizio layer,
+> stampa ogni 1920 layer. Corsa engine-direct, GEN 250, 3.840 layer caldi.
+>
+> | fase | µs/layer | cos'è |
+> |---|---|---|---|
+> | ring wait | **420** | il lavoro 3060 del layer (attenzione/router/norm — GPU compute reale) |
+> | dispatch plan | 7 | assegnazione kind |
+> | dispatch actq | **90** | staging + 4 upload + 4 lanci gup |
+> | dispatch jobs | 14 | tabelle job |
+> | dispatch run | **530** | lanci down + **finish-sync** + attesa scatter |
+> | post | 50 | pubblicazioni flag |
+> | **totale** | **~1.118** | |
+>
+> **Il risultato chiave**: i kernel M10 computano ~360 µs e la 3060 ~420 µs — **~330 µs/layer (~37%
+> della finestra, ~16 ms) non è compute di NESSUNA GPU: è il costo del handoff** (API host, sync,
+> protocollo). Entrambe le GPU inattive ~2/3 del tempo: collo di LATENZA, non di throughput — esattamente
+> la diagnosi. DoS (duty): 3060 ~38%, M10 ~32%, handoff ~30%.
+>
+> **Il protocollo, mappato**: le righe M10 (scatter mapped) sono guardate dal doorbell principale
+> `h_flag_`, che l'host alza DOPO il finish-sync del layer. Il sync esiste per (a) riusare `h_up_`
+> (buffer singolo) e (b) l'alzata del doorbell — NON perché il risultato serva all'host.
+>
+> **Design E1 "GPU-raised doorbell" (pronto per la prossima sessione)**: l'ultimo blocco del kernel down
+> alza `h_flag_` (pattern last-block su contatore device, reset nello stream; monotono per ring value);
+> il grafo della 3060 attende h_flag_ AND i 4 flag per-tier mapped (nuovo kernel wait multi-flag);
+> l'host smette di attendere: il run scende da 530 a ~360 µs/layer. Con doppio buffer `h_up_` (2 set
+> alternati) lo staging non corre col kernel precedente. **Atteso: −8 ms/finestra ≈ +15%.** Le fasi
+> successive: E2 (pre-quant actq durante il ring wait, nasconde 90 µs), E5 (sonda overlap/ceiling),
+> poi il sondaggio movable-work (shared expert 1,42 · out-proj 1,97 · hc0 3,58 ms/finestra).
+
 > **AGGIORNAMENTO — actq/zero-copy: misurato e RIFIUTATO (2026-10-12, sera)**
 >
 > **Composizione finestra post-campagna-kernel** (engine-direct, corsa fredda): attesa GPU-reach 19,1 ·
