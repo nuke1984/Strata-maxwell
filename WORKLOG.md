@@ -4,6 +4,27 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — actq/zero-copy: misurato e RIFIUTATO (2026-10-12, sera)**
+>
+> **Composizione finestra post-campagna-kernel** (engine-direct, corsa fredda): attesa GPU-reach 19,1 ·
+> ms_run (lanci+sync M10) 22,0 · actq 4,2 · draft 7,1 (freddo) — il collo SI È SPOSTATO: non più il gup.
+> L'anomalia actq (~87 µs/layer per staging+upload di ~16 KB su 4 device): già ottimale a livello di
+> API (buffer pinned, UN memcpy impacchettato per device per layer); il costo È il prezzo delle chiamate
+> CUDA in questa VM (~4 µs ciascuna, ~16/layer).
+>
+> **Esperimento zero-copy** (P7): staging pinned MAPPED, kernel che legge atti+jobs direttamente da
+> memoria host via PCIe — elimina i memcpy (1 sola chiamata per device per layer). Sicurezza verificata
+> (buffer per-tier, disciplina di sync per layer in decodifica E prefill). **Risultato: 28,2/34,1/33,8
+> tok/s = −30%** — le letture mappate sono memoria di sistema NON cacheata su sm_50: il kernel va in
+> stallo sulla latenza PCIe. **Rifiutato**: DEFAULT OFF, resta opt-in (`STRATA_MW_ZEROCOPY=1`) con la
+> misura nel commento. **Lezione**: su questa architettura le righe mapped si SCRIVONO bene (finish le
+> usa da sempre) ma si LEGGONO male.
+>
+> **Stato**: produzione sul build buono (40,6/50,7 verificati al ripristino, 391 ✓). Le successive
+> candidate rimaste: ridurre le CHIAMATE API in altro modo (es. fondere gup+down per device per layer in
+> un solo lancio — richiede sincronizzazione intra-griglia non disponibile su cc 5.0, o catene di eventi),
+> oppure il lato 3060 (draft 3,2 ms, percorso host 14,5 ms).
+
 > **AGGIORNAMENTO — campagna gup IQ, vittoria 2 (kernel) e termine della traslazione engine (2026-10-12)**
 >
 > **SPLIT re-sweep post-griglie**: 4 riconfermato (314/319 vs 2: 346/350 vs 1: 963 µs). **Unroll 4 del

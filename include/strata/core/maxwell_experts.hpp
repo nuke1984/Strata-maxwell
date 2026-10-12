@@ -127,9 +127,10 @@ private:
     // P6.x: ONE contiguous staging region per device: [packed acts][job table].  The host packs the acts at
     // offset 0 and the job table right after (n_tok * ACTS_STRIDE), the device mirrors the layout, so a
     // layer costs ONE async upload instead of two (measured: a CUDA call is ~4 us in this VM).
-    uint8_t* d_up_ = nullptr;       // the merged device staging
+    uint8_t* d_up_ = nullptr;       // the merged device staging (the MAPPED host pointer when zero-copy)
     uint8_t* h_up_ = nullptr;       // its pinned host twin
     size_t up_bytes_ = 0;
+    bool zerocopy_ = false;         // P7: the kernels read acts+jobs from the mapped pinned staging
     uint8_t* d_acts_ = nullptr;     // = d_up_ (packed ActQ: [q per token][scale per token][hx per token])
     uint8_t* d_aq_ = nullptr;       // = d_acts_ (int8 codes, H per token)
     float* d_ascale_ = nullptr;     // = d_acts_ + n_tok_max*H

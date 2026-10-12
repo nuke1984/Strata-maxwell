@@ -9,6 +9,7 @@
 // This is deliberately synchronous (no stream overlap with the CPU pool) for the proof: correctness first,
 // overlap later.  The CPU pool and the M10 work sequentially, so the M10 still replaces CPU work 1:1.
 #include "strata/core/maxwell_experts.hpp"
+#include "strata/core/peer_experts.hpp"
 
 #include "strata/kernels/cuda/expert_maxwell.hpp"
 #include "strata/kernels/cpu/expert.hpp"
@@ -285,8 +286,29 @@ bool MaxwellExperts::open(int device,
     // P6.x (measured): ONE contiguous staging region [packed acts][job table] so a layer costs ONE async
     // upload instead of two.  A CUDA call is ~4 us in this VM; 2 calls -> 1 per device per layer.
     up_bytes_ = acts_bytes_ + jobs_bytes;
-    if (!check(cudaMalloc(&d_up_, up_bytes_), "cudaMalloc staging", err)) { close(); return false; }
-    if (!check(cudaMallocHost((void**) &h_up_, up_bytes_), "cudaMallocHost staging", err)) { close(); return false; }
+    // P7 (2026-10-12, MEASURED AND REJECTED as the default): zero-copy staging - the pinned buffer
+    // allocated MAPPED, the kernels reading acts+jobs straight from host memory.  It removes the
+    // per-layer cudaMemcpyAsync (~4 us of API x 4 devices) but the mapped reads are UNCACHED system
+    // memory on sm_50: the kernel stalls on PCIe latency and the engine measured 28.2/34.1/33.8 tok/s
+    // vs 40.0/51.0/46.7 (-30%).  OFF by default; STRATA_MW_ZEROCOPY=1 restores it for reference.
+    static const bool zerocopy = [] {
+        const char* e = std::getenv("STRATA_MW_ZEROCOPY");
+        return e != nullptr && std::atoi(e) != 0;
+    }();
+    zerocopy_ = zerocopy;
+    if (zerocopy) {
+        if (!check(cudaHostAlloc((void**) &h_up_, up_bytes_,
+                                 cudaHostAllocMapped | (::strata::core::maxwell_portable() ? cudaHostAllocPortable : 0)),
+                   "cudaHostAlloc mapped staging", err)) { close(); return false; }
+        if (!check(cudaHostGetDevicePointer((void**) &d_up_, h_up_, 0), "map staging", err)) {
+            close(); return false;
+        }
+        std::fprintf(stderr, "strata maxwell: acts+jobs staging is ZERO-COPY (mapped pinned; measured "
+                             "-30%% tok/s on sm_50 - uncached sysmem reads; reference only)\n");
+    } else {
+        if (!check(cudaMalloc(&d_up_, up_bytes_), "cudaMalloc staging", err)) { close(); return false; }
+        if (!check(cudaMallocHost((void**) &h_up_, up_bytes_), "cudaMallocHost staging", err)) { close(); return false; }
+    }
     d_acts_ = d_up_;                 // the packed acts live at offset 0
     h_acts_ = h_up_;
     d_jobs_ = (int32_t*) (d_up_ + acts_bytes_);   // re-based per layer in begin_chain (right after the acts)
@@ -450,7 +472,8 @@ void MaxwellExperts::close() {
     if (ev_up_) { cudaEventDestroy(ev_up_); ev_up_ = nullptr; }
     if (ev_q_) { cudaEventDestroy(ev_q_); ev_q_ = nullptr; }
     if (d_blobs_) { cudaFree(d_blobs_); d_blobs_ = nullptr; }
-    if (d_up_) { cudaFree(d_up_); d_up_ = nullptr; }
+    if (d_up_ && !zerocopy_) { cudaFree(d_up_); }   // zero-copy: d_up_ IS h_up_'s mapping
+    d_up_ = nullptr;
     if (h_up_) { cudaFreeHost(h_up_); h_up_ = nullptr; }
     d_acts_ = nullptr; h_acts_ = nullptr; d_jobs_ = nullptr; h_jobs_ = nullptr;
     d_aq_ = nullptr; d_ascale_ = nullptr; d_ahx_ = nullptr;
@@ -555,8 +578,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         h_jobs_[j * 3 + 2] = jobs[j].row;   // destination row: the token path's entry index.  finish_chain
                                             // rewrites it (and re-uploads) for the prefill's staging order.
     }
-    // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait
-    if (!check(cudaMemcpyAsync(d_up_, h_up_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
+    // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
+    // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
+    if (!zerocopy_ &&
+        !check(cudaMemcpyAsync(d_up_, h_up_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
                                cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
@@ -663,7 +688,8 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     // into the staging block, and the host copies the rows out below.  One wait per device per layer.
     if (!down_launched_) {
         for (size_t j = 0; j < owned_row_.size(); ++j) h_jobs_[j * 3 + 2] = (int32_t) j;
-        if (!check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
+        if (!zerocopy_ &&
+            !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                    cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
         const LayerGeo& g = geo_of(w_layer_);
         s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
