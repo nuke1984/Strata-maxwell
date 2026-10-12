@@ -548,7 +548,16 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
               mapped(64, (void**) &h_flagA_, (void**) &m_flagA_) &&
               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
               mapped(64, (void**) &h_plan_err_, (void**) &m_plan_err_) &&
-              mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
+              mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_) &&
+              mapped(256, (void**) &h_mwe_, (void**) &m_mwe_) &&          // E1: the expected ring (64 x u32)
+              mapped(16, (void**) &h_mwf_[0], (void**) &m_mwf_[0]) &&     // E1: the four tier flags
+              mapped(16, (void**) &h_mwf_[1], (void**) &m_mwf_[1]) &&
+              mapped(16, (void**) &h_mwf_[2], (void**) &m_mwf_[2]) &&
+              mapped(16, (void**) &h_mwf_[3], (void**) &m_mwf_[3]);
+        if (ok) {   // the E1 flags and the expected ring start zeroed (monotonic protocol)
+            std::memset(h_mwe_, 0, 256);
+            for (int i = 0; i < 4; ++i) std::memset(h_mwf_[i], 0, 16);
+        }
     // STRATA_MW_ROWS_F16=1: the Maxwell tier's expert rows travel as fp16 (half the uplink bytes) and the
     // dec_batch row copy converts them back.  Only that copy path knows the conversion, so the opt-in is
     // refused (and the M10s keep writing fp32 rows, which every path expects) when another path is active.
@@ -1558,6 +1567,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                          skip_ + grp, ring, cs);
             } else {
                 wait_flag_ge(m_flag_, ring, cs);               // the CPU's share is in the mapped rows
+                // E1: when the tiers are wired, this wait ALSO gates on their GPU-raised flags - the
+                // expected sequence comes from this step's ring slot at run time (capture bakes pointers)
+                if (mw_wait_) {
+                    const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
+                    wait_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw, cs);
+                }
                 stamp(l, 23, grp);
                 if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
                     remote_opt_->copy_rows(parts_out, m_ymiss_ + (size_t) tb * K * N, tb, n, p_dst, p_counts + 1, cs);
@@ -2139,6 +2154,10 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
             _mm_sfence();
             ms_host += ms_since(tp);
         }
+        // E1: publish this step's expected tier-sequence BEFORE the main flag rises - the graph's
+        // multi-wait reads it at run time from this step's ring slot.  The tiers' launch counter and
+        // this count advance in lockstep (one service per tier per step, kernel-raised or host-raised).
+        if (mw_wait_) h_mwe_[k & 63] = (uint32_t) (++mw_services_);
         if (!(test_stall && k + 1 == steps)) *flag = want;
         ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
         ms_pool += ms_since(b);

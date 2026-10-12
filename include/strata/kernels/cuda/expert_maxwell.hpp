@@ -102,7 +102,9 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
                                         float* d_out, size_t blob_stride = expert_maxwell_geo::BLOB,
                                         size_t d_codes_off = expert_maxwell_geo::O_D_CODES,
                                         size_t d_scales_off = expert_maxwell_geo::O_D_SCALES,
-                                        cudaStream_t stream = 0);
+                                        cudaStream_t stream = 0,
+                                        volatile uint32_t* mflag = nullptr, const uint32_t ring = 0,
+                                        uint32_t* ctr = nullptr);
 /// v2 ONLY: the down stage with fp16 rows (half the uplink bytes when the destination is mapped host
 /// memory; the verifier converts them back during its row copy).  `d_out16` holds H halves per entry.
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,

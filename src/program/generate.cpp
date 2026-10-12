@@ -5495,8 +5495,7 @@ int main(int argc, char** argv) {
                          maxwell_devs[m], (long long) maxwell_experts[m].resident(),
                          maxwell_experts[m].gib(),
                          std::chrono::duration<double>(Clock::now() - tp0).count());
-            drive.d.maxwell[drive.d.maxwell_count++] = &maxwell_experts[m];
-            // collect resident pairs so pin_cache_complement excludes them from RAM (no duplication)
+            drive.d.maxwell[drive.d.maxwell_count++] = &maxwell_experts[m];            // collect resident pairs so pin_cache_complement excludes them from RAM (no duplication)
             for (const auto& pr : maxwell_experts[m].held_pairs()) maxwell_pairs.push_back(pr);
         }
         {   // DIAGNOSTIC: how many M10 pairs the 3060's cache also holds (should be ~0)
@@ -7672,6 +7671,18 @@ int main(int argc, char** argv) {
         const strata::core::PoolMultiFn win_pool_fn = n_stages > 1 ? &drive_pool_split : &drive_pool_multi;
         void* const win_pool_user = n_stages > 1 ? (void*) &split_drive : (void*) &drive;
         mem_mark("the verifier and the drafter's binding");
+        // E1: wire the tiers' GPU-raised completion flags (the verifier allocates four) and arm the
+        // graph's multi-wait.  STRATA_MW_GPUFLAG: 1 flags+multi-wait with the host sync kept, 2 no-sync.
+        if (drive.d.maxwell_count > 0) {
+            static const int e1 = [] { const char* e = std::getenv("STRATA_MW_GPUFLAG"); return e ? std::atoi(e) : 0; }();
+            if (e1 >= 1) {
+                for (int m = 0; m < drive.d.maxwell_count; ++m)
+                    maxwell_experts[m].set_completion_flag(ver.mw_flags(m));
+                ver.set_mw_wait(ver.mw_flags_ptr());
+                std::fprintf(stderr, "strata maxwell: GPU-raised doorbell x%d (mode %d)\n",
+                             (int) drive.d.maxwell_count, e1);
+            }
+        }
         ver.set_split(o.spec_split);
         // auto: the copy kernel for every pack.  DMA (the native packs' default until 0.1.13) has the host call
         // cudaMemcpyAsync + cudaLaunchHostFunc inside a verify window while the GPU spins on the flag they raise;

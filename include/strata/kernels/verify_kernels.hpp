@@ -41,6 +41,10 @@ void gdn_step_norm_multi(float* state, const float* h, int conv_channels, const 
 /// Spin until *flag >= value (a mapped host flag).  The value is fixed at capture, so several rings can be
 /// outstanding at once (the split verify window keeps two).
 void wait_flag_ge(const uint32_t* flag, uint32_t value, void* stream);
+/// E1: the Maxwell completion wait - the main flag >= ring AND the four tier flags >= the EXPECTED
+/// sequence read at run time from *exp (a per-step ring slot; the capture bakes only pointers).
+void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,
+             void* stream);
 /// the GPU's %globaltimer (ns) into buf[i] (a one-thread kernel: the verify window's stage profiler).  Inside a PDL
 /// stretch (pdl.hpp) the stamp passes the early launch on, so a profiled window keeps the chain it measures.
 void gpu_stamp(unsigned long long* buf, int i, void* stream);

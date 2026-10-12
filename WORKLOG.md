@@ -4,6 +4,26 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — E1 "GPU-raised doorbell": costruito, corretto, neutro (2026-10-13)**
+>
+> **Cosa gira ora (opt-in, `STRATA_MW_GPUFLAG`)**: 1 = i flag per-tierMapped alzati dall'ULTIMO blocco
+> del kernel down (fence system + atomicAdd su contatore device, reset in-stream) + il multi-wait nel
+> grafo della 3060 (attesa: flag principale E i 4 flag tier ≥ l'atteso letto a run-time da uno slot
+> ring per-step — la cattura cuoce solo puntatori); l'host mantiene il sync. 2 = anche IL SYNC SPARISCE
+> dal percorso decodifica: dispatch senza attesa + staging doppiato (2 set alternati per servizio).
+>
+> **Risultati**: mode 1 neutro (58,3 ms/finestra, zero stall — la correttezza del nuovo gating è
+> dimostrata). Mode 2: **il dispatch crolla 660 → 115 µs/layer (run 550 → 3,8!)**, zero stall, 391 ✓,
+> 2000 token di race-smoke puliti — ma la finestra è PIATTA (59,1 engine-direct) e il server misura
+> **44,1 vs 45,9 (−4%)**: il ring-wait assorbe tutto il tempo liberato. **Lettura**: la catena di
+> dipendenze per layer (3060-pre 420 → dispatch 115 → M10 360 → post) era ED È il limite; l'handoff
+> host è sceso da 330 a 115 µs/layer, ma senza sovrapposizione TRA layer il muro non si muove.
+> **Decisione**: default OFF (il −4% non si regala); il valore è strutturale: l'host è libero per
+> ~830 µs/layer — la prossima mossa È la sovrapposizione: **E2** (worker che pre-quantizza e pre-carica
+> gli atti del layer l+1 durante il ring-wait, ~115 µs da nascondere) e **il riordino del grafo**
+> (le fasi 3060 indipendenti dalle righe esperte — shared expert, parti attention — devono correre
+> PRIMA dell'attesa dei flag M10: è la Fase 4 storica, ora quantificata in ~360 µs/layer recuperabili).
+
 > **AGGIORNAMENTO — T1: il budget per-layer del roundtrip, etichettato (2026-10-12, notte)**
 >
 > **Strumento**: `STRATA_MW_LAYERPROF=1` (resta nel codice): timestamp per fase nel servizio layer,

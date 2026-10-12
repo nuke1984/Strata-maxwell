@@ -977,6 +977,32 @@ __global__ void wait_flag_ge_kernel(const volatile uint32_t* flag, uint32_t valu
 }  // namespace
 
 namespace {
+// E1: the Maxwell tiers' completion wait.  The main flag gates the host's own share as before; the four
+// tier flags are raised by the M10 down kernels' last blocks (monotonic sequence values).  The EXPECTED
+// sequence is read from mapped memory at RUN time - the graph capture bakes only the pointers - via a
+// per-step ring slot, so a later layer's publish cannot lengthen an earlier layer's wait.
+__global__ void wait_mw_kernel(volatile const uint32_t* main, uint32_t ring,
+                               volatile const uint32_t* exp,
+                               volatile const uint32_t* f0, volatile const uint32_t* f1,
+                               volatile const uint32_t* f2, volatile const uint32_t* f3) {
+    while (true) {
+        const uint32_t e = *exp;
+        if (*main >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+        strata_spin_pause();
+    }
+    __threadfence_system();
+}
+}  // namespace
+
+void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,
+             void* stream) {
+    wait_mw_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(
+        (volatile const uint32_t*) main, ring, (volatile const uint32_t*) exp,
+        (volatile const uint32_t*) mw[0], (volatile const uint32_t*) mw[1],
+        (volatile const uint32_t*) mw[2], (volatile const uint32_t*) mw[3]);
+}
+
+namespace {
 // one thread per window entry: up to kVerifyMaxT tokens x 10 routed experts (80), so 128 (#646 had 64: a window of
 // 7+ tokens lost its last entries)
 constexpr int kResidentPlanMax = 128;

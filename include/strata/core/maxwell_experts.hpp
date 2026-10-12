@@ -75,6 +75,9 @@ public:
     /// fp32 row slot (the first H/2 floats) instead of the full-width fp32 row - half the uplink bytes.  The
     /// verifier's row copy converts them back (it publishes the per-entry `kind16` flags that mark them), and
     /// the per-group destination offset keeps working because the fp16 rows ride the same `dst_mapped`.
+    /// E1: hand this tier its mapped completion flag (the verifier allocates four).  When set, the
+    /// decode down kernel raises it and (mode 2) the host stops waiting for the M10s.
+    void set_completion_flag(uint32_t* f) { comp_flag_ = f; }
     bool begin(int64_t layer, const strata::kernels::cpu::ActQ* acts, const int32_t* ids, int64_t n_tok,
                int64_t k, const int32_t* kind, float* dst_mapped, bool rows_f16, std::string& err);
     /// Wait for this device's staged rows and write them into `out` (row i = entry i, n_embd floats) - the
@@ -131,6 +134,17 @@ private:
     uint8_t* h_up_ = nullptr;       // its pinned host twin
     size_t up_bytes_ = 0;
     bool zerocopy_ = false;         // P7: the kernels read acts+jobs from the mapped pinned staging
+    // E1: the GPU-raised doorbell.  comp_flag_ is the verifier's mapped tier flag; the down kernel's
+    // last block raises it to the monotonic comp_seq_ (the verifier publishes the same count as the
+    // expected value each step).  d_ctr_ is the in-stream arrival counter; pending_raise_ covers a
+    // service whose jobs list came out empty.  Mode (STRATA_MW_GPUFLAG): 0 off, 1 flags+multi-wait
+    // with the host sync kept, 2 also drops the decode-path sync (double-buffered staging).
+    uint32_t* comp_flag_ = nullptr;
+    uint32_t comp_seq_ = 0;
+    uint32_t pending_raise_ = 0;
+    uint32_t* d_ctr_ = nullptr;
+    uint8_t* d_up2_ = nullptr;      // the second staging set (mode 2: layer l+1 stages while l reads)
+    uint8_t* h_up2_ = nullptr;
     uint8_t* d_acts_ = nullptr;     // = d_up_ (packed ActQ: [q per token][scale per token][hx per token])
     uint8_t* d_aq_ = nullptr;       // = d_acts_ (int8 codes, H per token)
     float* d_ascale_ = nullptr;     // = d_acts_ + n_tok_max*H

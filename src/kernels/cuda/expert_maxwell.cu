@@ -487,7 +487,9 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
                                           const MaxJob* __restrict__ jobs,
                                           int njobs, const int8_t* __restrict__ faq,
                                           const float* __restrict__ fasc, const float* __restrict__ fahx,
-                                          float* __restrict__ out) {
+                                          float* __restrict__ out,
+                                          volatile uint32_t* __restrict__ mflag, const uint32_t ring,
+                                          uint32_t* __restrict__ ctr) {
     constexpr int PER_BLOCK = 128 / SPLIT;
     static_assert(H % PER_BLOCK == 0, "v2 stages one job per block: H must be a multiple of PER_BLOCK");
     const int row0 = blockIdx.x * PER_BLOCK;
@@ -539,6 +541,24 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
         const float r = a0 - c0;
         if (F16) ((uint16_t*) out)[(size_t) jd.dst * H + row] = f2h_rn(r);   // half the uplink bytes
         else     out[(size_t) jd.dst * H + row] = r;
+    }
+    // E1 (2026-10-12): the GPU-raised doorbell.  When wired (mflag != nullptr), the LAST block of this
+    // launch makes its rows visible system-wide and raises the tier's mapped completion flag to `ring`;
+    // the 3060's graph multi-waits on the four tier flags plus the host's main flag, and the host never
+    // waits for the M10s.  The arrival counter resets IN-STREAM (this tier's next down launch cannot
+    // start before this kernel retires), so it is already 0 for the next layer.  The grid is sized
+    // exactly (H % PER_BLOCK == 0), so every block reaches this tail and the count closes.
+    if (mflag != nullptr) {
+        __threadfence_system();                       // every thread: its rows visible system-wide
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            const unsigned old = atomicAdd(ctr, 1u);
+            if (old == gridDim.x - 1) {
+                *mflag = ring;
+                __threadfence_system();
+                *ctr = 0;
+            }
+        }
     }
 }
 
@@ -1085,7 +1105,8 @@ void s2_expert_maxwell_gup_batch_async(const uint8_t* d_blobs, const int32_t* d_
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, size_t blob_stride, size_t d_codes_off,
-                                        size_t d_scales_off, cudaStream_t stream) {
+                                        size_t d_scales_off, cudaStream_t stream,
+                                        volatile uint32_t* mflag, const uint32_t ring, uint32_t* ctr) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
@@ -1095,22 +1116,23 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
         if (sp == 1) {
             expert_s2_stage2_batch_v2<1><<<(rows + 127) / 128, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
         } else if (sp == 4) {
             expert_s2_stage2_batch_v2<4><<<(rows + 32 - 1) / 32, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
         } else if (sp == 8) {
             expert_s2_stage2_batch_v2<8><<<(rows + 16 - 1) / 16, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
         } else {
             expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
         }
         return;
     }
+    (void) mflag; (void) ring; (void) ctr;   // the v1 path has no completion tail
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
         d_faq, d_fasc, d_fahx, d_out);
@@ -1129,7 +1151,7 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
     const int rows = njobs * H;
     expert_s2_stage2_batch_v2<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-        d_faq, d_fasc, d_fahx, (float*) d_out16);
+        d_faq, d_fasc, d_fahx, (float*) d_out16, nullptr, 0, nullptr);   // fp16 takes no completion tail
 }
 
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,

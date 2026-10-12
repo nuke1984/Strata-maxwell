@@ -262,6 +262,15 @@ public:
     /// Plan v0.3 P6: split the window into two token groups and pipeline the CPU experts of one with the GPU work
     /// of the other (default on).  Set before the first `run`.
     void set_split(bool on) { split_ = on; }
+    /// E1: wire the four mapped tier-completion flags and enable the graph's multi-wait.  The tier's
+    /// down kernel raises flag[i] to a monotonic sequence value; the host publishes the expected
+    /// sequence per step.  Call before the first capture, with the flags this verifier allocated.
+    void set_mw_wait(uint32_t* const flags[4]) {
+        for (int i = 0; i < 4; ++i) h_mwf_[i] = flags[i];
+        mw_wait_ = true;
+    }
+    uint32_t* mw_flags(int i) { return h_mwf_[i]; }   // the tiers write these; the wiring hands them out
+    uint32_t** mw_flags_ptr() { return h_mwf_; }      // for set_mw_wait's array form
     /// Plan v0.3 P6: how the PCIe share of the misses reaches the GPU: 0 = DMA into staging (the copy engine works
     /// beside the CPU; best when the CPU is compute-bound, the i-quants), 1 = the grouped kernel reads the mapped
     /// arena directly, 2 = a copy kernel stages it inside the graph (no API calls on the pool's thread; best when
@@ -430,6 +439,12 @@ private:
     uint32_t* h_flag_ = nullptr; uint32_t* m_flag_ = nullptr;
     uint32_t* h_flagA_ = nullptr; uint32_t* m_flagA_ = nullptr;  // the GPU plan is in place
     uint32_t* h_flagB_ = nullptr; uint32_t* m_flagB_ = nullptr;  // the PCIe share's DMA copies have landed
+    // E1: the Maxwell tiers' GPU-raised completion flags (four, monotonic sequence values, written by
+    // the M10 down kernels' last blocks) and the per-step ring of expected sequences the host publishes.
+    uint32_t* h_mwf_[4] = {}; uint32_t* m_mwf_[4] = {};
+    uint32_t* h_mwe_ = nullptr; uint32_t* m_mwe_ = nullptr;   // 64 slots, indexed by step & 63
+    bool mw_wait_ = false;             // the tiers are wired: the graph waits their flags too
+    int64_t mw_services_ = 0;          // the tier launch counter the expected values track
     cudaEvent_t commit_done_ = nullptr;   // recorded after an async commit (set_commit_async); see wait_commit
     bool commit_pending_ = false;
     cudaStream_t copy_ = nullptr;                                 // the copy engine's stream (DMA of missed experts)

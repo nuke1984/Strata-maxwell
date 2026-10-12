@@ -40,6 +40,15 @@ using strata::kernels::cuda::s2_expert_maxwell_down_batch_f16_async;
 using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_batch_async;
+
+namespace {
+// E1: STRATA_MW_GPUFLAG - 0 off; 1 the GPU-raised tier flags + the graph's multi-wait (host sync kept);
+// 2 also drops the decode-path sync (the staging double-buffers).  See WORKLOG 2026-10-12.
+int gpuflag_mode() {
+    static const int m = [] { const char* e = std::getenv("STRATA_MW_GPUFLAG"); return e ? std::atoi(e) : 0; }();
+    return m;
+}
+}
 using strata::kernels::cuda::s2_expert_maxwell_v2;
 using strata::kernels::cuda::s2_expert_maxwell_sync;
 
@@ -295,8 +304,7 @@ bool MaxwellExperts::open(int device,
         const char* e = std::getenv("STRATA_MW_ZEROCOPY");
         return e != nullptr && std::atoi(e) != 0;
     }();
-    zerocopy_ = zerocopy;
-    if (zerocopy) {
+    zerocopy_ = zerocopy;    if (zerocopy) {
         if (!check(cudaHostAlloc((void**) &h_up_, up_bytes_,
                                  cudaHostAllocMapped | (::strata::core::maxwell_portable() ? cudaHostAllocPortable : 0)),
                    "cudaHostAlloc mapped staging", err)) { close(); return false; }
@@ -308,7 +316,13 @@ bool MaxwellExperts::open(int device,
     } else {
         if (!check(cudaMalloc(&d_up_, up_bytes_), "cudaMalloc staging", err)) { close(); return false; }
         if (!check(cudaMallocHost((void**) &h_up_, up_bytes_), "cudaMallocHost staging", err)) { close(); return false; }
+        if (gpuflag_mode() >= 2) {   // E1 mode 2: the second staging set (layer l+1 stages while l reads)
+            if (!check(cudaMalloc(&d_up2_, up_bytes_), "cudaMalloc staging2", err)) { close(); return false; }
+            if (!check(cudaMallocHost((void**) &h_up2_, up_bytes_), "cudaMallocHost staging2", err)) { close(); return false; }
+        }
     }
+    if (gpuflag_mode() >= 1 && !check(cudaMalloc(&d_ctr_, 4), "cudaMalloc comp ctr", err)) { close(); return false; }
+    if (d_ctr_ != nullptr) { cudaMemset(d_ctr_, 0, 4); cudaGetLastError(); }
     d_acts_ = d_up_;                 // the packed acts live at offset 0
     h_acts_ = h_up_;
     d_jobs_ = (int32_t*) (d_up_ + acts_bytes_);   // re-based per layer in begin_chain (right after the acts)
@@ -474,6 +488,9 @@ void MaxwellExperts::close() {
     if (d_blobs_) { cudaFree(d_blobs_); d_blobs_ = nullptr; }
     if (d_up_ && !zerocopy_) { cudaFree(d_up_); }   // zero-copy: d_up_ IS h_up_'s mapping
     d_up_ = nullptr;
+    if (d_up2_) { cudaFree(d_up2_); d_up2_ = nullptr; }
+    if (h_up2_) { cudaFreeHost(h_up2_); h_up2_ = nullptr; }
+    if (d_ctr_) { cudaFree(d_ctr_); d_ctr_ = nullptr; }
     if (h_up_) { cudaFreeHost(h_up_); h_up_ = nullptr; }
     d_acts_ = nullptr; h_acts_ = nullptr; d_jobs_ = nullptr; h_jobs_ = nullptr;
     d_aq_ = nullptr; d_ascale_ = nullptr; d_ahx_ = nullptr;
@@ -558,9 +575,16 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     //      jobs are processed by the two batched kernels (gup -> quant -> down).  No events, no per-job
     //      launches; finish() is the single wait per layer. ----
     {
-        // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x)
-        h_jobs_ = (int32_t*) (h_up_ + (size_t) n_tok * ACTS_STRIDE);
-        d_jobs_ = (int32_t*) (d_up_ + (size_t) n_tok * ACTS_STRIDE);
+        // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x).
+        // E1 mode 2: alternate the two staging sets (layer l+1 stages while layer l's kernels still
+        // read set 0) - the selection is the SERVICE parity, matching the launch sequence.
+        uint8_t* hsel = h_up_;
+        uint8_t* dsel = d_up_;
+        if (gpuflag_mode() >= 2 && d_up2_ != nullptr && (comp_seq_ & 1u)) { hsel = h_up2_; dsel = d_up2_; }
+        h_jobs_ = (int32_t*) (hsel + (size_t) n_tok * ACTS_STRIDE);
+        d_jobs_ = (int32_t*) (dsel + (size_t) n_tok * ACTS_STRIDE);
+        h_acts_ = hsel;
+        d_acts_ = dsel;
         const size_t nc4 = (size_t) (H / 32) * 4;
         for (int64_t t = 0; t < n_tok; ++t) {
             const auto& A = acts[t];
@@ -581,7 +605,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
     // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
     if (!zerocopy_ &&
-        !check(cudaMemcpyAsync(d_up_, h_up_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
+        !check(cudaMemcpyAsync(d_acts_, h_acts_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
                                cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
@@ -610,6 +634,11 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // finish_to, so ITS down launches there, into the staging block.
     down_launched_ = false;
     if (w_dst_mapped_) {
+        // E1: in GPU-flag mode the decode down launch carries the completion flag - the LAST block
+        // raises it once this tier's rows are visible, and (mode 2) the host never syncs this layer.
+        // fp16 rows take the no-tail variant, so the flag stays off there (the sync path is kept).
+        const bool e1 = comp_flag_ != nullptr && !w_rows_f16_ && gpuflag_mode() >= 1;
+        const uint32_t ring = e1 ? (comp_seq_ + 1) : 0;
         if (w_rows_f16_) {
             // fp16 rows (opt-in): H halves packed into the fp32 row's own slot (the first H/2 floats), so
             // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
@@ -620,8 +649,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         } else {
             s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
                                                d_fascale_, d_fahx_, w_dst_, g.blob_bytes, g.d_codes_off,
-                                               g.d_scales_off, streams_[0]);
+                                               g.d_scales_off, streams_[0],
+                                               e1 ? comp_flag_ : nullptr, ring, e1 ? d_ctr_ : nullptr);
         }
+        if (e1) comp_seq_ = ring;
         down_launched_ = true;
     }
     for (size_t j = 0; j < jobs.size(); ++j) {
@@ -677,7 +708,15 @@ bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int
 }
 
 bool MaxwellExperts::finish_chain(std::string& err) {
-    if (owned_row_.empty()) return true;
+    // E1: a decode service this tier sat out still advances the completion sequence - the verifier's
+    // expected value counts every service, so the flag must rise here (a mapped write, one fence).
+    if (owned_row_.empty()) {
+        if (comp_flag_ != nullptr && w_dst_mapped_ && gpuflag_mode() >= 1) {
+            __atomic_store_n(comp_flag_, comp_seq_ + 1, __ATOMIC_SEQ_CST);
+            comp_seq_ += 1;
+        }
+        return true;
+    }
     const auto ft0 = std::chrono::steady_clock::now();
     // THIS device, explicitly: without the scope the sync below lands on whatever device the caller had
     // current (the primary GPU, whose graph is waiting for this very host step: a deadlock).
@@ -696,6 +735,14 @@ bool MaxwellExperts::finish_chain(std::string& err) {
                                            d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
                                            g.d_scales_off, streams_[0]);
         down_launched_ = true;
+    }
+    // E1 mode 2: the decode path does not wait - the down kernel's last block raises the tier flag,
+    // the 3060's graph multi-waits on it, and the NEXT service's staging uses the other buffer set.
+    // The prefill (non-mapped destination) still syncs: its rows are read on the host.
+    if (w_dst_mapped_ && comp_flag_ != nullptr && !w_rows_f16_ && gpuflag_mode() >= 2) {
+        w_dst_mapped_ = false;      // the service is complete; the scatter was in-kernel
+        owned_row_.clear();
+        return true;
     }
     if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;
     const auto ft2 = std::chrono::steady_clock::now();
