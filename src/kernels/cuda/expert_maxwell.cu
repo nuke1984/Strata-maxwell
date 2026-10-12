@@ -900,19 +900,26 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
         accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
     }
-    __shared__ float2 sh[128];
     __shared__ float sx[PER_BLOCK];
-    sh[threadIdx.x] = make_float2(accg, accu);
-    __syncthreads();
-    if (part == 0) {
-        float ag = 0.f, au = 0.f;
-        for (int s = 0; s < SPLIT; ++s) {
-            const float2 v = sh[threadIdx.x + s];
-            ag += v.x; au += v.y;
+    // the SPLIT partial sums meet by warp shuffles, in the SAME sequential order the shared-buffer
+    // reduction used (s = 0, 1, ... SPLIT-1), so the image stays bit-identical; a part-group never
+    // crosses a warp boundary (SPLIT divides 32).  EVERY lane shuffles (a shfl under divergent
+    // control is undefined); each lane of a group converges on its group's sequential sum, and only
+    // the part == 0 leader's copy is consumed.  One KB of shared saved.
+    {
+        const int lane = (int) (threadIdx.x & 31);
+        const unsigned full = 0xFFFFFFFFu;
+        float ag = accg, au = accu;
+#pragma unroll
+        for (int s = 1; s < SPLIT; ++s) {
+            ag += __shfl_sync(full, accg, (lane + s) & 31);
+            au += __shfl_sync(full, accu, (lane + s) & 31);
         }
-        const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
-        sx[threadIdx.x / SPLIT] = sxv;
-        if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + row] = sxv;   // the parity tool reads the pre-quant dots
+        if (part == 0) {
+            const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
+            sx[threadIdx.x / SPLIT] = sxv;
+            if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + row] = sxv;   // the parity tool reads the pre-quant dots
+        }
     }
     __syncthreads();
     // ONE warp quantises the block's chunks (PER_BLOCK/32 of them; exactly one at SPLIT=4): the exact
@@ -1151,8 +1158,12 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
         const int v = e != nullptr ? std::atoi(e) : 4;
         return (v == 1 || v == 2 || v == 4) ? v : 4;
     }();
-    if (split != 4)
-        std::fprintf(stderr, "strata maxwell: IQ gup SPLIT %d (STRATA_MW_IQ_SPLIT; 4 is the default)\n", split);
+    static const bool split_said = [] {
+        if (split != 4)
+            std::fprintf(stderr, "strata maxwell: IQ gup SPLIT %d (STRATA_MW_IQ_SPLIT; 4 is the default)\n", split);
+        return true;
+    }();
+    (void) split_said;
     const int rows = njobs * FF;
     const int blocks = (rows + 128 / split - 1) / (128 / split);
     switch (gu_type) {

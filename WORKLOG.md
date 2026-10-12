@@ -4,6 +4,29 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — campagna gup IQ, vittoria 2 (kernel) e termine della traslazione engine (2026-10-12)**
+>
+> **SPLIT re-sweep post-griglie**: 4 riconfermato (314/319 vs 2: 346/350 vs 1: 963 µs). **Unroll 4 del
+> loop k**: neutro, rimosso. **`__launch_bounds__(128,4)`**: neutro, rimosso.
+>
+> **Riduzione SPLIT a shuffle di warp** (via shared `sh`, 1 KB risparmiato): somme nello STESSO ordine
+> sequenziale → bit-identico. **Lezione dura**: la prima versione metteva gli `__shfl_sync` sotto
+> `if (part == 0)` divergente — **comportamento indefinito**, parity 5.578 failure (una run precedente
+> "0 failure" era un collegamento stantio del binario: da ora il gate parity si gira SEMPRE dopo un
+> rebuild completo). La versione corretta fa shufflare TUTTE le lane (ogni gruppo converge sulla propria
+> somma; solo il leader part==0 consuma). Bench: **300 → 274,8 µs × 3 run identiche** (spread azzerato).
+> Kernel totale: **430 → 275 µs (−36%)**. Parity: 0 failure su tutto.
+>
+> **Engine A/B (3×3)**: story 40,0 · fib 51,0 · code 46,7 · **media 45,9 vs 46,0 = piatta**. Lettura
+> onesta: la vittoria-1 (griglie) aveva catturato il guadagno engine disponibile; il −8% kernel
+> aggiuntivo non trasla (≈1 ms/finestra ≈ 2%, nel rumore; la finestra non è più gup-bound in questo
+> punto operativo). **Il cambiamento resta** (kernel più veloce e deterministico, zero rischio).
+>
+> **Prossimo passo obbligato prima di altro lavoro kernel**: re-profilare la finestra COM'È ORA
+> (nsys a conteggi): la composizione è cambiata (gup 81% → ~65% della catena). Le candidate non-kernel:
+> actq (3,5 ms), draft (3,2 ms), percorso host (14,5 ms). Il pipelining preload-words resta documentato
+> ma con la nuova aspettativa: ~2% engine, non di più, finché la catena non torna il collo.
+
 > **AGGIORNAMENTO — campagna gup IQ, vittoria 1: le griglie codebook in shared memory (2026-10-12)**
 >
 > **Harness nuovo**: `iq_gup_bench` (target CMake accanto a maxwell_iq_parity) — il kernel di
