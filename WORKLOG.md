@@ -4,6 +4,27 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — metodologia da M10-TEST-FINAL.md + re-baseline in persistence mode (2026-10-12)**
+>
+> **Incrocio con M10-TEST-FINAL.md** (la campagna llama.cpp/gemma4 sugli STESSI M10): le due patch vincenti
+> loro (MMVQ Maxwell table + VMAD globale) sono **già** nei nostri kernel per costruzione (i nostri S2/IQ
+> usano `dp4a_s32`/vmad ovunque e il design v2 a atti condivise multi-riga È il loro rpb=8; la loro
+> dispatch MMVQ non gira mai sui nostri M10 — solo `strata_maxwell` è sm_50). L'MTP-lento loro non ci
+> tocca (il loro dirupo era `ncols_dst==1`-only; le nostre finestre sono multi-token native). **Adottato**:
+> persistence mode (`nvidia-smi -pm 1`, ora ON — **riattivarlo dopo ogni reboot**); la regola del
+> profilo (CUPTI accelera il decode M10 ~17%: mai misurare sotto profiler); il soffio pratico DRAM M10
+> ≈ **83 GB/s** (71 self-copy) per i calcoli di floor; il protocollo a blocchi appaiati qui sotto.
+>
+> **Protocollo di misura (sostituisce il 3×3 a occhio per i prossimi sweep)**: blocchi alternati
+> A-B-B-A poi B-A-A-B (A = parent, B = candidata); screening R=3, conferma R≥7; delta per blocco =
+> tg_B/tg_A − 1; CI95 (Student-t) sui blocchi indipendenti, non sulle ripetizioni; soglia di
+> promozione **≥ +0,5%** con CI sopra zero; scarto immediato per errore numerico nuovo, crash, o
+> regressione >2% ripetuta; Amdahl sul percorso critico misurato, mai sulle quote aggregate dei kernel.
+>
+> **Re-baseline in persistence mode** (stessa config finale, burn + 3×3): story **37,4** · fib **46,5**
+> · code **43,4** · media **42,4 tok/s** — invariata (attesa: il beneficio è al riavvio, non a regime).
+> Carico 471 s (pari al solito: dominato dai 34 GB da NVMe). 391 ✓.
+
 > **AGGIORNAMENTO — sweep miglioramenti su IQ2_XS @4096, split M10@150 (2026-10-12)**
 >
 > **Baseline (3 prompt calibrati × 3 run, protocollo burn+3×3)**: story **36,6** · fib **46,8** · code
