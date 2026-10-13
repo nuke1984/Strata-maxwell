@@ -4,6 +4,30 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — port su v0.1.44 + ricognizione mondiale + sweep spec (2026-10-14)**
+>
+> **Ricognizione** (utente: "esplorare il mondo"): upstream 0.1.43/.43.1/**0.1.44** (376 commit, +2.171 righe
+> sui nostri file) + ecosistema Qwen3.8-Flash-Next (SGLang day-0: **IndexShare MTP** = riuso della selezione
+> QSA su tutti gli step del draft, N→1 invocazioni indexer — la nostra biggest unused lever a 256k;
+> **kernel HC Mix/Combine small-M split-K**: 2× kernel, +7,6%/+5,5% end-to-end — il nostro hc0 è 3,58 ms/fin;
+> QSA indexer sovrapposto a QKV su secondo stream; FlashQLA 2-3× forward GDN per Hopper). Il "5-11% RTX
+> 30-series" di 0.1.43 è per la maggior parte inerte per noi (adaptive overlap = arena RAM, MMVQ = pack Q2_0,
+> PCIe share = quota CPU): verificato, niente inseguimenti a vuoto.
+>
+> **Sweep spec** (base 256k+k8v4, 3×3+burn per arm): 2/3/**4**/5/6 = 41,6/44,0/**45,0**/42,0/41,1 — spec 4
+> È già l'ottimo (curva concava pulita); a 256k il costo indexer del draft supera il rendimento oltre 4.
+>
+> **Port v0.1.44** (merge `7897f55b`, ramo `maxwell-0.1.44`): 7 conflitti risolti — il critico in verify.cpp:
+> il fused wait+copy 143-amdk di upstream resta il percorso default; E1 multi-wait e f16-rows prendono i
+> loro rami opt-in e disarmano la fusione SOLO se attivi. Il probe PLE: la logica STRATA_PLE_AUTO_MMAP di
+> 0.1.43.1 subsume la nostra guardia Maxwell (rimosso il ramo-notizia). **Gate**: parity ×2 (0 failures,
+> PARITY OK), 391/9999 ✓, velocità in pari con l'ancora (45,1 vs 45,0). **Knob 0.1.44 A/B**:
+> COMMIT_BATCH neutro (default ON tenuto), VERIFY_ASYNC_LAUNCH −2%, POOL_UMWAIT −1,8% — tutti e tre
+> coerenti con la diagnosi: il muro è la catena cross-GPU, non il percorso host che ottimizzano.
+>
+> **Prossimi colpi** (dalla ricognizione, in ordine): **IndexShare MTP** (algorithmic, a 256k il draft è
+> 3,2-7,1 ms/finestra), kernel HC small-M (+3-5% stimato), QSA indexer ∥ QKV, poi i nostri E2/riordino grafo.
+
 > **NOTA — adaptive tier: esiste, spento nei Maxwell; idea di elevazione M10→3060 (2026-10-13)**
 >
 > **Verifica meccanismo** (domanda utente: "gli esperti più usati vengono promossi verso la GPU principale
