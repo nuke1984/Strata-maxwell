@@ -235,6 +235,31 @@ __global__ void copy_from_mapped_kernel(float4* __restrict__ dst, const volatile
 
 // the CPU rows of a verify window, skipping the rows the GPU plan computes itself (the
 // pool writes +0.0 into those, so this writes +0.0 too): block = row, the plan's hit rows `dst[0, *count)`.
+// fp16 -> fp32 (IEEE half), the inverse of the Maxwell kernel's hand-rolled conversion.  Runs on the
+// primary GPU (it reads the Maxwell tier's fp16 rows out of mapped host memory).
+__device__ __forceinline__ float h2f(uint16_t h) {
+    const uint32_t sign = (uint32_t) (h & 0x8000u) << 16;
+    const uint32_t ex = (h >> 10) & 0x1Fu;
+    const uint32_t m = h & 0x3FFu;
+    uint32_t f;
+    if (ex == 0) {
+        if (m == 0) {
+            f = sign;
+        } else {   // denormal: normalize
+            uint32_t mm = m;
+            int e = -1;
+            while ((mm & 0x400u) == 0) { mm <<= 1; --e; }
+            mm &= 0x3FFu;
+            f = sign | (uint32_t) (127 - 15 + e) << 23 | (mm << 13);
+        }
+    } else if (ex == 31) {
+        f = sign | 0x7F800000u | (m << 13);
+    } else {
+        f = sign | ((ex + 127 - 15) << 23) | (m << 13);
+    }
+    return __uint_as_float(f);
+}
+
 __global__ void copy_rows_from_mapped_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
                                              const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
                                              const volatile uint32_t* wait_flag = nullptr, uint32_t wait_value = 0) {
@@ -254,6 +279,38 @@ __global__ void copy_rows_from_mapped_kernel(float4* __restrict__ dst, const vol
     float4* d = dst + (int64_t) row * row4;
     if (hit) {
         for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        const volatile float4* sr = src + (int64_t) row * row4;
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
+    }
+}
+
+__global__ void copy_rows_from_mapped_f16_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
+                                                 const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
+                                                 const volatile uint16_t* __restrict__ src16,
+                                                 const volatile uint8_t* __restrict__ kind16) {
+    const int row = blockIdx.x;
+    __shared__ int mode;   // 0 = copy the fp32 row, 1 = zero it (the GPU's own), 2 = convert the fp16 row
+    if (threadIdx.x == 0) {
+        int h = 0;
+        const int c = *count;
+        for (int i = 0; i < c; ++i) h |= hit_rows[i] == row;
+        mode = h ? 1 : (kind16[row] ? 2 : 0);
+    }
+    __syncthreads();
+    float4* d = dst + (int64_t) row * row4;
+    if (mode == 1) {
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else if (mode == 2) {
+        const volatile uint16_t* s = src16 + (int64_t) row * (row4 * 4);
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) {
+            float4 v;
+            v.x = h2f(s[i * 4 + 0]);
+            v.y = h2f(s[i * 4 + 1]);
+            v.z = h2f(s[i * 4 + 2]);
+            v.w = h2f(s[i * 4 + 3]);
+            d[i] = v;
+        }
     } else {
         const volatile float4* sr = src + (int64_t) row * row4;
         for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
@@ -295,6 +352,19 @@ void copy_rows_from_mapped_after(const uint32_t* flag, uint32_t value, float* ds
     }
     copy_rows_from_mapped_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
         (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count, (const volatile uint32_t*) flag, value);
+}
+
+void copy_rows_from_mapped_f16(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,
+                               const int32_t* count, const uint16_t* src16, const uint8_t* kind16, void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) dst & 15) != 0 || ((uintptr_t) src & 15) != 0 ||
+        ((uintptr_t) src16 & 1) != 0) {
+        std::fprintf(stderr, "copy_rows_from_mapped_f16: bad width or alignment\n");
+        std::exit(1);
+    }
+    copy_rows_from_mapped_f16_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count,
+        (const volatile uint16_t*) src16, (const volatile uint8_t*) kind16);
 }
 void copy_from_mapped(float* dst, const float* src, int64_t n, void* stream) {
     if (n <= 0) return;

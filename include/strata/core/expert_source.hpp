@@ -48,6 +48,7 @@ namespace strata::core {
 
 class PeerExperts;   // multi-GPU: the second GPU's expert tier (peer_experts.hpp)
 class RemoteExperts;
+class MaxwellExperts;  // Maxwell (sm_50) expert tier (maxwell_experts.hpp)
 struct LoadStats;
 
 namespace detail {
@@ -198,6 +199,20 @@ public:
     /// copy has no expert 0 when the GPU cache holds it, so it answers for the whole copy.
     virtual bool pcie_layer(int64_t layer) const { return device_alias(layer, 0) != nullptr; }
 
+    /// Release the CUDA pin on this source's resident arena and drop the given (layer, expert) blobs' pages from
+    /// physical RAM.  ONLY the arena source supports it: an arena registered with cudaHostRegister keeps its pages
+    /// pinned, and madvise(MADV_DONTNEED) alone only drops them from RSS - the driver returns the physical memory
+    /// solely on cudaHostUnregister (measured).  Whole-range registrations cannot be split, so the arena is
+    /// unregistered entirely and its device aliases cleared (the direct-PCIe path then falls back to DMA/CPU).
+    /// The caller passes the blobs nobody reads any more (the Maxwell-resident experts, already copied to VRAM).
+    /// `released_bytes` receives the bytes whose pages were dropped.  Returns false with `err` when unsupported.
+    virtual bool release_arena(const std::vector<std::pair<int32_t, int32_t>>& ranges, std::string& err,
+                               size_t& released_bytes) {
+        (void) ranges; (void) released_bytes;
+        err = "release_arena is not supported by this expert source";
+        return false;
+    }
+
     /// CS-T: whether `blob(layer, expert)` would be assembled into a short-lived buffer (a native pack read from its
     /// GGUF shards in place, where an expert's gate, up and down rows are three separate slices).  Such a pointer
     /// stays valid for the layer it was asked in and the next one or two; a consumer that keeps a blob longer (the
@@ -314,6 +329,9 @@ struct GpuPlanSink {
     int32_t* start = nullptr;              ///< cap + 1
     int32_t* dst = nullptr;                ///< cap: the entry's row of parts (token * k + j)
     int32_t* tok = nullptr;                ///< cap: the entry's token
+    /// fp16 rows (opt-in, STRATA_MW_ROWS_F16): per entry, 1 = the row was written by a Maxwell device into
+    /// the fp16 buffer (`ExpertDispatch::ymiss16`) and the row copy must convert it back.
+    uint8_t* kind16 = nullptr;
     unsigned long long* ptr = nullptr;     ///< cap: the group's blob, device address
     /// Plan v0.3 P6 (DMA): the PCIe share is a second list of groups - `ptr2[q]` is staging slot q, `start2` indexes
     /// the same dst/tok entries - computed by the GPU after `fetch` has copied their blobs into staging with the
@@ -455,6 +473,10 @@ struct ExpertDispatch {
     /// Plan v0.3 P6: the verify window's GPU plan (VRAM hits + the PCIe share of the misses); `pcie_num`/256 of
     /// each layer's distinct missed experts (the last ones in routing order) are read by the GPU over PCIe.
     GpuPlanSink* plan = nullptr;
+    /// fp16 expert rows (opt-in): when true the Maxwell tier writes its rows as H packed fp16 halves inside
+    /// their fp32 row slots (half the uplink bytes) and marks them in `plan->kind16`; the verifier's row copy
+    /// converts them back.  False = fp32 rows, the default.
+    bool rows_f16 = false;
     int pcie_num = 0;
     int64_t pcie_experts = 0;      ///< distinct experts the GPU read over PCIe in verify windows
     /// #588: routed (token, expert) entries the GPU computed from outside its cache in verify windows: read over PCIe
@@ -473,6 +495,12 @@ struct ExpertDispatch {
     /// Multi-GPU: the second GPU's tier.  Its experts are computed there instead of on the CPU (kind 2).
     PeerExperts* peer = nullptr;
     int64_t peer_entries = 0;      ///< routed entries the peer served in verify windows
+    /// Maxwell (sm_50, e.g. Tesla M10) tiers: up to 4 devices holding fixed expert subsets.  Their experts
+    /// are computed there instead of on the CPU (kind 3).  Like the peer, but static (no adaptive swaps)
+    /// and with the scalar Maxwell kernel instead of moe_grouped_s2.
+    class MaxwellExperts* maxwell[4] = {};
+    int maxwell_count = 0;
+    int64_t maxwell_entries = 0;   ///< routed entries the Maxwell tier served
     /// Set when `dispatch` could not produce an answer.  The loop itself has no error channel, so this is
     /// where a source failure surfaces: the driver checks it after `session_loop` returns rather than the
     /// engine computing from a half-filled `parts`.
@@ -688,6 +716,11 @@ public:
     /// Mapped reads: asks the OS for these pairs' blobs ahead (platform::advise_willneed).  False when unbuffered,
     /// when read-ahead is off, or before `open`.
     bool advise_pairs(const std::pair<int32_t, int32_t>* pairs, int64_t n) const override;
+    /// The mapped experts' page cache, back to the OS: `madvise(MADV_DONTNEED)` on each mapping (the mapping stays
+    /// open - a later read faults its page back in from the file) then `posix_fadvise(POSIX_FADV_DONTNEED)`.  For a
+    /// run where every expert is on a GPU: the load is over, nothing reads the files at runtime, and the tens of
+    /// GiB the load left in the page cache go back to the system.  False when nothing is mapped or a call fails.
+    bool drop_file_cache(std::string& err);
 
     const uint8_t* blob(int64_t layer, int64_t expert) override;
     /// With io prefetch in the experts.bin tier, the mapping itself (blob() may hand out a recycled staging buffer).
@@ -948,6 +981,9 @@ public:
     bool pcie_layer(int64_t layer) const override;
     void prefetch(int64_t layer, int64_t expert) override;
     uint64_t release(int64_t layer, int64_t expert) override;
+    /// Unpin the arena and drop the given (layer, expert) blobs' pages from physical RAM (see ExpertSource).
+    bool release_arena(const std::vector<std::pair<int32_t, int32_t>>& ranges, std::string& err,
+                       size_t& released_bytes) override;
 
     /// Pin by need (STRATA_PIN_BY_NEED=1): BEFORE open(), the (layer, expert) pairs worth pinning, by decreasing
     /// priority - the profile's ranked pairs the GPU cache will NOT hold, then the unranked ones.  open() merges

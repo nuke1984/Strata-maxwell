@@ -60,6 +60,10 @@ void wait_flag_ge(const uint32_t* flag, uint32_t value, void* stream);
 /// kernel costs ~2.4 us on a gfx1201 graph whatever it does.  n <= 128 * k for any k (a strided loop).
 void wait_copy_i32_from_mapped(const uint32_t* flag, uint32_t value, int32_t* dst, const int32_t* src, int64_t n,
                                void* stream);
+/// E1: the Maxwell completion wait - the main flag >= ring AND the four tier flags >= the EXPECTED
+/// sequence read at run time from *exp (a per-step ring slot; the capture bakes only pointers).
+void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,
+             void* stream);
 /// the GPU's %globaltimer (ns) into buf[i] (a one-thread kernel: the verify window's stage profiler).  Inside a PDL
 /// stretch (pdl.hpp) the stamp passes the early launch on, so a profiled window keeps the chain it measures.
 void gpu_stamp(unsigned long long* buf, int i, void* stream);
