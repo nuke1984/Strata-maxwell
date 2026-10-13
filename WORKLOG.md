@@ -4,6 +4,42 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **NOTA — adaptive tier: esiste, spento nei Maxwell; idea di elevazione M10→3060 (2026-10-13)**
+>
+> **Verifica meccanismo** (domanda utente: "gli esperti più usati vengono promossi verso la GPU principale
+> coi turni?"): la cache 3060 si riempie ALL'AVVIO dal profilo fisso (`--expert-profile`, hottest-first;
+> 1.874 slot). La promozione a runtime ESISTE — il **tier adattivo** (`--adapt-every 4` finestre,
+> `--adapt-swaps 96`): conta gli instradamenti (`d.usage`), calcola i guadagni di swap e porta esperti
+> caldi non-residenti nella cache su uno stream laterale (macchinaria pending/event/slot completa),
+> persisterli con `--expert-profile-save` (il profilo stesso è conoscenza congelata di quel meccanismo).
+> MA: con i tier Maxwell attivi la fonte RAM/file è rilasciata e il motore azzera `adapt_every`
+> (generate.cpp:5517, "disable the two paths that would read it") — sul nostro server la split 3060/M10
+> è **statica dopo il load**; non esiste elevazione M10→3060. Oggi non costa nulla (100% hit, zero
+> letture file), ma se il routing del workload deriva dal profilo, la quota 3060 smette di essere
+> ottimale in silenzio.
+>
+> **Idea futura**: riutilizzare la macchinaria (usage counting, pending/event swap, aggiornamento
+> residency table) per swap **VRAM↔VRAM** fra cache 3060 e tier M10 (hottest-in / coldest-out, senza
+> fonte RAM/file). Costo del trasporto: le righe esperte viaggiano già via host mapped; il blob
+> (1,38 MiB/expert) dovrebbe salire D10→host→D0 — ~0,5 ms su ~2,5 GB/s, fattibile fuori dal percorso
+> caldo (stream laterale, come il tier adattivo originale).
+
+> **AGGIORNAMENTO — B-series: richieste simultanee / --batch — il plateau è la catena (2026-10-13)**
+>
+> **Idea (utente)**: GPU al 30-47% di utilizzo → c'è spazio per richieste simultanee. **Confermato, con
+> forma precisa.** Senza `--batch` il server serializza FIFO (4 richieste: aggregato 42 ≈ singola).
+> Con `--batch N` (slot = sessione propria, finestre greedy 1 token/slot, niente draft MTP):
+> aggregato 39,4 → 46,4 → 52,4 → **58,2** (N=1..4), **plateau 58-59** a N=6 (58,0) e N=8 (59,4);
+> per-request 14,6 @4, 9,7 @6, 7,4 @8. `--batch-mtp` (1 proposta MTP/slot/finestra) vince SOLO a
+> N=2 (50,6 agg, +9%): a N≥3 la finestra porta S×2 token, i job per layer scalano lineari → netto
+> −11% a N=4. Correttezza: 391 ✓ fino a 8 richieste simultanee, output identici fra slot.
+>
+> **Verdetto**: a N=8 satura l'utilizzo è ANCORA 47% (3060) / 32% (M10) — il plateau ~59 tok/s è il
+> **tasso seriale della catena per-layer** (3060-pre → dispatch → M10 → post), non una risorsa GPU:
+> converge con E1 da direzione opposta. Il batching come leva è esaurito; serve la sovrapposizione
+> nella catena (riordino del grafo). **Matrice di serving**: 1 utente = spec 46,0; 2 = batch2+mtp
+> 25,4/req (50,6 tot); ≥4 = batch4 14,6/req (58,2 tot). Config di test in /tmp/opencode (non commessi).
+
 > **AGGIORNAMENTO — E1 "GPU-raised doorbell": costruito, corretto, neutro (2026-10-13)**
 >
 > **Cosa gira ora (opt-in, `STRATA_MW_GPUFLAG`)**: 1 = i flag per-tierMapped alzati dall'ULTIMO blocco
