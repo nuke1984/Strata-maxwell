@@ -4,6 +4,28 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — chiusura ricognizione: i tre colpi dell'ecosistema misurati, il muro resta la catena (2026-10-14)**
+>
+> **Metodologia**: profilo completo per-fase a 256k (`STRATA_VERIFY_PROFILE=1`, 205 finestre, T medio 2,57,
+> 53,2 ms/finestra) + A/B env dei percorsi HC alternativi.
+>
+> **#1 IndexShare MTP: INESISTENTE qui** — il drafter di Strata è già attention DENSA su ring di finestra
+> ("dense attention: no indexer state is read", mtp.cpp:337): non c'è indexer-per-step da riusare. La tecnica
+> SGLang risolve un problema che Strata non ha.
+> **#2 kernel HC**: i knob alternativi A/B sulla 3060 — GR_V3 (split 164-328 blocchi, NON bitwise): story
+> −2,2 / code +1,7 → pari e scartato; GR_DOWN_MAX4: −1,4% (come upstream sul 5070); staged resta il default.
+> Il profilo: hc0+hc1 = 5,3 ms/finestra contro un floor pesi di ~4,1 → recuperabile bitwise ≈ 1,2 ms (~2%):
+> debole, giù nella lista.
+> **#3 indexer QSA ∥ QKV**: q+q-idx 1,02 + scores+topk 0,07 + kv-resolve 0,01 = **1,10 ms/finestra (2%)** —
+> anche la sovrapposizione perfetta vale ≤1,5%: depriorizzato con i dati.
+>
+> **IL dato che comanda tutto**: `waitCPU 19,08 ms/finestra = 36%` dell'intera finestra (attesa del flag
+> principale = la catena 3060→dispatch→M10→post). Tutto converge lì: batching (plateau 58-59 = tasso della
+> catena), E1 (neutro senza sovrapposizione), knobs host (neutri). **La prossima leva È la sovrapposizione
+> nella catena**: il riordino del grafo (fasi 3060 indipendenti dalle righe esperte PRIMA dell'attesa —
+> ai 19 ms di wait si possono riempire: shared+quant 1,19, out-proj 1,31, hc 5,3, head 1,35 sono tutte fasi
+> che non dipendono dalle righe M10 del layer corrente). Stima di soffitto: 5-10 ms/finestra ≈ +10-20%.
+
 > **AGGIORNAMENTO — port su v0.1.44 + ricognizione mondiale + sweep spec (2026-10-14)**
 >
 > **Ricognizione** (utente: "esplorare il mondo"): upstream 0.1.43/.43.1/**0.1.44** (376 commit, +2.171 righe
