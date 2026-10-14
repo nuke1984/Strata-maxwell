@@ -4,6 +4,25 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — parità E1m2 spiegata e il disegno mode-3 (2026-10-14, seguito "baton")**
+>
+> **A/B pulita** (strumentazione OFF, altrimenti le chiamate-event del harvest differito ri-avvelenano la
+> finestra): baseline 53,81 ms/finestra @ 2,00 token vs E1m2+D1 57,01 @ 2,11 → **26,9 vs 27,0 ms/token: parità**.
+> Il "flat" storico di E1m2 è ora completamente spiegato: de-avvelena i kernel (tier 540→330 µs/layer) e la sua
+> via di handoff si ripaga tutto (4 flag M10 da attraversare in PCIe, latenza poll-release del multi-wait,
+> pubblicazione dell'expected-ring, granularità del sonno host 20 µs, post +18 µs/layer).
+> **Il "ring gap" si dissolve**: ring 886 µs/layer = la catena seriale ONESTA (kernel M10 ~330 + fasi 3060
+> ~400 + handoff ~155). Nulla manca: è il battente, misurato. Catena per layer ≈ fasi-grafo 400 + host 165 +
+> M10 330 + handoff ~100 ≈ 1000 µs; le M10 stanno ferme ~700 (33% busy — l'utilizzazione osservata).
+>
+> **PROSSIMO: mode-3** (il disegno, da implementare a sessione nuova con gates pieni): finestra a zero
+> chiamate host come E1m2, MA [4 flag tier + multi-wait + copia non fusa] sostituiti da **un contatore
+> aggregato alzato dalla GPU**: la coda di ogni down M10 incrementa atomicamente UN contatore mapped; il
+> quarto che arriva alza la flag principale; il nodo 143-amdk GIÀ catturato (wait+copy fuse) aspetta UNA
+> parola e copia. Zero veleno, un solo attraversamento, fusione mantenuta. Stima: −100-150 µs/layer vs E1m2.
+> **Lista leve residue (bounded)**: dieta gup qh-merge (−40-80), LUT down precomputata (−20-40), mode-3
+> (−100-150), shared-expert→M10 overlap (−25). Somma ≈ +9-17%. Soffitto onesto ~60-65 tok/s single-user.
+
 > **AGGIORNAMENTO — il veleno trovato: le chiamate host durante i kernel M10 (2026-10-14, campagna "baton")**
 >
 > **Meccanismo DIMOSTRATO**: ogni chiamata driver host durante la finestra dei down avvelena il completamento
