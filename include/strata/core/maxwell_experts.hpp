@@ -177,6 +177,14 @@ private:
     cudaEvent_t ev_gup_[4] = {nullptr, nullptr, nullptr, nullptr};
     cudaEvent_t ev_down_[4] = {nullptr, nullptr, nullptr, nullptr};
 
+    // S0 (STRATA_MW_LAYERPROF): this card's own truth - the kernel span measured on its stream (events,
+    // gup->down) and the distinct-expert bytes the span moves, to read against the ~83 GB/s DRAM floor.
+    // Counters only; nothing about the service changes, and all of it stays inert unless the env is set.
+    cudaEvent_t s0_a_ = nullptr, s0_b_ = nullptr;
+    cudaEvent_t s0_m_ = nullptr;   // S0 mid-stamp: after gup, before down - which stage eats the span
+    double s0_layers_ = 0, s0_jobs_ = 0, s0_distinct_ = 0, s0_mb_ = 0, s0_krn_ms_ = 0, s0_sync_ms_ = 0;
+    double s0_gup_ms_ = 0, s0_dn_ms_ = 0;
+
     // P3.4 (rev 3, misurato): la catena begin/finish gira INLINE sul thread chiamante.  Il worker persistente
     // per device (condvar nella prima prova, atomic-wait nella seconda) e' stato misurato: i
     // cudaDeviceSynchronize concorrenti dei 4 device si serializzano nel driver, e l'handoff per layer

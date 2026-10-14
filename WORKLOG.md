@@ -4,6 +4,29 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — S0: la verità del tier M10, misurata (2026-10-14, campagna "aggregate card")**
+>
+> **Domanda**: il pool M10 (19-23 ms/finestra = il 36% waitCPU) è bandwidth-bound o altro? Strumenti: eventi
+> device per scheda (gup→down) + contatori byte/lanci sotto `STRATA_MW_LAYERPROF` (instrumentazione inerte di
+> default, maxwell_experts.cpp; il report `MWPROF m10 CUDAx` stampa ogni 1440 layer/scheda).
+>
+> **VERDETTO**: le schede sono BILANCIATE (5,7-6,6 MB/layer/scheda, max/mean 1,08 → row-split inutile) ma i
+> kernel girano a **5-7× sopra il floor DRAM** (ideale ~73 µs/L/scheda, misurato 332-557):
+> - **gup (dot i-quant IQ2_S/XXS/IQ1_M): 260-300 µs/L uniforme** = instruction-throughput-bound: sm_50 non ha
+>   DP4A (4×VMAD per dp4a) + girofpolate grid/segni. A/B: SPLIT 1→~720, 2→~326, 4→~260 (default confermato);
+>   STRATA_MW_IQ_T256 (256 thread/blocco, occupancy 31→50-100%): **pareggio** — non è occupancy, è il flusso
+>   istruzioni (tenuto opt-in-off come riferimento).
+> - **down (S2 planar): 83 µs/L su CUDA1 ma 240-550 sulle successive** per lo STESSO lavoro — contenzione in
+>   ordine di visita sulla macchina virtuale (via condivisa: chipset/vIOMMU/driver; P3.4 aveva già visto i sync
+>   concorrenti serializzarsi). A/B: STRATA_MW_ROWS_F16 (metà bytes scritti, ingaggiato): **nulla**; 
+>   STRATA_MW_LOCAL_DOWN (staging locale + D2H + scatter host): **PEGGIO** (run 469→771 µs/L) — rifiutato,
+>   tenuto opt-in-off. La catena paga max-card ≈ 540-560 µs/L.
+>
+> **Conseguenze sul piano**: niente leva economica sul tier M10 — la dieta-istruzioni del dot (merge qh al load,
+> ~15-30% del gup) è l'unica via bitwise e vale +3-6%; la via grande resta il riordino del grafo (riempire
+> i ~19 ms di attesa con fasi 3060 indipendenti, soffitto +10-20%) ora che S0 esclude l'aggiustamento M10.
+> Binario: strumentazione + bracci opt-in tutti default-off; produzioni successive su questa base.
+
 > **AGGIORNAMENTO — chiusura ricognizione: i tre colpi dell'ecosistema misurati, il muro resta la catena (2026-10-14)**
 >
 > **Metodologia**: profilo completo per-fase a 256k (`STRATA_VERIFY_PROFILE=1`, 205 finestre, T medio 2,57,

@@ -55,6 +55,13 @@ using strata::kernels::cuda::s2_expert_maxwell_sync;
 constexpr int H = 2560;
 constexpr int FF = 640;
 
+// S0: whether the M10 tier's own counters run (STRATA_MW_LAYERPROF - the same flag the host-side layer
+// print uses, so one env arms the whole per-layer truth).  Read once.
+static bool s0_env() {
+    static const bool on = std::getenv("STRATA_MW_LAYERPROF") != nullptr;
+    return on;
+}
+
 // RAII device scope, like RemoteExperts::DeviceScope.
 struct DeviceScope {
     int prev = -1;
@@ -500,6 +507,9 @@ void MaxwellExperts::close() {
     if (d_ff_) { cudaFree(d_ff_); d_ff_ = nullptr; }
     if (d_out_) { cudaFree(d_out_); d_out_ = nullptr; }
     if (h_out_) { cudaFreeHost(h_out_); h_out_ = nullptr; }
+    if (s0_a_ != nullptr) { cudaEventDestroy(s0_a_); s0_a_ = nullptr; }
+    if (s0_b_ != nullptr) { cudaEventDestroy(s0_b_); s0_b_ = nullptr; }
+    if (s0_m_ != nullptr) { cudaEventDestroy(s0_m_); s0_m_ = nullptr; }
     device_ = -1;
     resident_ = 0;
     gib_ = 0.0;
@@ -574,6 +584,24 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // ---- ONE packed upload (acts + job table, contiguous) then ONE launch per stage: the whole layer's
     //      jobs are processed by the two batched kernels (gup -> quant -> down).  No events, no per-job
     //      launches; finish() is the single wait per layer. ----
+    // S0 (STRATA_MW_LAYERPROF): count what this card serves - jobs, DISTINCT experts (the bytes the span
+    // moves are distinct x blob_bytes; duplicate entries re-read the same blob) - and start the device
+    // span measurement.  The events ride the same stream the kernels do, so the elapsed is the card's
+    // own gup->down occupancy, independent of when the host got around to us.
+    const bool s0 = s0_env();
+    if (s0) {
+        int distinct = 0;
+        for (size_t a = 0; a < jobs.size(); ++a) {
+            bool first = true;
+            for (size_t b = 0; b < a; ++b)
+                if (jobs[b].slot == jobs[a].slot) { first = false; break; }
+            if (first) ++distinct;
+        }
+        s0_layers_ += 1.0; s0_jobs_ += (double) jobs.size(); s0_distinct_ += (double) distinct;
+        s0_mb_ += (double) distinct * (double) geo_of(layer).blob_bytes / 1048576.0;
+        if (s0_a_ == nullptr) { cudaEventCreate(&s0_a_); cudaEventCreate(&s0_b_); cudaEventCreate(&s0_m_); }
+        cudaEventRecord(s0_a_, streams_[0]);
+    }
     {
         // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x).
         // E1 mode 2: alternate the two staging sets (layer l+1 stages while layer l's kernels still
@@ -632,6 +660,8 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // straight into `w_dst_` (the job table already carries every row's destination), so it runs while the
     // caller finishes the layer - no D2H copy and no host scatter.  The prefill's destination is only known at
     // finish_to, so ITS down launches there, into the staging block.
+    // S0: the mid-stamp splits the card's span into gup (the i-quant dequant + dot) and down (the S2 form).
+    if (s0 && s0_a_ != nullptr) cudaEventRecord(s0_m_, streams_[0]);
     down_launched_ = false;
     if (w_dst_mapped_) {
         // E1: in GPU-flag mode the decode down launch carries the completion flag - the LAST block
@@ -686,8 +716,21 @@ bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts
     }
     w_layer_ = layer; w_acts_ = acts; w_ids_ = ids; w_n_tok_ = n_tok; w_k_ = k;
     w_dst_ = dst_mapped;
-    w_dst_mapped_ = dst_mapped != nullptr;
-    w_rows_f16_ = rows_f16 && dst_mapped != nullptr;   // fp16 applies to the token path only
+    // STRATA_MW_LOCAL_DOWN (opt-in experiment, S0): route the down stage through card-local d_out_ +
+    // one pinned D2H + a host row scatter, instead of the down kernel's writes into the mapped host
+    // rows.  The S0 events show the mapped-write downs slow down in card-visit order (83 -> 240 us/L
+    // for the same work) whenever they overlap the other cards' downs - a shared-endpoint effect on
+    // this VM (the P3.4 note saw the same serialization on concurrent syncs), not bandwidth (the f16
+    // rows arm halved the bytes and moved nothing).  The rows land in the same buffer with the same
+    // values, only later and by the host's hand - bitwise-neutral by construction.
+    static const bool local_down = [] {
+        const char* e = std::getenv("STRATA_MW_LOCAL_DOWN");
+        const bool on = e != nullptr && std::atoi(e) != 0;
+        if (on) std::fprintf(stderr, "strata maxwell: down via card-local staging + D2H (STRATA_MW_LOCAL_DOWN)\n");
+        return on;
+    }();
+    w_dst_mapped_ = dst_mapped != nullptr && !local_down;
+    w_rows_f16_ = rows_f16 && w_dst_mapped_;   // fp16 applies to the mapped token path only
     w_row_of_ = nullptr;
     w_row_base_ = 0;
     w_n_embd_ = H;
@@ -736,16 +779,50 @@ bool MaxwellExperts::finish_chain(std::string& err) {
                                            g.d_scales_off, streams_[0]);
         down_launched_ = true;
     }
+    // S0 (STRATA_MW_LAYERPROF): the span ends after the down launch, whichever path launched it; the
+    // elapsed is harvested past the sync, where the events have settled.  s0_sync_ accumulates how long
+    // the host stood AT the sync - what the chain pays beyond the card's own kernel occupancy.
+    const bool s0 = s0_env() && s0_a_ != nullptr;
+    const auto s0_w0 = std::chrono::steady_clock::now();
+    if (s0) cudaEventRecord(s0_b_, streams_[0]);
     // E1 mode 2: the decode path does not wait - the down kernel's last block raises the tier flag,
     // the 3060's graph multi-waits on it, and the NEXT service's staging uses the other buffer set.
     // The prefill (non-mapped destination) still syncs: its rows are read on the host.
     if (w_dst_mapped_ && comp_flag_ != nullptr && !w_rows_f16_ && gpuflag_mode() >= 2) {
+        if (s0) s0_a_ = nullptr;   // unmeasured path: no sync, no harvest (drop the half-measurement)
         w_dst_mapped_ = false;      // the service is complete; the scatter was in-kernel
         owned_row_.clear();
         return true;
     }
     if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;
     const auto ft2 = std::chrono::steady_clock::now();
+    // S0: the verdict line.  ideal = MB/layer over 83 GB/s (the per-card DRAM floor, M10-TEST-FINAL);
+    // slack = kernel/ideal - 1.0x is the bandwidth floor, anything above is recoverable elsewhere.
+    if (s0) {
+        float el = 0.0f, eg = 0.0f, ed = 0.0f;
+        cudaEventElapsedTime(&el, s0_a_, s0_b_);
+        cudaEventElapsedTime(&eg, s0_a_, s0_m_);
+        cudaEventElapsedTime(&ed, s0_m_, s0_b_);
+        s0_krn_ms_ += (double) el;
+        s0_gup_ms_ += (double) eg;
+        s0_dn_ms_ += (double) ed;
+        s0_sync_ms_ += std::chrono::duration<double, std::milli>(ft2 - s0_w0).count();
+        if (s0_layers_ >= 1440.0) {   // 40 windows of GDN layers, per card: print and reset
+            const double mb_l = s0_mb_ / s0_layers_, ideal_us = mb_l * 12.05;   // MB/(83 GB/s) in us
+            const double krn_us = 1000.0 * s0_krn_ms_ / s0_layers_;
+            std::fprintf(stderr, "MWPROF m10 CUDA%d layers %.0f: jobs/L %.2f distinct/L %.2f, %.3f MB/L, "
+                                 "ideal %.0f us/L, kernel %.0f us/L (slack %.2fx) [gup %.0f + down %.0f], "
+                                 "sync-wait %.0f us/L\n",
+                         device_, s0_layers_, s0_jobs_ / s0_layers_, s0_distinct_ / s0_layers_, mb_l,
+                         ideal_us, krn_us, ideal_us > 0 ? krn_us / ideal_us : 0.0,
+                         1000.0 * s0_gup_ms_ / s0_layers_, 1000.0 * s0_dn_ms_ / s0_layers_,
+                         1000.0 * s0_sync_ms_ / s0_layers_);
+            std::fflush(stderr);
+            s0_layers_ = s0_jobs_ = s0_distinct_ = s0_mb_ = s0_krn_ms_ = s0_sync_ms_ = 0;
+            s0_gup_ms_ = s0_dn_ms_ = 0;
+        }
+        s0_a_ = nullptr;   // the next begin_chain arms a fresh span (the event objects are reused)
+    }
     if (const char* e = std::getenv("STRATA_MAXWELL_TIMING")) {
         static thread_local double a_set = 0, a_sync = 0;
         static thread_local long n = 0;

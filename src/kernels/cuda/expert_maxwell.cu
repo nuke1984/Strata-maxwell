@@ -861,7 +861,16 @@ template <> struct IqFmt<29> {
 // planes), the row walk is lane-strided DOT CALLS (k = part; k < nb*ipb; k += SPLIT, kbx = k/ipb,
 // iqs = step*(k%ipb), exactly the engine's row_dot), and there is no hx correction term (the i-quant
 // grids carry their own signs; the act's d rides inside the dot).
-template <int TY, int SPLIT>
+//
+// THREADS (default 128, opt-in 256 via STRATA_MW_IQ_T256 with SPLIT 2/4): the occupancy arm.  Each
+// block stages sact (3.2 KB) + the codebook grid (2-8 KB) whatever its size, so at 32 rows per
+// 128-thread block the shared-memory ceiling holds only ~5-8 blocks per SM - 31-50% occupancy, too
+// few resident loads to hide the M10's DRAM latency (S0: the gup stage measured 6x off the 83 GB/s
+// floor).  Doubling the rows per block halves the blocks AND the redundant act+grid staging while
+// doubling resident threads per SM; the per-output summation order is untouched (the SPLIT meet and
+// the chunk tree walk the same sequence), so the image stays bit-identical - a launch-geometry
+// change only, exactly like the SPLIT sweep it generalizes.
+template <int TY, int SPLIT, int THREADS = 128>
 __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
                                            const MaxJob* __restrict__ jobs, int njobs,
                                            const uint8_t* __restrict__ acts_base,
@@ -873,7 +882,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
     // PER_BLOCK/32 chunks, so any SPLIT that divides 32 keeps the chunk tree bit-identical: with 4 it
     // compiles to exactly the one-chunk body this kernel shipped with.
     static_assert(SPLIT == 1 || SPLIT == 2 || SPLIT == 4, "the IQ gup kernel takes SPLIT 1, 2 or 4");
-    constexpr int PER_BLOCK = 128 / SPLIT;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
     static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
     const int row0 = blockIdx.x * PER_BLOCK;
     if (row0 >= njobs * FF) return;
@@ -887,7 +896,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         // 4-aligned here), d = f2h_rn(scale) with the #606 clamp, s = 0 (unused by these dots).
         const int* src = (const int*) at;
         const float* sc = (const float*) (at + H);
-        for (int k = (int) threadIdx.x; k < H / 32; k += 128) {
+        for (int k = (int) threadIdx.x; k < H / 32; k += THREADS) {
             int* dst = (int*) &sact[k].qs[0];
             for (int w = 0; w < 8; ++w) dst[w] = src[k * 8 + w];
             float d = sc[k];
@@ -905,7 +914,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         const int4* g = (const int4*) F::grid_dev();
         int4* d = (int4*) sgrid;
 #pragma unroll
-        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += 128) d[i] = g[i];
+        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
     }
     __syncthreads();
     const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (FF % PER_BLOCK == 0)
@@ -1186,41 +1195,41 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
         return true;
     }();
     (void) split_said;
+    // STRATA_MW_IQ_T256 (opt-in, default off): the 256-thread occupancy arm - see the kernel's THREADS
+    // note.  PER_BLOCK must still divide FF (640), so the 256-thread form takes SPLIT 2 or 4 only.
+    static const bool t256 = [] {
+        const char* e = std::getenv("STRATA_MW_IQ_T256");
+        const bool on = e != nullptr && e[0] != '\0' && e[0] != '0';
+        if (on)
+            std::fprintf(stderr, "strata maxwell: IQ gup 256-thread blocks (STRATA_MW_IQ_T256)\n");
+        return on;
+    }();
+    const bool wide = t256 && split >= 2;
+    const int pb = (wide ? 256 : 128) / split;
     const int rows = njobs * FF;
-    const int blocks = (rows + 128 / split - 1) / (128 / split);
+    const int blocks = (rows + pb - 1) / pb;
+#define STRATA_LAUNCH_IQ(TY, SP, THR)                                                              \
+    expert_iq_stage1_batch_v2q<TY, SP, THR><<<blocks, THR, 0, stream>>>(                            \
+        d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,      \
+        d_faq, d_fasc, d_fahx, d_ff_dbg)
     switch (gu_type) {
         case 22:   // IQ2_S
-            if (split == 4) expert_iq_stage1_batch_v2q<22, 4><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else if (split == 2) expert_iq_stage1_batch_v2q<22, 2><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else expert_iq_stage1_batch_v2q<22, 1><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(22, 4, 256); else STRATA_LAUNCH_IQ(22, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(22, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(22, 2, 128);
+            else STRATA_LAUNCH_IQ(22, 1, 128);
             break;
         case 16:   // IQ2_XXS
-            if (split == 4) expert_iq_stage1_batch_v2q<16, 4><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else if (split == 2) expert_iq_stage1_batch_v2q<16, 2><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else expert_iq_stage1_batch_v2q<16, 1><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(16, 4, 256); else STRATA_LAUNCH_IQ(16, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(16, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(16, 2, 128);
+            else STRATA_LAUNCH_IQ(16, 1, 128);
             break;
         case 29:   // IQ1_M
-            if (split == 4) expert_iq_stage1_batch_v2q<29, 4><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else if (split == 2) expert_iq_stage1_batch_v2q<29, 2><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
-            else expert_iq_stage1_batch_v2q<29, 1><<<blocks, 128, 0, stream>>>(
-                d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
-                d_faq, d_fasc, d_fahx, d_ff_dbg);
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(29, 4, 256); else STRATA_LAUNCH_IQ(29, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(29, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(29, 2, 128);
+            else STRATA_LAUNCH_IQ(29, 1, 128);
             break;
         default:
             std::fprintf(stderr, "iq_expert_maxwell_gup_quant_batch_async: ggml type %d is not an "
@@ -1228,6 +1237,7 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                          gu_type);
             std::exit(1);
     }
+#undef STRATA_LAUNCH_IQ
 }
 
 void s2_expert_maxwell_down(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
