@@ -285,6 +285,41 @@ __global__ void copy_rows_from_mapped_kernel(float4* __restrict__ dst, const vol
     }
 }
 
+// mode 3 (the aggregate tier's one-passage completion): the SAME fused row copy, with the E1 multi-wait
+// folded into the per-block poll instead of a separate 1-thread wait_mw launch.  The check order keeps
+// wait_mw's safety: `exp` is published BEFORE the main flag rises, and the main flag (raised only after
+// the host dispatched the tier) anchors the wait - so an early-arriving block reads a stale `exp` only
+// while `main` still holds it back, and by the time main passes, exp is this step's value.
+__global__ void copy_rows_from_mapped_mw_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
+                                                const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
+                                                const volatile uint32_t* main_flag, uint32_t ring,
+                                                const volatile uint32_t* exp,
+                                                const volatile uint32_t* f0, const volatile uint32_t* f1,
+                                                const volatile uint32_t* f2, const volatile uint32_t* f3) {
+    const int row = blockIdx.x;
+    __shared__ int hit;
+    if (threadIdx.x == 0) {
+        while (true) {
+            const uint32_t e = *exp;
+            if (*main_flag >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+            strata_spin_pause();
+        }
+        __threadfence_system();
+        int h = 0;
+        const int c = *count;
+        for (int i = 0; i < c; ++i) h |= hit_rows[i] == row;
+        hit = h;
+    }
+    __syncthreads();
+    float4* d = dst + (int64_t) row * row4;
+    if (hit) {
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        const volatile float4* sr = src + (int64_t) row * row4;
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
+    }
+}
+
 __global__ void copy_rows_from_mapped_f16_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
                                                  const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
                                                  const volatile uint16_t* __restrict__ src16,
@@ -352,6 +387,23 @@ void copy_rows_from_mapped_after(const uint32_t* flag, uint32_t value, float* ds
     }
     copy_rows_from_mapped_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
         (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count, (const volatile uint32_t*) flag, value);
+}
+
+// mode 3: the E1 multi-wait (main + 4 tier flags + expected ring) fused into the row copy's blocks -
+// one launch, one poll, the unfused [wait_mw + copy] pair replaced.
+void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                                    const uint32_t* const* mw, float* dst, const float* src, int64_t rows,
+                                    int64_t width, const int32_t* hit_rows, const int32_t* count, void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) dst & 15) != 0 || ((uintptr_t) src & 15) != 0) {
+        std::fprintf(stderr, "copy_rows_from_mapped_after_mw: width must be a multiple of 4 and both pointers 16-byte aligned\n");
+        std::exit(1);
+    }
+    copy_rows_from_mapped_mw_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count,
+        (const volatile uint32_t*) main_flag, ring, (const volatile uint32_t*) exp,
+        (const volatile uint32_t*) mw[0], (const volatile uint32_t*) mw[1],
+        (const volatile uint32_t*) mw[2], (const volatile uint32_t*) mw[3]);
 }
 
 void copy_rows_from_mapped_f16(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,

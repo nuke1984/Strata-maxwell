@@ -1690,9 +1690,23 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 copy_or_zero_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (long long) n * K * N,
                                          skip_ + grp, ring, cs);
             } else {
+                // mode 3 (STRATA_MW_FUSE_MW, default on when armed): E1's multi-wait folded INTO the
+                // 143-amdk fused row copy - one launch instead of [wait_mw + copy], the same flag
+                // semantics and the same rows.  mw_wait_ no longer disarms the fusion; the unfused
+                // pair stays as the fallback (and what profiling runs see, prof_on_ disarms fusion).
+                static const bool fuse_mw_on = [] {
+                    const char* e = std::getenv("STRATA_MW_FUSE_MW");
+                    return e == nullptr || std::atoi(e) != 0;   // unset = on (an armed E1 is already opt-in)
+                }();
                 const bool fuse_rows = fuse_wait_on() && !prof_on_ && !remote_opt_ && dec_batch &&
-                                       !mw_wait_ && h_kind16_ == nullptr;   // 143-amdk; E1/f16 need their own wait/copy
-                if (mw_wait_) {
+                                       h_kind16_ == nullptr;   // 143-amdk; f16 needs its own wait/copy
+                const bool fuse_mw = fuse_rows && mw_wait_ && fuse_mw_on;
+                if (fuse_mw) {
+                    const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
+                    copy_rows_from_mapped_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,
+                                                   parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                                   p_dst, p_counts + 1, cs);
+                } else if (mw_wait_) {
                     // E1: the wait ALSO gates on the tiers' GPU-raised flags - the expected sequence
                     // comes from this step's ring slot at run time (the capture bakes only pointers).
                     const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
@@ -1701,7 +1715,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                     wait_flag_ge(m_flag_, ring, cs);               // the CPU's share is in the mapped rows
                 }
                 stamp(l, 23, grp);
-                if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
+                if (fuse_mw) {
+                    // done: the wait and the copy were one launch above
+                } else if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
                     remote_opt_->copy_rows(parts_out, m_ymiss_ + (size_t) tb * K * N, tb, n, p_dst, p_counts + 1, cs);
                 else if (fuse_rows)   // the wait folded into the copy's blocks
                     copy_rows_from_mapped_after(m_flag_, ring, parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,

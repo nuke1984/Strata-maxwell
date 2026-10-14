@@ -112,6 +112,12 @@ void copy_rows_from_mapped(float* dst, const float* src, int64_t rows, int64_t w
 /// wait_flag_ge launch it replaces is one dependent kernel node, ~2.4 us on a gfx1201 graph).
 void copy_rows_from_mapped_after(const uint32_t* flag, uint32_t value, float* dst, const float* src, int64_t rows,
                                  int64_t width, const int32_t* hit_rows, const int32_t* count, void* stream);
+/// mode 3: the E1 multi-wait (main >= ring AND the four tier flags >= *exp, the expected ring published
+/// before the main flag rises) fused into the copy's per-block poll - the aggregate tier's one-passage
+/// completion in a single launch.
+void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                                    const uint32_t* const* mw, float* dst, const float* src, int64_t rows,
+                                    int64_t width, const int32_t* hit_rows, const int32_t* count, void* stream);
 /// The same, but rows whose kind16[row] is non-zero are read from `src16` as fp16 and converted (the Maxwell
 /// tier's rows, half the uplink bytes: see STRATA_MW_ROWS_F16).
 void copy_rows_from_mapped_f16(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,

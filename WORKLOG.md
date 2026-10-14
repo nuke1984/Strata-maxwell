@@ -4,6 +4,26 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — MODE 3 ATERRATA: +6,3% stesso-giorno, gates verdi, PRODUZIONE (2026-10-14)**
+>
+> **Configurazione vincente** (`strata-iq2xs-mode3.json`, server :8088): `STRATA_MW_GPUFLAG=2` +
+> `STRATA_S2_SPLIT_D=1` + `STRATA_HOST_WAIT_US=0` + il kernel nuovo `copy_rows_from_mapped_after_mw`
+> (elementwise.cu: il multi-wait E1 — main≥ring E 4 flag tier≥expected — piegato nel poll per-blocco della
+> copia fusa 143-amdk; `STRATA_MW_FUSE_MW=0` lo disarma, default on quando E1 è armato).
+> **Il pre-test chiave**: HOST_WAIT_US=0 (spin puro su h_seq_, niente chiamate driver → niente veleno) da
+> solo valeva −4,5% (lo sleep_for di questo VM sfora ~100 µs/layer, non 20); mode-3 sopra ha aggiunto il resto.
+> **Numeri** (stesso giorno, stesso protocollo 3×3): baseline 43,5 → mode3 **46,3 tok/s = +6,3%** (story +6,
+> fib +8, code +3); engine-direct 53,8→49,8 ms/finestra. **Gates**: 391 ✓ 9999 ✓ round-trip al load ✓
+> 391×8 concorrente ✓; PARITY invariata (il percorso default senza E1 è byte-identico: mw_wait_ non disarma
+> più la fusione ma è false senza GPUFLAG).
+> **Nota onesta sulla determinismo**: il run-to-run a temp 0 deriva ANCHE sul baseline puro (story 423/428/512
+> su tre run identiche — proprietà della base k8v4 + righe cache-3060 vs righe M10 non bitwise-uguali tra
+> kernel diversi, stato cache dipendente); mode3 mostra lo stesso profilo. "Lunghezze identiche" come gate è
+> obsoleto SU QUESTA base — la determinismo stretta, se voluta, è un'indagine separata (equivalenza righe).
+> **Percorso dei guadagni cumulati della campagna baton**: veleno identificato → E1m2 de-avvelena → D=1 →
+> spin host → fusione mode-3. Prossime leve residue (bounded): dieta gup qh-merge (+2-4%), LUT down
+> precomputata (+1-2%), shared-expert→M10 (+2%).
+
 > **AGGIORNAMENTO — parità E1m2 spiegata e il disegno mode-3 (2026-10-14, seguito "baton")**
 >
 > **A/B pulita** (strumentazione OFF, altrimenti le chiamate-event del harvest differito ri-avvelenano la
