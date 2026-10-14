@@ -4,6 +4,22 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — potenza misurata, dedup analizzata a morte, spec re-sweep: l'altopiano (2026-10-14)**
+>
+> **Potenza (la preoccupazione "50% più calore")**: misurata durante generazione — mode3: 99-100% util,
+> **108-113 W**; baseline: 49-60% util, **103-110 W**. STESSI WATT: l'utilizzazione raddoppiata è
+> RESIDENZA del kernel di wait (26 thread-0 in poll, 25 blocchi in barriera), non calcolo — nvidia-smi
+> conta il tempo-kernel-residente, non il lavoro. Mode3 = stesso consumo, più velocità.
+> **Dedup gup analizzata PRIMA di costruirla (e scartata)**: il flusso istruzioni è dominato dai VMAD del
+> dot (4×VMAD per dp4a emulato) che scalano con pesi×token e NON si amortizzano sui duplicati; solo ~10%
+> dello stream (expand+LUT) è condiviso × 30% duplicazione ≈ +1% — non vale il rischio bitwise. Il gup è
+> al pavimento strutturale (VRAM piena → nessun formato più largo; sm_50 senza IDP).
+> **Spec re-sweep sotto mode3** (il vecchio ottimo era misurato col tier avvelenato): spec 3 → 46,5,
+> **4 → 46,3** (confermato), 5 → 42,3 — nessuno spostamento dell'ottimo.
+> **Menù residuo onesto**: hc-slack (+3%, fusione bitwise-attenta), head row-split (+1%), cache +500 slot
+> (+1%), shared-expert→M10 (+2%) ≈ +6-7% di macinio totale. Soffitto single-user ~50-52 tok/s con tutto.
+> La capacità vera del rig resta il regime concorrenza (58-59 tok/s a N≥4, già mappato).
+
 > **AGGIORNAMENTO — MODE 3 ATERRATA: +6,3% stesso-giorno, gates verdi, PRODUZIONE (2026-10-14)**
 >
 > **Configurazione vincente** (`strata-iq2xs-mode3.json`, server :8088): `STRATA_MW_GPUFLAG=2` +
