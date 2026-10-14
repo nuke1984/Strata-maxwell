@@ -184,6 +184,8 @@ private:
     cudaEvent_t s0_m_ = nullptr;   // S0 mid-stamp: after gup, before down - which stage eats the span
     double s0_layers_ = 0, s0_jobs_ = 0, s0_distinct_ = 0, s0_mb_ = 0, s0_krn_ms_ = 0, s0_sync_ms_ = 0;
     double s0_gup_ms_ = 0, s0_dn_ms_ = 0;
+    bool s0_deferred_ = false;     // E1 mode 2: the span is reaped at the next begin (see begin_chain)
+    void s0_report();              // the MWPROF m10 line; prints and resets when 1440 layers accrue
 
     // P3.4 (rev 3, misurato): la catena begin/finish gira INLINE sul thread chiamante.  Il worker persistente
     // per device (condvar nella prima prova, atomic-wait nella seconda) e' stato misurato: i

@@ -4,6 +4,29 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — il veleno trovato: le chiamate host durante i kernel M10 (2026-10-14, campagna "baton")**
+>
+> **Meccanismo DIMOSTRATO**: ogni chiamata driver host durante la finestra dei down avvelena il completamento
+> delle schede servite dopo (~+55 µs per scheda precedente; down 83→240-550 a parità di lavoro). Prove:
+> (1) falsificazioni: scritture mapped→locali = stagger invariato; f16 (metà bytes) = nulla; local-down+D2H =
+> peggiore; T256 = pareggio; microbench standalone (5 forme, incluso spinner 3060 e coppia upload→gup→down) =
+> NESSUNO stagger → non è piattaforma, driver-pattern o topologia. (2) **STRATA_MW_REV=1 (ordine di servizio
+> invertito): lo stagger SI INVERTE** (servita prima = veloce: 80 µs; ultima = 243) → è l'ORDINE di servizio.
+> (3) STRATA_MW_GENTLE_SYNC (poll da 30 µs invece di spin): stagger persiste → non è lo spin ma le chiamate.
+> (4) STRATA_MW_BLOCKSYNC (flag CUDA): rifiutato dallo stack (il prefill vede 0 MiB liberi) — documentato, off.
+>
+> **LA CURA: E1 mode 2 (`STRATA_MW_GPUFLAG=2`)** — l'host esce subito, il grafo multiaspetta i flag GPU:
+> down **uniformi 123-135 µs** (da 82/190/304/407), sync-wait 0. Il muro del tier diventa PURO tempo kernel.
+> Con esso, il re-sweep di STRATA_S2_SPLIT_D (le vecchie misure erano inquinate dal veleno!): **1→86,
+> 2→126, 4→178, 8→287** — D=1 vince (il "2 misurato migliore" di ieri era un artefatto).
+> **Stato**: kernel tier 540-660 → ~330 µs/layer (−40%), MA la finestra non cala (54,4→56,0): il ring-wait
+> del grafo sotto E1m2 è 886 µs/layer contro ~480 di actq+kernel → **gap ~400-550 µs/layer nel multi-wait**
+> (sequencing/expected-value in verify.cpp) — questo spiega anche il vecchio "E1m2 flat": cura lo stagger e
+> poi il suo wait si riprende il guadagno. **Il prossimo bersaglio è esattamente quel gap.**
+> Bracci nuovi (tutti opt-in-off, bitwise-neutral per costruzione): STRATA_MW_REV, STRATA_MW_GENTLE_SYNC,
+> STRATA_MW_BLOCKSYNC, STRATA_MW_DOWN_LOCAL_TIMING (solo-misura, output garbage), STRATA_MW_IQ_T256,
+> STRATA_MW_LOCAL_DOWN; strumentazione `MWPROF m10` per scheda (gup/down/sync per layer + MB/ideale).
+
 > **AGGIORNAMENTO — S0: la verità del tier M10, misurata (2026-10-14, campagna "aggregate card")**
 >
 > **Domanda**: il pool M10 (19-23 ms/finestra = il 36% waitCPU) è bandwidth-bound o altro? Strumenti: eventi

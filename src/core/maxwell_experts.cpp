@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <cstring>
 #include <chrono>
+#include <thread>
 #include <random>
 #include <vector>
 
@@ -110,6 +111,26 @@ bool MaxwellExperts::open(int device,
                           int64_t n_layers, int64_t n_expert, int reserve_mib,
                           std::string& err) {
     close();
+    // STRATA_MW_BLOCKSYNC (opt-in): put this M10's context in BLOCKING-sync mode before anything
+    // creates it - cudaStreamSynchronize then sleeps on the device's interrupt instead of spinning
+    // in the driver.  The S0 campaign found the tier's per-card downs poisoned in SERVICE order
+    // (~+55 us per earlier-served card, 80 -> 240 us; STRATA_MW_REV flipped the fast card with the
+    // order): the earlier finishes' sync-SPINS clog the path later cards' kernel completions take
+    // through this VM's driver/hypervisor.  A sleeping sync does not spin; the wake costs a few
+    // tens of us per finish instead.  Must precede the context's creation (hence here, first).
+    static const bool blocksync = [] {
+        const char* e = std::getenv("STRATA_MW_BLOCKSYNC");
+        const bool on = e != nullptr && std::atoi(e) != 0;
+        if (on) std::fprintf(stderr, "strata maxwell: blocking sync on the M10 contexts (STRATA_MW_BLOCKSYNC)\n");
+        return on;
+    }();
+    if (blocksync) {
+        cudaSetDevice(device);
+        const cudaError_t f = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+        if (f != cudaSuccess)
+            std::fprintf(stderr, "strata maxwell: blocking sync refused on CUDA%d (%s); spinning stays\n",
+                         device, cudaGetErrorString(f));
+    }
     // GUARD: this tier runs the expert encodings its kernels take - the Q2_0 (S2) form, and a native
     // pack's IQ2_S / IQ2_XXS / IQ1_M gate/up over the Q2_0 down (the IQ2_XS file's layers; the down is
     // converted to the S2 planar form at open()).  Anything else (an encoding a future pack may carry)
@@ -600,6 +621,18 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         s0_layers_ += 1.0; s0_jobs_ += (double) jobs.size(); s0_distinct_ += (double) distinct;
         s0_mb_ += (double) distinct * (double) geo_of(layer).blob_bytes / 1048576.0;
         if (s0_a_ == nullptr) { cudaEventCreate(&s0_a_); cudaEventCreate(&s0_b_); cudaEventCreate(&s0_m_); }
+        else if (s0_deferred_) {
+            // E1 mode 2 left the previous layer's span unharvested (no sync on that path).  The stream
+            // is the same, so this layer's kernels queue BEHIND that down: by now its events are
+            // settled, and the elapsed can be reaped right before the new span arms.
+            float el = 0.0f, eg = 0.0f, ed = 0.0f;
+            cudaEventElapsedTime(&el, s0_a_, s0_b_);
+            cudaEventElapsedTime(&eg, s0_a_, s0_m_);
+            cudaEventElapsedTime(&ed, s0_m_, s0_b_);
+            s0_krn_ms_ += (double) el; s0_gup_ms_ += (double) eg; s0_dn_ms_ += (double) ed;
+            if (s0_layers_ >= 1440.0) s0_report();
+            s0_deferred_ = false;
+        }
         cudaEventRecord(s0_a_, streams_[0]);
     }
     {
@@ -664,6 +697,19 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     if (s0 && s0_a_ != nullptr) cudaEventRecord(s0_m_, streams_[0]);
     down_launched_ = false;
     if (w_dst_mapped_) {
+        // STRATA_MW_DOWN_LOCAL_TIMING (measurement only, garbage output): the down launches HERE as
+        // usual but writes card-local d_out_ instead of the mapped rows - nothing delivers the rows,
+        // the generation is garbage, and the [mid,end] span then shows the down kernel's time with
+        // the mapped-write path OUT of the picture.  If the visit-order stagger (83 -> 240+ us/L)
+        // disappears here, the mapped destination itself is the contention, not the kernel.
+        static const bool dlt = [] {
+            const char* e = std::getenv("STRATA_MW_DOWN_LOCAL_TIMING");
+            const bool on = e != nullptr && std::atoi(e) != 0;
+            if (on) std::fprintf(stderr, "strata maxwell: TIMING-ONLY down to card-local d_out_ "
+                                         "(STRATA_MW_DOWN_LOCAL_TIMING; the output will be garbage)\n");
+            return on;
+        }();
+        float* const dst_rows = dlt ? d_out_ : w_dst_;
         // E1: in GPU-flag mode the decode down launch carries the completion flag - the LAST block
         // raises it once this tier's rows are visible, and (mode 2) the host never syncs this layer.
         // fp16 rows take the no-tail variant, so the flag stays off there (the sync path is kept).
@@ -674,11 +720,11 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
             // cross the uplink; the verifier's row copy converts them back (its kind16 flags mark them).
             s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
-                                                   d_fascale_, d_fahx_, (uint16_t*) w_dst_, g.blob_bytes,
+                                                   d_fascale_, d_fahx_, (uint16_t*) dst_rows, g.blob_bytes,
                                                    g.d_codes_off, g.d_scales_off, streams_[0]);
         } else {
             s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
-                                               d_fascale_, d_fahx_, w_dst_, g.blob_bytes, g.d_codes_off,
+                                               d_fascale_, d_fahx_, dst_rows, g.blob_bytes, g.d_codes_off,
                                                g.d_scales_off, streams_[0],
                                                e1 ? comp_flag_ : nullptr, ring, e1 ? d_ctr_ : nullptr);
         }
@@ -737,6 +783,21 @@ bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts
     return begin_chain(err);
 }
 
+void MaxwellExperts::s0_report() {
+    const double mb_l = s0_mb_ / s0_layers_, ideal_us = mb_l * 12.05;   // MB/(83 GB/s) in us
+    const double krn_us = 1000.0 * s0_krn_ms_ / s0_layers_;
+    std::fprintf(stderr, "MWPROF m10 CUDA%d layers %.0f: jobs/L %.2f distinct/L %.2f, %.3f MB/L, "
+                         "ideal %.0f us/L, kernel %.0f us/L (slack %.2fx) [gup %.0f + down %.0f], "
+                         "sync-wait %.0f us/L\n",
+                 device_, s0_layers_, s0_jobs_ / s0_layers_, s0_distinct_ / s0_layers_, mb_l,
+                 ideal_us, krn_us, ideal_us > 0 ? krn_us / ideal_us : 0.0,
+                 1000.0 * s0_gup_ms_ / s0_layers_, 1000.0 * s0_dn_ms_ / s0_layers_,
+                 1000.0 * s0_sync_ms_ / s0_layers_);
+    std::fflush(stderr);
+    s0_layers_ = s0_jobs_ = s0_distinct_ = s0_mb_ = s0_krn_ms_ = s0_sync_ms_ = 0;
+    s0_gup_ms_ = s0_dn_ms_ = 0;
+}
+
 bool MaxwellExperts::finish(float* out, std::string& err) {
     (void) out;   // the destination was handed to begin(); only the wait and the scatter-less finish remain
     return finish_chain(err);
@@ -789,12 +850,34 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     // the 3060's graph multi-waits on it, and the NEXT service's staging uses the other buffer set.
     // The prefill (non-mapped destination) still syncs: its rows are read on the host.
     if (w_dst_mapped_ && comp_flag_ != nullptr && !w_rows_f16_ && gpuflag_mode() >= 2) {
-        if (s0) s0_a_ = nullptr;   // unmeasured path: no sync, no harvest (drop the half-measurement)
+        s0_deferred_ = s0;          // the span is reaped at the next begin (the stream orders it)
         w_dst_mapped_ = false;      // the service is complete; the scatter was in-kernel
         owned_row_.clear();
         return true;
     }
-    if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;
+    // STRATA_MW_GENTLE_SYNC (opt-in): poll this card's stream with short host sleeps instead of
+    // cudaStreamSynchronize's driver spin.  The S0/REV campaign proved the spin is poison on this VM:
+    // whichever card is served later runs its down kernel slower (~+55 us per earlier finish, the
+    // flip test STRATA_MW_REV moved the fast card with the order) - the spinning finishes clog the
+    // completion path the other cards' kernels need.  A sleeping poll does not spin; the wake lands
+    // within one quantum (30 us) of the true end.  (cudaDeviceScheduleBlockingSync - STRATA_MW_BLOCKSYNC -
+    // is the flag-level form of the same idea; this stack's prefill then sees 0 MiB free, so it stays
+    // off and the poll form is the one that runs.)
+    static const bool gentle = [] {
+        const char* e = std::getenv("STRATA_MW_GENTLE_SYNC");
+        const bool on = e != nullptr && std::atoi(e) != 0;
+        if (on) std::fprintf(stderr, "strata maxwell: gentle stream sync - 30 us polls, no driver spin "
+                                     "(STRATA_MW_GENTLE_SYNC)\n");
+        return on;
+    }();
+    if (gentle) {
+        for (;;) {
+            const cudaError_t q = cudaStreamQuery(streams_[0]);
+            if (q == cudaSuccess) break;
+            if (q != cudaErrorNotReady) { err = "finish query: " + std::string(cudaGetErrorString(q)); return false; }
+            std::this_thread::sleep_for(std::chrono::microseconds(30));
+        }
+    } else if (!check(cudaStreamSynchronize(streams_[0]), "finish sync", err)) return false;
     const auto ft2 = std::chrono::steady_clock::now();
     // S0: the verdict line.  ideal = MB/layer over 83 GB/s (the per-card DRAM floor, M10-TEST-FINAL);
     // slack = kernel/ideal - 1.0x is the bandwidth floor, anything above is recoverable elsewhere.
@@ -807,20 +890,7 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         s0_gup_ms_ += (double) eg;
         s0_dn_ms_ += (double) ed;
         s0_sync_ms_ += std::chrono::duration<double, std::milli>(ft2 - s0_w0).count();
-        if (s0_layers_ >= 1440.0) {   // 40 windows of GDN layers, per card: print and reset
-            const double mb_l = s0_mb_ / s0_layers_, ideal_us = mb_l * 12.05;   // MB/(83 GB/s) in us
-            const double krn_us = 1000.0 * s0_krn_ms_ / s0_layers_;
-            std::fprintf(stderr, "MWPROF m10 CUDA%d layers %.0f: jobs/L %.2f distinct/L %.2f, %.3f MB/L, "
-                                 "ideal %.0f us/L, kernel %.0f us/L (slack %.2fx) [gup %.0f + down %.0f], "
-                                 "sync-wait %.0f us/L\n",
-                         device_, s0_layers_, s0_jobs_ / s0_layers_, s0_distinct_ / s0_layers_, mb_l,
-                         ideal_us, krn_us, ideal_us > 0 ? krn_us / ideal_us : 0.0,
-                         1000.0 * s0_gup_ms_ / s0_layers_, 1000.0 * s0_dn_ms_ / s0_layers_,
-                         1000.0 * s0_sync_ms_ / s0_layers_);
-            std::fflush(stderr);
-            s0_layers_ = s0_jobs_ = s0_distinct_ = s0_mb_ = s0_krn_ms_ = s0_sync_ms_ = 0;
-            s0_gup_ms_ = s0_dn_ms_ = 0;
-        }
+        if (s0_layers_ >= 1440.0) s0_report();
         s0_a_ = nullptr;   // the next begin_chain arms a fresh span (the event objects are reused)
     }
     if (const char* e = std::getenv("STRATA_MAXWELL_TIMING")) {

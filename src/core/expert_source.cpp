@@ -3952,9 +3952,17 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
         }
     }
     // Maxwell (sm_50) tier: start the M10s' share before the CPU's own work, like the peer.
+    // STRATA_MW_REV (A/B): serve the cards in REVERSE order - begin and finish both.  Splits the
+    // down-stagger's cause in two: if the fast card flips (C4 fast, C1 slow) the stagger follows the
+    // SERVICE order; if C1 stays fast it is the card's position (topology), not our order.
+    static const bool rev_order = [] {
+        const char* e = std::getenv("STRATA_MW_REV");
+        return e != nullptr && std::atoi(e) != 0;
+    }();
     if (d.remote_count > 0) {
         static thread_local std::string remote_error;
-        for (int r = 0; r < d.remote_count; ++r) {
+        for (int ri = 0; ri < d.remote_count; ++ri) {
+            const int r = rev_order ? d.remote_count - 1 - ri : ri;
             if (!d.remote[r]->begin(d.layers, x_f, ids, n_tok, k, kind, d.host_res, remote_error)) {
                 d.failed = true; d.fail = remote_error.c_str(); d.fail_layer = d.layers; return;
             }
@@ -4109,10 +4117,12 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     // Maxwell (sm_50) tier: each M10's staged rows, into their routed positions.
     if (d.maxwell_count > 0) {
         static thread_local std::string maxwell_error;
-        for (int m = 0; m < d.maxwell_count; ++m)
+        for (int mi = 0; mi < d.maxwell_count; ++mi) {
+            const int m = rev_order ? d.maxwell_count - 1 - mi : mi;
             if (!d.maxwell[m]->finish(out, maxwell_error)) {
                 d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
+        }
     }
     const auto c4 = std::chrono::steady_clock::now();
     pt("ran");
