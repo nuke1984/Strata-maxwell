@@ -4,6 +4,23 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — RITORNO ALLO STABILE TAGGATO; campagna baton chiusa (2026-10-14, sera)**
+>
+> **Verdetto dell'utente, accettato**: il +6,3% stesso-giorno non sopravvive alla varianza tra giorni
+> (ancora 45,1 → misurato 43,5 lo stesso giorno baseline; contro l'ancora mode3 = +2,7%, dentro il rumore):
+> "46 prima, 46 ora". I costi visibili invece erano reali: lettura GPU 100% (residenza dello spin di wait,
+> watt invariati 108-113 vs 103-110 W — misurato) e un core host in spin puro (HOST_WAIT_US=0).
+> **Ripristino**: binario `engine/strata.bak-0144-tagged` (md5 verificato, stato del tag
+> `maxwell-0.1.44-IQ2_XS-256k-OK` @ 06f7cb93) + config standard `/tmp/opencode/spec-sweep.json`
+> (256k/k8v4/**spec 4 — DEFINITIVO, sweep chiusi**). Gates di rientro: 391 + 3×3 vs ancora 45.
+> **Cosa resta dell'intera campagna** (il vero prodotto): la mappa completa — il veleno (chiamate driver
+> host durante i kernel M10, ~55 µs/scheda, dimostrato con inversione REV + 7 falsificazioni + microbench),
+> il budget della catena seriale al microsecondo (fasi-grafo ~400 + host ~165 + M10 ~330 + handoff ~100
+> µs/layer), la dimostrazione che gup è al pavimento ISA (VMAD×pesi×token, nessun formato più largo entra
+> in VRAM), la non-determinismo run-to-run della base (k8v4 + percorsi cache/M10). Tutto opt-in nel tree,
+> default-off, nulla spinto. Mode 3 = `strata-iq2xs-mode3.json` sullo scaffale, documentato, un cambio di
+> config per riarmarlo.
+
 > **AGGIORNAMENTO — potenza misurata, dedup analizzata a morte, spec re-sweep: l'altopiano (2026-10-14)**
 >
 > **Potenza (la preoccupazione "50% più calore")**: misurata durante generazione — mode3: 99-100% util,
