@@ -4,6 +4,15 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — PUSH A nuke1984/Strata-maxwell (2026-10-18)**
+>
+> Il port v0.1.45 validato è ora il **main del fork**: `maxwell-0.1.45:main` (477ac13c → 6a43c484), con
+> tutti i tag `maxwell-*` (0.1.44/0.1.45 stabili + storici). Tip ripulito: i 39 log `strata*.out` di
+> root sono usati dal tracking e ignorati (`.gitignore`, radice-ancorato; le copie locali restano; la
+> storia li conserva — contenuti benigni). Pack totale ~43 MB, nessun binario engine/ tracciato mai,
+> config di produzione (api_key) mai tracciata. Verificato con ls-remote: main e tag allineati.
+> Prima pubblicazione del ramo Maxwell — tutto il precedente era solo locale.
+
 > **AGGIORNAMENTO — PORT v0.1.45 dal fork nuke1984/Strata-maxwell, VALIDATO (2026-10-18)**
 >
 > **Sorgente**: fork `nuke1984/Strata-maxwell` (remote `nuke`), main = esattamente `v0.1.45` (477ac13c,
