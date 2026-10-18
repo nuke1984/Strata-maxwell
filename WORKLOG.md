@@ -4,6 +4,22 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — PORT v0.1.45 dal fork nuke1984/Strata-maxwell, VALIDATO (2026-10-18)**
+>
+> **Sorgente**: fork `nuke1984/Strata-maxwell` (remote `nuke`), main = esattamente `v0.1.45` (477ac13c,
+> 275 commit upstream oltre v0.1.44). Locale, niente push. **Metodo**: baseline stesso-giorno sul tag
+> stabile → branch `maxwell-0.1.45` → merge di `maxwell-0.1.44` → **5 conflitti** (CMakeLists: entrambi i
+> blocchi tool; verify_kernels.hpp/verify.hpp: unione delle dichiarazioni; prefill: la T chunk-locale
+> upstream + il nostro staging mw; verify.cpp: il rename upstream fuse_rows_on + disarm m_bal_ con i
+> nostri rami E1/mode-3 fused-mw) → build pulito zero errori.
+> **Gates**: tier M10 4×7,9 GB ✓, 256k ✓, 391 ✓ 9999 ✓, **3×3 parità**: stabile 40,6/46,4/46,6 (44,6)
+> vs port 40,0/46,6/45,6 (44,1) = −0,5% nel rumore; **391×8 concorrente ✓**.
+> **TAG**: `maxwell-0.1.45-IQ2_XS-256k-OK` @ 88d3c0c3; binario `engine/strata.bak-0145-port`.
+> Produzione: :8088 sul port con config standard (spec-sweep.json ricostruita — /tmp era stato pulito).
+> Nota 0.1.45: log serve rinnovato (righe "thinking:" progressivo; "done:" per richieste; report
+> "expert cache 100.0% hit (+80.4% routed over PCIe)"). Nuovo upstream degno di nota: EXPDEC, hc persist,
+> layer-split overlap hand-off, kernel decode qwen35 — tutti inerti per noi finché non armati.
+
 > **AGGIORNAMENTO — RITORNO ALLO STABILE TAGGATO; campagna baton chiusa (2026-10-14, sera)**
 >
 > **Verdetto dell'utente, accettato**: il +6,3% stesso-giorno non sopravvive alla varianza tra giorni
