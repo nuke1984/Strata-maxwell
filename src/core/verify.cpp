@@ -373,13 +373,13 @@ bool mapped(size_t bytes, void** h, void** d) {
 #if defined(STRATA_USE_HIP)
     if (g_coherent) {
         if (hipHostMalloc(h, bytes, hipHostMallocMapped | hipHostMallocCoherent |
-                                        (peer_portable() ? hipHostMallocPortable : 0)) != hipSuccess)
+                                        ((peer_portable() || maxwell_portable()) ? hipHostMallocPortable : 0)) != hipSuccess)
             return false;
         std::memset(*h, 0, bytes);
         return cudaHostGetDevicePointer(d, *h, 0) == cudaSuccess;
     }
 #endif
-    if (cudaHostAlloc(h, bytes, cudaHostAllocMapped | (peer_portable() ? cudaHostAllocPortable : 0)) != cudaSuccess) return false;   // multi-GPU: portable only with a peer - the peer card writes its rows into them
+    if (cudaHostAlloc(h, bytes, cudaHostAllocMapped | ((peer_portable() || maxwell_portable()) ? cudaHostAllocPortable : 0)) != cudaSuccess) return false;   // multi-GPU peer / Maxwell tiers: another card writes its rows into them
     std::memset(*h, 0, bytes);
     return cudaHostGetDevicePointer(d, *h, 0) == cudaSuccess;
 }
@@ -719,7 +719,37 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
               mapped(64, (void**) &h_flagA_, (void**) &m_flagA_) &&
               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
               mapped(64, (void**) &h_plan_err_, (void**) &m_plan_err_) &&
-              mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
+              mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_) &&
+              mapped(256, (void**) &h_mwe_, (void**) &m_mwe_) &&          // E1: the expected ring (64 x u32)
+              mapped(16, (void**) &h_mwf_[0], (void**) &m_mwf_[0]) &&     // E1: the four tier flags
+              mapped(16, (void**) &h_mwf_[1], (void**) &m_mwf_[1]) &&
+              mapped(16, (void**) &h_mwf_[2], (void**) &m_mwf_[2]) &&
+              mapped(16, (void**) &h_mwf_[3], (void**) &m_mwf_[3]);
+        if (ok) {   // the E1 flags and the expected ring start zeroed (monotonic protocol)
+            std::memset(h_mwe_, 0, 256);
+            for (int i = 0; i < 4; ++i) std::memset(h_mwf_[i], 0, 16);
+        }
+    // STRATA_MW_ROWS_F16=1: the Maxwell tier's expert rows travel as fp16 (half the uplink bytes) and the
+    // dec_batch row copy converts them back.  Only that copy path knows the conversion, so the opt-in is
+    // refused (and the M10s keep writing fp32 rows, which every path expects) when another path is active.
+    {
+        const char* f16e = std::getenv("STRATA_MW_ROWS_F16");
+        const bool want = f16e != nullptr && std::atoi(f16e) != 0;
+        if (want) {
+            static const bool dec_batch_on = [] { const char* v = std::getenv("STRATA_DEC_BATCH"); return v == nullptr || std::atoi(v) != 0; }();
+            const bool remote_on = remote_opt_ != nullptr;
+            const bool dp_on = [] { const char* v = std::getenv("STRATA_VERIFY_DEVICE_PLAN"); return v != nullptr && std::atoi(v) != 0; }();
+            if (!dec_batch_on || remote_on || dp_on) {
+                std::fprintf(stderr, "strata verify: STRATA_MW_ROWS_F16 needs the dec_batch row copy (no remote_opt, "
+                                     "no device plan); keeping fp32 rows\n");
+            } else if (!mapped((size_t) (2 * T * K + 16), (void**) &h_kind16_, (void**) &m_kind16_)) {
+                std::fprintf(stderr, "strata verify: fp16 rows allocation failed; keeping fp32 rows\n");
+                h_kind16_ = nullptr; m_kind16_ = nullptr;
+            } else {
+                std::fprintf(stderr, "strata verify: Maxwell rows in fp16 (STRATA_MW_ROWS_F16)\n");
+            }
+        }
+    }
     if (!ok) { err = "verify: mapped staging allocation failed"; return false; }
     if (bal_ != nullptr) {   // set_pcie_balance: four stamp words per (layer, group)
         if (!mapped((size_t) g.n_layers * 2 * 4 * 8, (void**) &h_bal_, (void**) &m_bal_)) {
@@ -750,6 +780,7 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
         sink_.ptr2 = sink_.ptr + cap;
         sink_.start2 = h_plan_ + ptr_off + 4 * cap;
         sink_.cap = cap;
+        sink_.kind16 = h_kind16_;   // fp16 rows: slot 0; set_plan_slot applies the group offset
         sink_.publish = &Verifier::publish_plan;
         sink_.fetch = &Verifier::fetch_dma;
         sink_.ctx = this;
@@ -2014,22 +2045,53 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 copy_or_zero_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (long long) n * K * N,
                                          skip_ + grp, ring, cs);
             } else {
-                const bool fuse_rows = fuse_rows_on() && !prof_on_ && !remote_opt_ && dec_batch && m_bal_ == nullptr;   // 143-amdk
-                if (!fuse_rows) {
+                // mode 3 (STRATA_MW_FUSE_MW, default on when armed): E1's multi-wait folded INTO the
+                // 143-amdk fused row copy - one launch instead of [wait_mw + copy], the same flag
+                // semantics and the same rows.  mw_wait_ no longer disarms the fusion; the unfused
+                // pair stays as the fallback (and what profiling runs see, prof_on_ disarms fusion).
+                static const bool fuse_mw_on = [] {
+                    const char* e = std::getenv("STRATA_MW_FUSE_MW");
+                    return e == nullptr || std::atoi(e) != 0;   // unset = on (an armed E1 is already opt-in)
+                }();
+                const bool fuse_rows = fuse_rows_on() && !prof_on_ && !remote_opt_ && dec_batch &&
+                                       m_bal_ == nullptr && h_kind16_ == nullptr;   // 143-amdk; f16/balance need their own wait/copy
+                const bool fuse_mw = fuse_rows && mw_wait_ && fuse_mw_on;
+                if (fuse_mw) {
+                    const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
+                    copy_rows_from_mapped_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,
+                                                   parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                                   p_dst, p_counts + 1, cs);
+                } else if (mw_wait_) {
+                    // E1: the wait ALSO gates on the tiers' GPU-raised flags - the expected sequence
+                    // comes from this step's ring slot at run time (the capture bakes only pointers).
+                    const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
+                    wait_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw, cs);
+                } else if (!fuse_rows) {
                     if (m_bal_ != nullptr)   // set_pcie_balance: ... and ends as it waits for the CPU's rows
                         wait_flag_ge_stamped(m_flag_, ring, m_bal_ + ((l - lb_) * 2 + grp) * 4 + 2, nullptr, cs);
                     else
                         wait_flag_ge(m_flag_, ring, cs);           // the CPU's share is in the mapped rows
                 }
                 stamp(l, 23, grp);
-                if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
+                if (fuse_mw) {
+                    // done: the wait and the copy were one launch above
+                } else if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
                     remote_opt_->copy_rows(parts_out, m_ymiss_ + (size_t) tb * K * N, tb, n, p_dst, p_counts + 1, cs);
                 else if (fuse_rows)   // the wait folded into the copy's blocks
                     copy_rows_from_mapped_after(m_flag_, ring, parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
                                                 p_dst, p_counts + 1, cs);
-                else if (dec_batch)   // only the CPU rows cross PCIe (p_dst[0, counts[1]) = the GPU's own rows)
-                    copy_rows_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
-                                          p_dst, p_counts + 1, cs);
+                else if (dec_batch) {  // only the CPU rows cross PCIe (p_dst[0, counts[1]) = the GPU's own rows)
+                    // fp16 rows (opt-in, STRATA_MW_ROWS_F16): the Maxwell tier's rows are H halves packed
+                    // into their fp32 slots, marked per entry in kind16 (group-local, like p_dst); convert.
+                    if (h_kind16_ != nullptr)
+                        copy_rows_from_mapped_f16(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                                  p_dst, p_counts + 1,
+                                                  (const uint16_t*) (m_ymiss_ + (size_t) tb * K * N),
+                                                  sink_.kind16, cs);
+                    else
+                        copy_rows_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                                              p_dst, p_counts + 1, cs);
+                }
                 else
                     copy_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K * N, cs);
             }
@@ -2769,11 +2831,17 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         const Clock::time_point a = Clock::now();
         auto last_flush = a;
         uint32_t spins = 0;
+        // Leva 1 (attese efficienti): dopo un breve spin il thread host DORME invece di bruciare il core.
+        // STRATA_HOST_WAIT_US (default 20 us) e' la grana del sonno; 0 ripristina lo spin puro.  Il costo e'
+        // la latenza di reazione al ring (~la grana): la GPU ha ~50 us di margine prima della flagB.
+        static const long host_wait_us = [] { const char* v = std::getenv("STRATA_HOST_WAIT_US"); return v ? std::atol(v) : 20L; }();
         progress_at("verify window: waiting for the GPU to reach layer", l);
         while (*seq < want) {
             _mm_pause();
             if ((++spins & 1023u) != 0) continue;
             const auto now = Clock::now();
+            if (host_wait_us > 0 && spins >= 4096u)
+                std::this_thread::sleep_for(std::chrono::microseconds(host_wait_us));
             if (now - last_flush > std::chrono::microseconds(2000)) {
                 last_flush = now;
 #if !defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
@@ -2821,6 +2889,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         if (pool != nullptr)
             pool(user, h_x_ + (size_t) tb * g.n_embd, h_ids_ + (size_t) tb * ss.k, n, ss.k,
                  h_ymiss_ + (size_t) tb * ss.k * g.n_embd, l);
+        const Clock::time_point mwp_poolend_ = Clock::now();
         if (remote_opt_) remote_opt_->end();
         VDBG("layer %lld served\n", (long long) l);
         if (g_trace) trace_ev(*(volatile uint32_t*) h_flagA_ == want ? "SERVED" : "SERVED-NO-PLAN-YET", k, l,
@@ -2856,10 +2925,35 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
             _mm_sfence();
             ms_host += ms_since(tp);
         }
+        // E1: publish this step's expected tier-sequence BEFORE the main flag rises - the graph's
+        // multi-wait reads it at run time from this step's ring slot.  The tiers' launch counter and
+        // this count advance in lockstep (one service per tier per step, kernel-raised or host-raised).
+        if (mw_wait_) h_mwe_[k & 63] = (uint32_t) (++mw_services_);
         if (!(test_stall && k + 1 == steps)) *flag = want;
         if (h_bal_ != nullptr) bal_p_[(size_t) ((k / G) * 2 + grp)] = ms_since(b);
         ms_wait += std::chrono::duration<double, std::milli>(b - a).count();
         ms_pool += ms_since(b);
+        // T1: the verifier-side phases of the layer roundtrip - ring wait (a->b), pool wall (the whole
+        // callback), post (PLE gather + flag writes).  The pool's internals print from the dispatch.
+        {
+            static struct VProf {
+                double wait = 0, pool = 0, post = 0;
+                int64_t n = 0;
+                bool on = std::getenv("STRATA_MW_LAYERPROF") != nullptr;
+            } vp;
+            if (vp.on) {
+                vp.wait += std::chrono::duration<double, std::milli>(b - a).count();
+                const double pw = ms_since(b) - ms_since(mwp_poolend_);
+                vp.pool += pw > 0 ? pw : 0;
+                vp.post += ms_since(mwp_poolend_);
+                if (++vp.n % 1920 == 0) {
+                    std::fprintf(stderr, "MWPROF vlayer %lld: ring %.1f pool %.1f post %.1f us/layer\n",
+                                 (long long) vp.n, vp.wait / vp.n * 1000.0, vp.pool / vp.n * 1000.0,
+                                 vp.post / vp.n * 1000.0);
+                    std::fflush(stderr);
+                }
+            }
+        }
     }
     // (#646 staged the next stage's inputs here; 0.1.39b keeps the layer split's order: each stage stages its own)
     if (chain) {
@@ -3010,6 +3104,7 @@ void Verifier::set_plan_slot(int grp) {
     sink_.ptr = (unsigned long long*) (base + ptr_off);
     sink_.ptr2 = sink_.ptr + cap;
     sink_.start2 = base + ptr_off + 4 * cap;
+    sink_.kind16 = (h_kind16_ != nullptr) ? h_kind16_ + (size_t) grp * (size_t) cap : nullptr;
     const int G = last_batch_ ? 1 : (groups_[last_t_] > 0 ? groups_[last_t_] : 1);
     const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
     sink_.staging = (unsigned long long) (staging_ + (size_t) (grp * per) * strata::kernels::cpu::expert_layout().max_blob);

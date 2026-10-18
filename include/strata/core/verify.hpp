@@ -327,9 +327,21 @@ public:
     /// The GPU plan the pool writes each layer (VRAM hits + the PCIe share of the misses); give it to the
     /// dispatch (`ExpertDispatch::plan`) before the first `run`.
     GpuPlanSink* plan_sink() { return &sink_; }
+    /// Whether the Maxwell tier writes fp16 rows (the opt-in STRATA_MW_ROWS_F16 path): give it to the
+    /// dispatch (`ExpertDispatch::rows_f16`) before the first `run`.
+    bool rows_f16() const { return h_kind16_ != nullptr; }
     /// Plan v0.3 P6: split the window into two token groups and pipeline the CPU experts of one with the GPU work
     /// of the other (default on).  Set before the first `run`.
     void set_split(bool on) { split_ = on; }
+    /// E1: wire the four mapped tier-completion flags and enable the graph's multi-wait.  The tier's
+    /// down kernel raises flag[i] to a monotonic sequence value; the host publishes the expected
+    /// sequence per step.  Call before the first capture, with the flags this verifier allocated.
+    void set_mw_wait(uint32_t* const flags[4]) {
+        for (int i = 0; i < 4; ++i) h_mwf_[i] = flags[i];
+        mw_wait_ = true;
+    }
+    uint32_t* mw_flags(int i) { return h_mwf_[i]; }   // the tiers write these; the wiring hands them out
+    uint32_t** mw_flags_ptr() { return h_mwf_; }      // for set_mw_wait's array form
     /// Plan v0.3 P6: how the PCIe share of the misses reaches the GPU: 0 = DMA into staging (the copy engine works
     /// beside the CPU; best when the CPU is compute-bound, the i-quants), 1 = the grouped kernel reads the mapped
     /// arena directly, 2 = a copy kernel stages it inside the graph (no API calls on the pool's thread; best when
@@ -568,6 +580,12 @@ private:
     PcieModel* bal_ = nullptr;
     bool bal_paused_ = false;
     void pcie_balance_window(int64_t steps, int G);
+    // E1: the Maxwell tiers' GPU-raised completion flags (four, monotonic sequence values, written by
+    // the M10 down kernels' last blocks) and the per-step ring of expected sequences the host publishes.
+    uint32_t* h_mwf_[4] = {}; uint32_t* m_mwf_[4] = {};
+    uint32_t* h_mwe_ = nullptr; uint32_t* m_mwe_ = nullptr;   // 64 slots, indexed by step & 63
+    bool mw_wait_ = false;             // the tiers are wired: the graph waits their flags too
+    int64_t mw_services_ = 0;          // the tier launch counter the expected values track
     cudaEvent_t commit_done_ = nullptr;   // recorded after an async commit (set_commit_async); see wait_commit
     bool commit_pending_ = false;
     cudaStream_t copy_ = nullptr;                                 // the copy engine's stream (DMA of missed experts)
@@ -585,6 +603,10 @@ private:
     std::function<bool(cudaStream_t, std::string&)> pre_launch_;   // set_pre_launch
     int groups_[9] = {};
     float* h_ymiss_ = nullptr;   float* m_ymiss_ = nullptr;     // T * k * n_embd
+    /// fp16 expert rows (opt-in, STRATA_MW_ROWS_F16): the Maxwell tier writes its rows as H packed fp16
+    /// halves inside their fp32 row slots and the row copy converts them back (half the uplink bytes).
+    /// `h_kind16_` marks, per entry, which rows are fp16; null = fp32 rows, the default.
+    uint8_t* h_kind16_ = nullptr;    uint8_t* m_kind16_ = nullptr;     // T * k per plan slot
 
     // device
     void* arena_ = nullptr;

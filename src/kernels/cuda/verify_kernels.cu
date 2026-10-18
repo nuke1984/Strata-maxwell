@@ -11,6 +11,9 @@
 
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#if !defined(STRATA_USE_HIP)
+#include <cuda.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -1248,6 +1251,32 @@ void handoff_publish(float* dst, const float* a, int64_t na, const float* b, int
 }
 
 namespace {
+// E1: the Maxwell tiers' completion wait.  The main flag gates the host's own share as before; the four
+// tier flags are raised by the M10 down kernels' last blocks (monotonic sequence values).  The EXPECTED
+// sequence is read from mapped memory at RUN time - the graph capture bakes only the pointers - via a
+// per-step ring slot, so a later layer's publish cannot lengthen an earlier layer's wait.
+__global__ void wait_mw_kernel(volatile const uint32_t* main, uint32_t ring,
+                               volatile const uint32_t* exp,
+                               volatile const uint32_t* f0, volatile const uint32_t* f1,
+                               volatile const uint32_t* f2, volatile const uint32_t* f3) {
+    while (true) {
+        const uint32_t e = *exp;
+        if (*main >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+        strata_spin_pause();
+    }
+    __threadfence_system();
+}
+}  // namespace
+
+void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,
+             void* stream) {
+    wait_mw_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(
+        (volatile const uint32_t*) main, ring, (volatile const uint32_t*) exp,
+        (volatile const uint32_t*) mw[0], (volatile const uint32_t*) mw[1],
+        (volatile const uint32_t*) mw[2], (volatile const uint32_t*) mw[3]);
+}
+
+namespace {
 // one thread per window entry: up to kVerifyMaxT tokens x 10 routed experts (80), so 128 (#646 had 64: a window of
 // 7+ tokens lost its last entries)
 constexpr int kResidentPlanMax = 128;
@@ -1467,6 +1496,26 @@ void copy_or_zero_from_mapped(float* dst, const float* src, long long n, const u
     check("copy_or_zero_from_mapped");
 }
 
+#if !defined(STRATA_USE_HIP)
+namespace {
+// Leva 1 (GPU): the doorbell wait WITHOUT a kernel.  cuStreamWaitValue32 blocks the stream on the mapped host
+// flag with no kernel resident - the 1-thread spin kernel kept the GPU "busy" for the whole wait, so nvidia-smi
+// read 100% while the GPU was only waiting.  Resolved through the runtime: the project links no libcuda
+// directly (same pattern as vmm.cpp).  STRATA_WAITVALUE=0 restores the kernel (A/B).
+using StreamWaitValue32Fn = CUresult (*)(CUstream, CUdeviceptr, cuuint32_t, unsigned int);
+StreamWaitValue32Fn stream_wait_value32_fn() {
+    static StreamWaitValue32Fn fn = []() -> StreamWaitValue32Fn {
+        cudaDriverEntryPointQueryResult q{};
+        void* p = nullptr;
+        if (cudaGetDriverEntryPointByVersion("cuStreamWaitValue32", &p, 12000, cudaEnableDefault, &q) != cudaSuccess ||
+            q != cudaDriverEntryPointSuccess || p == nullptr)
+            return nullptr;
+        return (StreamWaitValue32Fn) p;
+    }();
+    return fn;
+}
+}  // namespace
+#endif
 namespace {
 __global__ void wait_copy_i32_kernel(const volatile uint32_t* flag, uint32_t value, int32_t* __restrict__ dst,
                                      const volatile int32_t* src, int n) {
@@ -1485,6 +1534,15 @@ void wait_copy_i32_from_mapped(const uint32_t* flag, uint32_t value, int32_t* ds
 }
 
 void wait_flag_ge(const uint32_t* flag, uint32_t value, void* stream) {
+#if !defined(STRATA_USE_HIP)
+    static const bool use_mem_wait = [] { const char* v = std::getenv("STRATA_WAITVALUE"); return v == nullptr || std::atoi(v) != 0; }();
+    if (use_mem_wait) {
+        if (StreamWaitValue32Fn fn = stream_wait_value32_fn()) {
+            if (fn((CUstream) stream, (CUdeviceptr) flag, (cuuint32_t) value, CU_STREAM_WAIT_VALUE_GEQ) == CUDA_SUCCESS)
+                return;
+        }
+    }
+#endif
     wait_flag_ge_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(flag, value);
     check("wait_flag_ge");
 }
