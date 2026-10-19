@@ -4131,9 +4131,26 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
         for (int a = 0; a < d.maxwell_count; ++a)
             for (int b = a + 1; b < d.maxwell_count; ++b)
                 if (cnt[order[b]] > cnt[order[a]]) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
+        // SPLIT_MODE_TENSOR: every card computes EVERY tier entry and writes its PARTIAL into its own
+        // area; the verifier assembles after the flags.  The tier's rows travel COMPACT (job slots), so
+        // the dispatch publishes this step's ENTRY LIST - [count, e0, e1, ...] int32s - into the buffer
+        // of the UPCOMING ring's parity (seq()+1, the value the verifier publishes as this step's
+        // expected sequence; all cards advance in lockstep); the assembly kernel re-expands by it.
+        const bool mw_tp = d.mw_partial[0] != nullptr && d.maxwell[0] != nullptr && d.maxwell[0]->tensor();
+        if (mw_tp) {
+            int32_t* sel = (int32_t*) (((d.maxwell[0]->seq() + 1u) & 1u) ? d.mw_tp_row[1] : d.mw_tp_row[0]);
+            int32_t n_tp = 0;
+            for (int64_t i = 0; i < n_tok * k; ++i)
+                if (kind[i] == 3) sel[1 + n_tp++] = (int32_t) i;
+            sel[0] = n_tp;
+        }
         for (int oi = 0; oi < d.maxwell_count; ++oi) {
             const int m = order[oi];
-            if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, out, d.rows_f16, maxwell_error)) {
+            // TP: the card's destination is its own PARTIAL area (the assembled row lands in `out` later,
+            // on the 3060, from the four partials); otherwise the shared rows area, as before.
+            float* dst = mw_tp ? d.mw_partial[m] : out;
+            if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, dst, d.rows_f16,
+                                      maxwell_error)) {
                 d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
         }

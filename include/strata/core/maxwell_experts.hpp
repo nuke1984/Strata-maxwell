@@ -48,11 +48,20 @@ public:
     /// Returns false with `err` set when the device cannot be used.
     ///
     /// `src_blob` is a callback returning the host pointer of one expert's 1,382,400-byte blob.
+    ///
+    /// SPLIT_MODE_TENSOR (`tp_cards` > 1): the Meta tier.  Every card takes the WHOLE `assign` list and
+    /// stores a TENSOR SHARD of every expert instead of whole experts: gate/up rows [64*blk_base,
+    /// 64*(blk_base+blks)) and down blocks [blk_base, blk_base+blks) of the SC_D 64-element blocks, the
+    /// slice rotating by layer (`(tp_card + layer) % tp_cards`) so the {3,3,2,2}-block split of 10 over
+    /// 4 cards evens out exactly (48 layers % 4 == 0).  The four shards sum to the full blob; every
+    /// routed entry is then computed by ALL cards concurrently, each writing a PARTIAL output row the
+    /// consumer sums in rank order.  `tp_cards` == 1 (default) keeps the whole-expert layout, and the
+    /// whole function is byte-identical to the previous behaviour.
     bool open(int device,
               const std::vector<std::pair<int32_t, int32_t>>& assign,
               const uint8_t* (*src_blob)(int64_t layer, int64_t expert, void* ctx), void* ctx,
               int64_t n_layers, int64_t n_expert, int reserve_mib,
-              std::string& err);
+              std::string& err, int tp_card = 0, int tp_cards = 1);
     void close();
     bool valid() const { return device_ >= 0; }
     int device() const { return device_; }
@@ -86,12 +95,22 @@ public:
     /// Like finish(), but entry i's row goes to `dst_rows[(row_of_entry[i] - row_base) * n_embd]` - the
     /// prefill's grouped `Dm` tail block (a HOST staging buffer, one H2D copies it to the device).  For the
     /// token path (`row_of_entry` null) row i = entry i.  The down stage launches here and the rows are
-    /// copied to the caller's rows.
-    bool finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd, std::string& err);
+    /// copied to the caller's rows.  `accumulate` (SPLIT_MODE_TENSOR): the rows are ADDED into `dst_rows`
+    /// instead of copied - each card contributes its partial and the cards finish in rank order, so the
+    /// accumulated sum is deterministic; the caller zeroes the block first.
+    bool finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd,
+                   std::string& err, bool accumulate = false);
 
     int64_t resident() const { return resident_; }
     int64_t computed() const { return computed_.load(std::memory_order_relaxed); }
     double gib() const { return gib_; }
+    /// SPLIT_MODE_TENSOR: this card holds tensor shards of the resident set (not whole experts); its
+    /// output rows are PARTIAL sums the caller must reduce across cards in rank order.
+    bool tensor() const { return tp_cards_ > 1; }
+    /// E1: the tier's service counter (the value the last launch/host-raise left on comp_seq_).  The
+    /// dispatcher reads it to pick the double-buffered staging parity of the UPCOMING service - its
+    /// ring value is seq()+1, the same value the verifier publishes as this step's expected sequence.
+    uint32_t seq() const { return comp_seq_; }
     /// The (layer, expert) pairs actually resident on this device (subset of the assignment that fit).
     /// Used by the driver to exclude them from the RAM complement (no duplication).
     const std::vector<std::pair<int32_t, int32_t>>& held_pairs() const { return held_; }
@@ -100,6 +119,8 @@ private:
     int device_ = -1;
     int64_t n_layers_ = 0, n_expert_ = 0;
     int64_t resident_ = 0;
+    // SPLIT_MODE_TENSOR: this card's rank and the tier's card count (1 = whole-expert mode).
+    int tp_card_ = 0, tp_cards_ = 1;
     std::atomic<int64_t> computed_{0};
     double gib_ = 0.0;
 
@@ -115,6 +136,12 @@ private:
         size_t o_gate = 0, o_up = 0, gu_row = 0;                ///< the raw GGUF gate/up rows (i-quant layers)
         size_t d_codes_off = strata::kernels::cuda::expert_maxwell_geo::O_D_CODES;
         size_t d_scales_off = strata::kernels::cuda::expert_maxwell_geo::O_D_SCALES;
+        // SPLIT_MODE_TENSOR: this card's slice of the layer (gate/up rows and down blocks, rotated by
+        // layer).  Defaults = the full range, so every non-TP launch passes the plain geometry.
+        int tp_row_base = 0, tp_rows = strata::kernels::cuda::expert_maxwell_geo::FF;
+        int tp_blk_base = 0, tp_blks = strata::kernels::cuda::expert_maxwell_geo::SC_D;
+        size_t d_row_stride = strata::kernels::cuda::expert_maxwell_geo::ROW_D;
+        size_t d_scale_stride = (size_t) strata::kernels::cuda::expert_maxwell_geo::SC_D * 2;
     };
     std::vector<LayerGeo> geo_;   ///< per layer (native packs); empty = the canonical flat store
     const LayerGeo& geo_of(int64_t layer) const {
@@ -174,6 +201,7 @@ private:
     // latency-bound), measured 1.9x on four jobs versus a single default stream.
     cudaStream_t streams_[4] = {nullptr, nullptr, nullptr, nullptr};
     cudaEvent_t ev_up_ = nullptr, ev_q_ = nullptr;
+    cudaEvent_t ev_d2h_done_ = nullptr;   // SPLIT_MODE_TENSOR: the previous layer's partial D2H completed (d_out_ reuse)
     cudaEvent_t ev_gup_[4] = {nullptr, nullptr, nullptr, nullptr};
     cudaEvent_t ev_down_[4] = {nullptr, nullptr, nullptr, nullptr};
 
@@ -202,6 +230,7 @@ private:
     int64_t w_n_embd_ = 0;
     bool w_dst_mapped_ = false;   // the destination is device-accessible: the down kernel writes it directly
     bool w_rows_f16_ = false;     // the down writes fp16 rows packed into the fp32 row slots, see begin()
+    bool w_accumulate_ = false;   // SPLIT_MODE_TENSOR (prefill): ADD the rows into w_dst_ instead of copying
     bool down_launched_ = false;  // the down stage of this layer already ran at begin() time
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);

@@ -489,7 +489,9 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
                                           const float* __restrict__ fasc, const float* __restrict__ fahx,
                                           float* __restrict__ out,
                                           volatile uint32_t* __restrict__ mflag, const uint32_t ring,
-                                          uint32_t* __restrict__ ctr) {
+                                          uint32_t* __restrict__ ctr,
+                                          int blk_base, int blks,
+                                          size_t d_row_stride, size_t d_scale_stride) {
     constexpr int PER_BLOCK = 128 / SPLIT;
     static_assert(H % PER_BLOCK == 0, "v2 stages one job per block: H must be a multiple of PER_BLOCK");
     const int row0 = blockIdx.x * PER_BLOCK;
@@ -518,13 +520,17 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
     if (idx >= njobs * H) return;
     const int row = idx - j * H;
     const int part = (int) (threadIdx.x % SPLIT);
-    const uint8_t* dc = blob + d_codes_off + (size_t) row * ROW_D;
-    const uint8_t* ds = blob + d_scales_off + (size_t) row * SC_D * 2;
+    // SPLIT_MODE_TENSOR: the contraction runs over this card's BLOCKS [blk_base, blk_base+blks) of the
+    // SC_D 64-element blocks; the blob's down region stores exactly those blocks per row, compact
+    // (d_row_stride/d_scale_stride bytes per row).  Full range (0, SC_D, ROW_D, SC_D*2) = the plain call.
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * d_scale_stride;
     float acc = 0.f, corr = 0.f;
-    for (int b = part; b < SC_D; b += SPLIT) {
-        const float d = read_scale(ds, b);
+    for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
+        const int lb = b - blk_base;                    // the block's place in this card's compact shard
+        const float d = read_scale(ds, lb);
         int d0 = 0, d1 = 0;
-        block_pair_s2_lut(dc + b * 16, sq + (2 * b) * 32, slut, d0, d1);
+        block_pair_s2_lut(dc + lb * 16, sq + (2 * b) * 32, slut, d0, d1);
         acc += d * ssc[2 * b] * (float) d0;
         acc += d * ssc[2 * b + 1] * (float) d1;
         corr += d * (shx[2 * b] + shx[2 * b + 1]);
@@ -876,17 +882,21 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
                                            const uint8_t* __restrict__ acts_base,
                                            size_t o_gate, size_t o_up, size_t gu_row,
                                            int8_t* __restrict__ faq, float* __restrict__ fasc,
-                                           float* __restrict__ fahx, float* __restrict__ ff_dbg) {
+                                           float* __restrict__ fahx, float* __restrict__ ff_dbg,
+                                           int row_base, int rows_slice) {
     using F = IqFmt<TY>;
     // SPLIT is the sweep knob (STRATA_MW_IQ_SPLIT, default 4).  The fused quant epilogue below walks
     // PER_BLOCK/32 chunks, so any SPLIT that divides 32 keeps the chunk tree bit-identical: with 4 it
     // compiles to exactly the one-chunk body this kernel shipped with.
     static_assert(SPLIT == 1 || SPLIT == 2 || SPLIT == 4, "the IQ gup kernel takes SPLIT 1, 2 or 4");
     constexpr int PER_BLOCK = THREADS / SPLIT;
+    // SPLIT_MODE_TENSOR: `rows_slice` is this card's gate/up row count (its slice of FF; a multiple of
+    // PER_BLOCK for every shard the planner emits).  The blob stores exactly those rows, compact, so the
+    // mapping is the full kernel's with row -> row_base + local; every per-row value stays bit-identical.
     static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
     const int row0 = blockIdx.x * PER_BLOCK;
-    if (row0 >= njobs * FF) return;
-    const int j = row0 / FF;                 // every row of this block is in job j (FF % PER_BLOCK == 0)
+    if (row0 >= njobs * rows_slice) return;
+    const int j = row0 / rows_slice;         // every row of this block is in job j (rows_slice % PER_BLOCK == 0)
     const MaxJob jd = jobs[j];
     const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
     const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
@@ -917,8 +927,8 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
     }
     __syncthreads();
-    const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (FF % PER_BLOCK == 0)
-    const int row = idx - j * FF;
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (rows_slice % PER_BLOCK == 0)
+    const int row = idx - j * rows_slice;                  // this card's LOCAL row (the blob is the compact shard)
     const int part = (int) (threadIdx.x % SPLIT);
     const uint8_t* gr = blob + o_gate + (size_t) row * gu_row;
     const uint8_t* ur = blob + o_up + (size_t) row * gu_row;
@@ -947,7 +957,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         if (part == 0) {
             const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
             sx[threadIdx.x / SPLIT] = sxv;
-            if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + row] = sxv;   // the parity tool reads the pre-quant dots
+            if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + (size_t) (row_base + row)] = sxv;   // the parity tool reads the pre-quant dots (global row index)
         }
     }
     __syncthreads();
@@ -957,7 +967,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
     if (threadIdx.x < 32) {
         const int lane = (int) threadIdx.x;
         constexpr int CHUNKS = PER_BLOCK / 32;
-        const int chunk0 = (int) (j * (FF / 32) + (row0 % FF) / 32);
+        const int chunk0 = (int) (j * (FF / 32) + (size_t) (row_base + row0 % rows_slice) / 32);   // GLOBAL chunk index (the faq layout is entry-major, full FF)
 #pragma unroll
         for (int c = 0; c < CHUNKS; ++c) {
         const int chunk = chunk0 + c;
@@ -987,6 +997,23 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
 }  // namespace
 
 bool s2_expert_maxwell_v2() { return s2_v2_enabled(); }
+
+// SPLIT_MODE_TENSOR delivery: a one-block kernel ordered on the D2H copy's stream, AFTER the copy engine
+// moved the card's partial rows into host memory - it makes them visible system-wide and raises the tier's
+// mapped completion flag to `ring`: the same contract the down kernel's last block carries on the mapped
+// path, moved behind the copy engine (the in-kernel mapped stores measured 3x stretched when four cards
+// issue them concurrently - the LOCAL_DOWN shared-endpoint effect).
+__global__ void mw_tp_raise_flag_kernel(volatile uint32_t* mflag, const uint32_t ring) {
+    if (threadIdx.x == 0) {
+        __threadfence_system();          // the D2H's data is host-visible before the doorbell
+        *mflag = ring;
+        __threadfence_system();
+    }
+}
+
+void mw_tp_raise_flag_async(volatile uint32_t* mflag, uint32_t ring, cudaStream_t stream) {
+    mw_tp_raise_flag_kernel<<<1, 32, 0, stream>>>(mflag, ring);
+}
 
 void s2_expert_maxwell(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,
                        const float* d_ahx, float* d_out) {
@@ -1115,8 +1142,15 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, size_t blob_stride, size_t d_codes_off,
                                         size_t d_scales_off, cudaStream_t stream,
-                                        volatile uint32_t* mflag, const uint32_t ring, uint32_t* ctr) {
+                                        volatile uint32_t* mflag, const uint32_t ring, uint32_t* ctr,
+                                        int blk_base, int blks, size_t d_row_stride, size_t d_scale_stride) {
     if (njobs <= 0) return;
+    // SPLIT_MODE_TENSOR: a sliced call (blks != SC_D) is a v2 feature (the smem-staged act + the E1 tail);
+    // the v1 fallback answers full-range calls only, which is all the non-TP paths issue.
+    if (blks != SC_D && !s2_v2_enabled()) {
+        std::fprintf(stderr, "strata maxwell: a tensor-split down needs the v2 kernels (STRATA_S2_V2)\n");
+        std::exit(1);
+    }
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
@@ -1125,19 +1159,19 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
         if (sp == 1) {
             expert_s2_stage2_batch_v2<1><<<(rows + 127) / 128, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr, blk_base, blks, d_row_stride, d_scale_stride);
         } else if (sp == 4) {
             expert_s2_stage2_batch_v2<4><<<(rows + 32 - 1) / 32, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr, blk_base, blks, d_row_stride, d_scale_stride);
         } else if (sp == 8) {
             expert_s2_stage2_batch_v2<8><<<(rows + 16 - 1) / 16, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr, blk_base, blks, d_row_stride, d_scale_stride);
         } else {
             expert_s2_stage2_batch_v2<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
                 d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr);
+                d_faq, d_fasc, d_fahx, d_out, mflag, ring, ctr, blk_base, blks, d_row_stride, d_scale_stride);
         }
         return;
     }
@@ -1160,7 +1194,8 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
     const int rows = njobs * H;
     expert_s2_stage2_batch_v2<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
-        d_faq, d_fasc, d_fahx, (float*) d_out16, nullptr, 0, nullptr);   // fp16 takes no completion tail
+        d_faq, d_fasc, d_fahx, (float*) d_out16, nullptr, 0, nullptr,   // fp16 takes no completion tail
+        0, SC_D, ROW_D, (size_t) SC_D * 2);                             // full range: no tensor-split fp16 yet
 }
 
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
@@ -1178,7 +1213,8 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                                              const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
                                              size_t o_gate, size_t o_up, size_t gu_row,
                                              int8_t* d_faq, float* d_fasc, float* d_fahx,
-                                             float* d_ff_dbg, cudaStream_t stream) {
+                                             float* d_ff_dbg, cudaStream_t stream,
+                                             int row_base, int rows_slice) {
     if (njobs <= 0) return;
     // STRATA_MW_IQ_SPLIT: the gup geometry sweep knob (default 4, the fused design's original value;
     // 2 and 1 put more rows per block - fewer blocks, more dot work per thread).  The epilogue walks
@@ -1206,12 +1242,12 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
     }();
     const bool wide = t256 && split >= 2;
     const int pb = (wide ? 256 : 128) / split;
-    const int rows = njobs * FF;
-    const int blocks = (rows + pb - 1) / pb;
+    const int tot_rows = njobs * rows_slice;   // SPLIT_MODE_TENSOR: the card's slice of every job
+    const int blocks = (tot_rows + pb - 1) / pb;
 #define STRATA_LAUNCH_IQ(TY, SP, THR)                                                              \
     expert_iq_stage1_batch_v2q<TY, SP, THR><<<blocks, THR, 0, stream>>>(                            \
         d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,      \
-        d_faq, d_fasc, d_fahx, d_ff_dbg)
+        d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
     switch (gu_type) {
         case 22:   // IQ2_S
             if (wide) { if (split == 4) STRATA_LAUNCH_IQ(22, 4, 256); else STRATA_LAUNCH_IQ(22, 2, 256); }

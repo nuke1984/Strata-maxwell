@@ -340,6 +340,18 @@ public:
         for (int i = 0; i < 4; ++i) h_mwf_[i] = flags[i];
         mw_wait_ = true;
     }
+    /// SPLIT_MODE_TENSOR (the Meta tier): wire the four cards' mapped PARTIAL row areas and the
+    /// double-buffered per-entry tier bitmap.  The tier's rows are the rank-ordered sum of the four
+    /// partials; a kernel launched where the plain path waits assembles them into the mapped rows
+    /// (deterministic: fixed card order).  `tp_a`/`tp_b` alternate by the ring's parity, the same
+    /// parity the tier's staging sets use.  Call before the first capture.
+    void set_tp_partials(float* const partials[4], int32_t* lst_a, int32_t* lst_b) {
+        for (int i = 0; i < 4; ++i) tp_p_[i] = partials[i];
+        tp_row_a_ = lst_a;
+        tp_row_b_ = lst_b;
+        tp_armed_ = true;
+    }
+    bool tp_armed() const { return tp_armed_; }
     uint32_t* mw_flags(int i) { return h_mwf_[i]; }   // the tiers write these; the wiring hands them out
     uint32_t** mw_flags_ptr() { return h_mwf_; }      // for set_mw_wait's array form
     /// Plan v0.3 P6: how the PCIe share of the misses reaches the GPU: 0 = DMA into staging (the copy engine works
@@ -583,6 +595,10 @@ private:
     // E1: the Maxwell tiers' GPU-raised completion flags (four, monotonic sequence values, written by
     // the M10 down kernels' last blocks) and the per-step ring of expected sequences the host publishes.
     uint32_t* h_mwf_[4] = {}; uint32_t* m_mwf_[4] = {};
+    // SPLIT_MODE_TENSOR: the four cards' mapped partial areas and the double-buffered tier bitmaps.
+    float* tp_p_[4] = {};
+    int32_t* tp_row_a_ = nullptr, * tp_row_b_ = nullptr;
+    bool tp_armed_ = false;
     uint32_t* h_mwe_ = nullptr; uint32_t* m_mwe_ = nullptr;   // 64 slots, indexed by step & 63
     bool mw_wait_ = false;             // the tiers are wired: the graph waits their flags too
     int64_t mw_services_ = 0;          // the tier launch counter the expected values track

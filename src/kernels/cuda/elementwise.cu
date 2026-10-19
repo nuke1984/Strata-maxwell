@@ -389,6 +389,53 @@ void copy_rows_from_mapped_after(const uint32_t* flag, uint32_t value, float* ds
         (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count, (const volatile uint32_t*) flag, value);
 }
 
+// SPLIT_MODE_TENSOR (the Meta tier): assemble the tier's rows from the FOUR cards' partial areas.
+// The tier's rows travel COMPACT (one job slot per tier entry, identical job order on every card); the
+// dispatch publishes this step's ENTRY LIST ([count, e0, e1, ...] int32s, double-buffered by ring
+// parity - the same parity the tier's staging sets use), and block j re-expands it: the summed row
+// ((p0[j]+p1[j])+p2[j])+p3[j] - rank order, fixed, deterministic - lands at ENTRY e_j in the mapped
+// rows area the plain copy then reads.  Thread 0 spins the mode-3 E1 multi-wait first (the same poll
+// order and the same exp/main anchoring), so no partial is read before its card's doorbell.
+__global__ void sum_tp_rows_mw_kernel(float4* __restrict__ rows, int64_t row4,
+                                      const volatile float4* p0, const volatile float4* p1,
+                                      const volatile float4* p2, const volatile float4* p3,
+                                      const int32_t* __restrict__ lst_a, const int32_t* __restrict__ lst_b,
+                                      uint32_t ring,
+                                      const volatile uint32_t* main_flag, const volatile uint32_t* exp,
+                                      const volatile uint32_t* f0, const volatile uint32_t* f1,
+                                      const volatile uint32_t* f2, const volatile uint32_t* f3) {
+    if (threadIdx.x == 0) {
+        while (true) {
+            const uint32_t e = *exp;
+            if (*main_flag >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+            strata_spin_pause();
+        }
+        __threadfence_system();
+    }
+    __syncthreads();
+    const int32_t* lst = (ring & 1u) ? lst_b : lst_a;   // the dispatch's entry list for THIS step
+    const int j = (int) blockIdx.x;
+    if (j >= lst[0]) return;
+    const int64_t e = lst[1 + j];
+    float4* d = rows + e * row4;
+    const volatile float4* s0 = p0 + (int64_t) j * row4;
+    const volatile float4* s1 = p1 + (int64_t) j * row4;
+    const volatile float4* s2 = p2 + (int64_t) j * row4;
+    const volatile float4* s3 = p3 + (int64_t) j * row4;
+    for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) {
+        const float4 a = const_cast<const float4*>(s0)[i];
+        const float4 b = const_cast<const float4*>(s1)[i];
+        const float4 c = const_cast<const float4*>(s2)[i];
+        const float4 g = const_cast<const float4*>(s3)[i];
+        float4 v;
+        v.x = ((a.x + b.x) + c.x) + g.x;   // rank order, fixed - deterministic
+        v.y = ((a.y + b.y) + c.y) + g.y;
+        v.z = ((a.z + b.z) + c.z) + g.z;
+        v.w = ((a.w + b.w) + c.w) + g.w;
+        d[i] = v;
+    }
+}
+
 // mode 3: the E1 multi-wait (main + 4 tier flags + expected ring) fused into the row copy's blocks -
 // one launch, one poll, the unfused [wait_mw + copy] pair replaced.
 void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
@@ -402,6 +449,30 @@ void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, co
     copy_rows_from_mapped_mw_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
         (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count,
         (const volatile uint32_t*) main_flag, ring, (const volatile uint32_t*) exp,
+        (const volatile uint32_t*) mw[0], (const volatile uint32_t*) mw[1],
+        (const volatile uint32_t*) mw[2], (const volatile uint32_t*) mw[3]);
+}
+
+// SPLIT_MODE_TENSOR: the tier's rows assembled from the four cards' PARTIAL areas (rank-ordered sum)
+// after the E1 multi-wait - launched where the plain path waits, so the row copy that follows reads
+// completed rows (its own wait, if any, passes instantly).  `partials` are the four mapped partial
+// areas (device-visible host memory, entry-major at `width`), `tp_a`/`tp_b` the double-buffered
+// per-entry tier bitmaps (selected by the ring's parity, matching the tier's staging sets).
+void sum_tp_rows_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                          const uint32_t* const* mw, float* rows_dst, int64_t rows, int64_t width,
+                          const float* const* partials, const int32_t* lst_a, const int32_t* lst_b,
+                          void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) rows_dst & 15) != 0) {
+        std::fprintf(stderr, "sum_tp_rows_after_mw: width must be a multiple of 4 and the rows 16-byte aligned\n");
+        std::exit(1);
+    }
+    sum_tp_rows_mw_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) rows_dst, width / 4,
+        (const volatile float4*) partials[0], (const volatile float4*) partials[1],
+        (const volatile float4*) partials[2], (const volatile float4*) partials[3],
+        lst_a, lst_b, ring,
+        (const volatile uint32_t*) main_flag, (const volatile uint32_t*) exp,
         (const volatile uint32_t*) mw[0], (const volatile uint32_t*) mw[1],
         (const volatile uint32_t*) mw[2], (const volatile uint32_t*) mw[3]);
 }

@@ -88,6 +88,15 @@ void wait_handoff(const uint32_t* flag, uint32_t value, uint32_t* err, unsigned 
 /// into *t_out (either may be null): the verify window's PCIe-share balance, at no extra launch.
 void wait_flag_ge_stamped(const uint32_t* flag, uint32_t value, unsigned long long* t_in, unsigned long long* t_out,
                           void* stream);
+/// SPLIT_MODE_TENSOR: the tier's rows assembled from the four cards' PARTIAL areas (rank-ordered sum,
+/// deterministic) after the E1 multi-wait - launched where the plain path waits; the row copy that
+/// follows reads completed rows.  `partials` = the four mapped partial areas (COMPACT job-major,
+/// `width` wide); `lst_a`/`lst_b` = the double-buffered entry lists ([count, e0, e1, ...] int32s),
+/// picked by the ring's parity.
+void sum_tp_rows_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                          const uint32_t* const* mw, float* rows_dst, int64_t rows, int64_t width,
+                          const float* const* partials, const int32_t* lst_a, const int32_t* lst_b,
+                          void* stream);
 /// E1: the Maxwell completion wait - the main flag >= ring AND the four tier flags >= the EXPECTED
 /// sequence read at run time from *exp (a per-step ring slot; the capture bakes only pointers).
 void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,

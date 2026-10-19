@@ -4,6 +4,71 @@
 **Repo**: `/home/toor/Strata` · **ramo di lavoro**: `maxwell-0.1.40`
 **Scopo**: portare avanti l'ottimizzazione "bilanciamento 3060 ↔ M10 ↔ CPU" senza ripartire da zero.
 
+> **AGGIORNAMENTO — SPLIT_MODE_TENSOR: CAMPAGNA COMPLETA, VERDETTO SHELVE OPT-IN (2026-10-19, notte)**
+>
+> **Verdetto misurato** (same-day, stessa storia/protocollo, spec 4, 256k, k8v4):
+> | config | story | fib | code | media |
+> |---|---|---|---|---|
+> | stabile round-robin (prof) | 36,5 | 46,0 | 44,4 | **42,3** |
+> | TP consegna mapped (mode 2) | 27,6 | 35,1 | 34,7 | 32,4 |
+> | **TP consegna D2H copy-engine** | 31,2 | 35,9 | 35.1 | **34,1** |
+> TP = **−19%**: corretto (391/9999 ✓ su tutte le mode, gate round-trip parziali ×4 card ✓, deterministico
+> per costruzione) ma più lento. Shelf come `--maxwell-split tensor` opt-in, default inerte (lo stabile
+> ha girato CON tutto il codice TP in tree a 42,3 on-anchor = default byte-identico provato).
+>
+> **La mappa completa (il prodotto della campagna):**
+> 1. **Le 4 M10 in TP sono VERAMENTE parallele**: span identici ~640 µs/L/card simultanei, util 40-45%
+>    (kernel residenti ma stalled — non serializzati: la domanda dell'utente aveva ragione a dubitare,
+>    la misura conferma la concorrenza).
+> 2. **Il down mapped-store contende davvero**: 373 → 183 µs/L passando a down in VRAM locale + D2H
+>    copy-engine (stream dedicato) + kernel raise-flag dopo la copia (l'effetto shared-endpoint di
+>    LOCAL_DOWN, ora aggirato alla llama.cpp: il loro AR usa i copy engine, mai store mapped in-kernel).
+> 3. **Il gup resta il muro**: ~50-59 µs/MB effettivi (il floor VMAD ~17-20 GB/s): in TP ogni card
+>    streamma gli shard di TUTTI gli esperti distinct della finestra (~7,8 MB/card/L in questo mix vs
+>    4,3 dello stabile — mix dipendente, ma la localizzazione round-robin+dedup dello stabile serve
+>    meno byte per card nel punto di lavoro misurato). Il bilancio perfetto della TP non ripaga.
+> 4. Mode 1 ≈ mode 2 (i sync non erano il costo); il wire D2H+assembly ≈ 50-100 µs/L resta.
+> 5. **Fill TP 4× il lavoro per card** (22.702 shard convertiti per card): sequenziale ~330-420 s/card
+>    → **fill parallelo su 4 thread** (~410 s tutto il tier; ATTENZIONE: ENGINE_READY_S=900 della
+>    server uccideva il load TP sequenziale ~1400 s — il timeout, non un crash).
+> 6. Bug trovati/fissati: blob_bytes full-vs-shard nel loop di conversione (segfault in libcuda);
+>    footgun pkill+launch nello stesso comando (di nuovo).
+>
+> **Cosa servirebbe per rivincerla**: gup rate 3× (impossibile: floor ISA), oppure topk basso/few-distinct
+> (payload piccoli e dedup naturale — il caso denso dell'utente resta valido ALTrove), oppure wire fp16
+> + assembly fuse (+2-3 t/s al massimo). La porta resta aperta come opt-in documentato.
+
+> **AGGIORNAMENTO — SPLIT_MODE_TENSOR sul tier M10, IMPLEMENTAZIONE IN CORSO (2026-10-19, sera)**
+>
+> **La decisione**: implementare la TP degli esperti (`--maxwell-split tensor`) comunque, gates a decidere -
+> dopo la correzione dell'utente: le quattro M10 oggi servono gli entry in SERIE nella catena host
+> (`begin()` seriali ~21,5 µs, sync serializzati nel driver), quindi un entry vede UNA sola M10 e la TP è
+> l'unico modo per dare un entry 4× SM. Il test denso dell'utente sul suo fork llama.cpp (4,95 → 8,75 → 16,27 t/s,
+> 82% efficienza a 4 GPU; M10 SM-bound non DRAM-bound, mem util 35-38%; uplink Gen1 x16 condiviso ~3,3 GB/s;
+> tassa AR ~18%, di cui filo ~2%) prova che la concorrenza su questo VM è ottenibile.
+> **Dims esatte** (da GGUF via tools/gguf_reader.py): H=2560, FF=640, 512 esperti × 48 layer (24.576;
+> 22.702 resident + 1.874 cache 3060), **topk=10**, arch `qwen4exp`.
+> **Il design** (spec SPLIT_MODE_TENSOR.md adattata: solo il pattern MoE-FFN, non l'algebra generale):
+> - gate/up split per RIGHE intere (output-split, zero comm), down split per BLOCCHI da 64 (la scala fp16 è
+>   per blocco: il taglio a sotto-blocchi spezzerebbe una scala condivisa) → {3,3,2,2} blocchi sulle 4 card,
+>   **rotazione per layer** (`(card+L)%4`, 48%4==0 → totali per card ESATTI = 1/4 del blob intero).
+>   La gup segue lo stesso range del down (i chunk faq della card alimentano solo i SUOI blocchi down).
+> - Blob per card = `blks*(128*gu_row+46080)` B; shard compact nel geo per layer; kernel IQ gup e S2 down
+>   parametrizzati (row_base/rows, blk_base/blks + stride) con default = range pieno → percorso default
+>   bit-identico. Loader: shard verbatim gate/up + de-interleave dei soli blocchi della card.
+> - Consumo: 4 aree partial MAPPED separate (una per card - l'effetto shared-endpoint misurato 83→240 µs/L
+>   consiglia endpoint separati) + bitmap per-entry a doppio buffer (parità del ring, come lo staging E1);
+>   kernel nuovo `sum_tp_rows_after_mw` sulla 3060 (attesa E1 mode-3-style + somma RANK-ORDER p0+p1+p2+p3,
+>   deterministica) che scrive le righe completate nell'area rows; il copy esistente poi le legge.
+>   Prefill: `finish_to` con `accumulate` (le card aggiungono in ordine di rank su blocco azzerato).
+> - Richiede STRATA_MW_GPUFLAG>=1 (rifiuto esplicito: mode 0 non ha punto di assembly GPU-side), esattamente
+>   4 card, niente --pipeline-windows. VRAM invariata (8,17 GB/card, come round-robin).
+> **Stato**: build pulito; PRIMO BUG trovato e fissato (blob_bytes full vs shard nel loop di conversione →
+> segfault); **round-trip gate PARSED su CUDA1/CUDA2** (rel 1,0-1,3e-2 vs riferimenti fp64 PARZIALI per
+> card, tutte e tre le codifiche iq2_s/iq2_xxs/iq1_m); fill TP = ~330-420 s/card sequenziale →
+> **fill parallelo su 4 thread aggiunto** (prossima load). Prossimo: gates su mode 1, poi mode 2 (config
+> /tmp/opencode/tp-mode2.json), 3×3 same-day vs 37,3/46,8/47,3 (baseline P0 di oggi).
+
 > **AGGIORNAMENTO — PUSH A nuke1984/Strata-maxwell (2026-10-18)**
 >
 > Il port v0.1.45 validato è ora il **main del fork**: `maxwell-0.1.45:main` (477ac13c → 6a43c484), con

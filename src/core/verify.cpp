@@ -2055,7 +2055,19 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 }();
                 const bool fuse_rows = fuse_rows_on() && !prof_on_ && !remote_opt_ && dec_batch &&
                                        m_bal_ == nullptr && h_kind16_ == nullptr;   // 143-amdk; f16/balance need their own wait/copy
-                const bool fuse_mw = fuse_rows && mw_wait_ && fuse_mw_on;
+                // SPLIT_MODE_TENSOR (the Meta tier): the tier's rows are the four cards' PARTIALS - one
+                // launch here waits the E1 flags and assembles the partials into the mapped rows
+                // (rank-ordered sum, deterministic).  It sits where the plain path waits, so everything
+                // below reads completed rows; the fused-mw copy is disarmed (it would race the
+                // assembly), and the wait_mw below it passes instantly once the flags are up.
+                if (tp_armed_ && mw_wait_) {
+                    const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
+                    const float* pp[4] = { tp_p_[0], tp_p_[1], tp_p_[2], tp_p_[3] };
+                    sum_tp_rows_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,
+                                         m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N, pp,
+                                         tp_row_a_, tp_row_b_, cs);
+                }
+                const bool fuse_mw = fuse_rows && mw_wait_ && fuse_mw_on && !tp_armed_;
                 if (fuse_mw) {
                     const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
                     copy_rows_from_mapped_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,

@@ -96,7 +96,13 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                                              const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
                                              size_t o_gate, size_t o_up, size_t gu_row,
                                              int8_t* d_faq, float* d_fasc, float* d_fahx,
-                                             float* d_ff_dbg = nullptr, cudaStream_t stream = 0);
+                                             float* d_ff_dbg = nullptr, cudaStream_t stream = 0,
+                                             int row_base = 0, int rows = expert_maxwell_geo::FF);
+/// SPLIT_MODE_TENSOR (the Meta tier): the same fused gup+quant kernel restricted to this card's SLICE of
+/// the gate/up rows - `row_base`/`rows` select the slice (the blob stores exactly those rows, compact).
+/// The dots, the SwiGLU and the quant tree run the same code per row, so each row's value is bit-identical
+/// to the full-blob kernel's; the faq/fasc/fahx chunks keep the GLOBAL layout (chunk j*(FF/32)+row/32),
+/// so the card's down stage and the 4-way partial sum need no remapping.  Default (0, FF) = the full range.
 void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                         const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                         float* d_out, size_t blob_stride = expert_maxwell_geo::BLOB,
@@ -104,7 +110,10 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
                                         size_t d_scales_off = expert_maxwell_geo::O_D_SCALES,
                                         cudaStream_t stream = 0,
                                         volatile uint32_t* mflag = nullptr, const uint32_t ring = 0,
-                                        uint32_t* ctr = nullptr);
+                                        uint32_t* ctr = nullptr,
+                                        int blk_base = 0, int blks = expert_maxwell_geo::SC_D,
+                                        size_t d_row_stride = expert_maxwell_geo::ROW_D,
+                                        size_t d_scale_stride = (size_t) expert_maxwell_geo::SC_D * 2);
 /// v2 ONLY: the down stage with fp16 rows (half the uplink bytes when the destination is mapped host
 /// memory; the verifier converts them back during its row copy).  `d_out16` holds H halves per entry.
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
@@ -115,6 +124,10 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
                                             cudaStream_t stream = 0);
 void s2_expert_maxwell_sync();
 
+/// SPLIT_MODE_TENSOR delivery: raise the tier's mapped completion flag to `ring` on `stream`, ordered
+/// after whatever the stream executed before (the D2H of the card's partial block).  The same E1
+/// doorbell contract the down kernel's last block carries on the mapped-destination path.
+void mw_tp_raise_flag_async(volatile uint32_t* mflag, uint32_t ring, cudaStream_t stream = 0);
 /// Whether the v2 batch kernels are enabled (STRATA_S2_V2, default on): the caller picks the fused
 /// gup_quant call when true, the v1 gup_batch + quant_ff pair otherwise.
 bool s2_expert_maxwell_v2();

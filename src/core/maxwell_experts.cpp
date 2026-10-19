@@ -52,6 +52,7 @@ int gpuflag_mode() {
 }
 using strata::kernels::cuda::s2_expert_maxwell_v2;
 using strata::kernels::cuda::s2_expert_maxwell_sync;
+using strata::kernels::cuda::mw_tp_raise_flag_async;
 
 constexpr int H = 2560;
 constexpr int FF = 640;
@@ -109,8 +110,10 @@ bool MaxwellExperts::open(int device,
                           const std::vector<std::pair<int32_t, int32_t>>& assign,
                           const uint8_t* (*src_blob)(int64_t layer, int64_t expert, void* ctx), void* ctx,
                           int64_t n_layers, int64_t n_expert, int reserve_mib,
-                          std::string& err) {
+                          std::string& err, int tp_card, int tp_cards) {
     close();
+    tp_card_ = tp_card;
+    tp_cards_ = tp_cards < 1 ? 1 : tp_cards;
     // STRATA_MW_BLOCKSYNC (opt-in): put this M10's context in BLOCKING-sync mode before anything
     // creates it - cudaStreamSynchronize then sleeps on the device's interrupt instead of spinning
     // in the driver.  The S0 campaign found the tier's per-card downs poisoned in SERVICE order
@@ -152,7 +155,22 @@ bool MaxwellExperts::open(int device,
                     err = buf;
                     return false;
                 }
+                // SPLIT_MODE_TENSOR: the shard builder and the sliced kernels cover the native i-quant
+                // gate/up path; an S2 (42) gate/up layer in tensor mode would silently take the full-range
+                // gup on every card.  Refuse it - the production IQ2_XS pack has none.
+                if (tp_cards_ > 1 && f.gu_type == 42) {
+                    char buf[256];
+                    std::snprintf(buf, sizeof(buf),
+                                  "MaxwellExperts (CUDA%d): layer %zu is S2 (42) gate/up; the tensor split "
+                                  "takes the native i-quant layers (IQ2_S/IQ2_XXS/IQ1_M)",
+                                  device, L);
+                    err = buf;
+                    return false;
+                }
             }
+        } else if (tp_cards_ > 1) {
+            err = "MaxwellExperts: the tensor split needs a native pack (the canonical Q2_0 store is refused)";
+            return false;
         }
     }
     DeviceScope scope(device);
@@ -166,15 +184,43 @@ bool MaxwellExperts::open(int device,
     const size_t reserve_b = (size_t) reserve_mib * 1024 * 1024;
     const size_t usable = (free_b > reserve_b) ? (free_b - reserve_b) : 0;
     const auto& lay = strata::kernels::cpu::expert_layout();
+    // SPLIT_MODE_TENSOR: the SC_D (=10) 64-element blocks split across the cards at BLOCK granularity
+    // (block granularity keeps every shared fp16 down scale whole on one card): slot s of tp_cards takes
+    // q + (s < r) blocks.  With 4 cards that is {3,3,2,2}; the layers rotate the slot
+    // ((tp_card + layer) % tp_cards), and 48 layers % 4 == 0, so every card holds each slot exactly 12
+    // times - the per-card totals are IDENTICAL and equal 1/tp_cards of the whole-expert bytes.
+    const int nblk_q = SC_D / tp_cards_, nblk_r = SC_D % tp_cards_;
+    const auto slot_blks = [&](int s) { return nblk_q + (s < nblk_r ? 1 : 0); };
+    const auto slot_base = [&](int s) { return s * nblk_q + (s < nblk_r ? s : nblk_r); };
     const auto blob_of = [&](int64_t layer) -> uint64_t {
-        return lay.native ? lay.blob_bytes(layer) : (uint64_t) BLOB;
+        if (tp_cards_ <= 1) return lay.native ? lay.blob_bytes(layer) : (uint64_t) BLOB;
+        const auto& f = lay.fmt[(size_t) layer];
+        const int s = (tp_card_ + (int) (layer % tp_cards_)) % tp_cards_;
+        // shard = 2 * (64*blks) gate/up rows (gu_row bytes each) + H rows * blks * (16 codes + 2 scale)
+        return (uint64_t) slot_blks(s) * (128ull * (uint64_t) f.gu_row + 46080ull);
     };
 
     // take experts in assignment order until the device is full
     std::vector<std::pair<int32_t, int32_t>> mine;
     size_t bytes = 0;
     for (const auto& p : assign) {
-        if (bytes + blob_of(p.first) > usable) break;
+        if (bytes + blob_of(p.first) > usable) {
+            // SPLIT_MODE_TENSOR: every card must hold the SAME set (the four partials of an entry are
+            // summed by rank; a card that dropped an expert would contribute garbage).  The shards sum
+            // to 1/tp_cards of the whole-expert bytes, so a list that fit before fits now - if it does
+            // not, the layout is wrong for this rig: refuse instead of trimming.
+            if (tp_cards_ > 1) {
+                char buf[256];
+                std::snprintf(buf, sizeof(buf),
+                              "MaxwellExperts (CUDA%d, tensor split): the assignment does not fit "
+                              "(%.2f GiB of shards > %.2f GiB usable) - refusing rather than splitting "
+                              "the resident set across cards",
+                              device, bytes / 1e9 + blob_of(p.first) / 1e9, usable / 1e9);
+                err = buf;
+                return false;
+            }
+            break;
+        }
         mine.push_back(p);
         bytes += blob_of(p.first);
     }
@@ -190,6 +236,10 @@ bool MaxwellExperts::open(int device,
     n_layers_ = n_layers;
     n_expert_ = n_expert;
     res_.assign((size_t) n_layers * (size_t) n_expert, -1);
+    if (const char* dbg = std::getenv("STRATA_MW_TP_DEBUG"))
+        if (std::atoi(dbg))
+            std::fprintf(stderr, "TPDBG open CUDA%d: tp_cards=%d assign=%zu mine=%zu bytes=%.2f GiB\n",
+                         device, tp_cards_, assign.size(), mine.size(), bytes / 1e9);
 
     // THE STORE: a native pack keeps each layer's experts in their own contiguous region (the blobs
     // differ in size per layer, so a flat slot*BLOB walk cannot address them); a canonical pack keeps
@@ -213,10 +263,33 @@ bool MaxwellExperts::open(int device,
                 g.d_codes_off = f.down_off;               // the down region, de-interleaved to S2 planar
                 g.d_scales_off = f.down_off + (size_t) H * ROW_D;
             }
-            off += (size_t) count[(size_t) L] * (size_t) f.bytes;
+            // SPLIT_MODE_TENSOR: this card's slice of the layer - the block range rotated by layer, the
+            // matching gate/up row range (64 rows per block), and the COMPACT shard geometry that replaces
+            // the full-blob offsets above.  tp_cards == 1 keeps the full-range defaults (the branch below
+            // never fires and the store is byte-identical to the whole-expert layout).
+            if (tp_cards_ > 1) {
+                const int s = (tp_card_ + (int) (L % tp_cards_)) % tp_cards_;
+                g.tp_blk_base = slot_base(s);
+                g.tp_blks = slot_blks(s);
+                g.tp_row_base = 64 * g.tp_blk_base;
+                g.tp_rows = 64 * g.tp_blks;
+                g.o_gate = 0;
+                g.o_up = (size_t) g.tp_rows * (size_t) f.gu_row;
+                g.gu_row = f.gu_row;
+                g.d_row_stride = (size_t) 16 * g.tp_blks;
+                g.d_scale_stride = (size_t) 2 * g.tp_blks;
+                g.d_codes_off = (size_t) 2 * (size_t) g.tp_rows * (size_t) f.gu_row;
+                g.d_scales_off = g.d_codes_off + (size_t) H * g.d_row_stride;
+                g.blob_bytes = g.d_scales_off + (size_t) H * g.d_scale_stride;
+            }
+            off += (size_t) count[(size_t) L] * (size_t) g.blob_bytes;
         }
     }
     // allocate the blob store on the device
+    if (const char* dbg = std::getenv("STRATA_MW_TP_DEBUG"))
+        if (std::atoi(dbg))
+            std::fprintf(stderr, "TPDBG CUDA%d: geo built (%zu layers), store %.2f GiB\n",
+                         device, geo_.size(), bytes / 1e9);
     if (!check(cudaMalloc(&d_blobs_, bytes), "cudaMalloc blobs", err)) { close(); return false; }
 
     // Convert each blob on copy.  The source blob for a native pack is INTERLEAVED (18 bytes per
@@ -226,7 +299,12 @@ bool MaxwellExperts::open(int device,
     // an i-quant row cannot be re-expressed in the S2 form, tools/iq_pack.py) and converts only its
     // Q2_0 down rows to the S2 planar form, inside the blob, at the layer's own offsets.
     std::vector<int32_t> per_layer_slot(lay.native ? (size_t) n_layers : 0, 0);
-    std::vector<uint8_t> staging(lay.native ? (size_t) lay.max_blob : BLOB);
+    size_t staging_bytes = lay.native ? (size_t) lay.max_blob : (size_t) BLOB;
+    if (tp_cards_ > 1) {   // the shard is always <= the full blob; take the largest layer's shard
+        staging_bytes = 0;
+        for (int64_t L = 0; L < n_layers; ++L) staging_bytes = std::max(staging_bytes, geo_[(size_t) L].blob_bytes);
+    }
+    std::vector<uint8_t> staging(staging_bytes);
     for (size_t i = 0; i < mine.size(); ++i) {
         const int64_t L = mine[i].first;
         const uint8_t* src = src_blob(L, mine[i].second, ctx);
@@ -243,7 +321,10 @@ bool MaxwellExperts::open(int device,
         if (lay.native) {
             const auto& f = lay.fmt[(size_t) L];
             const LayerGeo& g = geo_[(size_t) L];
-            blob_bytes = (size_t) f.bytes;
+            // SPLIT_MODE_TENSOR: the stored blob is the SHARD - its own size, and the region's slots
+            // stride by it (geo_.base was accumulated with g.blob_bytes, and the copy below must read
+            // exactly the shard bytes the staging holds, never the full f.bytes).
+            blob_bytes = tp_cards_ > 1 ? g.blob_bytes : (size_t) f.bytes;
             slot = per_layer_slot[(size_t) L]++;
             dst_off = g.base + (size_t) slot * blob_bytes;
             if (f.gu_type == 42) {
@@ -283,6 +364,29 @@ bool MaxwellExperts::open(int device,
             } else {
                 // the i-quant layer: gate/up rows VERBATIM (the raw GGUF blocks the kernel decodes),
                 // the Q2_0 down rows de-interleaved into the S2 planar form at the blob's own offsets
+                if (tp_cards_ > 1) {
+                    // SPLIT_MODE_TENSOR: the SHARD - this card's gate/up row range verbatim, and only
+                    // its down blocks de-interleaved per row, all COMPACT at the shard's own offsets.
+                    // The other cards take the complementary ranges; the shards sum to the full blob.
+                    for (int lr = 0; lr < g.tp_rows; ++lr) {
+                        const int64_t r = (int64_t) g.tp_row_base + lr;
+                        std::memcpy(staging.data() + (size_t) lr * f.gu_row,
+                                    src + (size_t) r * f.gu_row, (size_t) f.gu_row);
+                        std::memcpy(staging.data() + g.o_up + (size_t) lr * f.gu_row,
+                                    src + f.up_off + (size_t) r * f.gu_row, (size_t) f.gu_row);
+                    }
+                    for (int r = 0; r < H; ++r) {
+                        const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
+                        uint8_t* dcode = staging.data() + g.d_codes_off + (size_t) r * g.d_row_stride;
+                        uint8_t* dscale = staging.data() + g.d_scales_off + (size_t) r * g.d_scale_stride;
+                        for (int lb = 0; lb < g.tp_blks; ++lb) {
+                            const uint8_t* blk = srow + (size_t) (g.tp_blk_base + lb) * 18;
+                            dscale[lb * 2] = blk[0];
+                            dscale[lb * 2 + 1] = blk[1];
+                            std::memcpy(dcode + (size_t) lb * 16, blk + 2, 16);
+                        }
+                    }
+                } else {
                 std::memcpy(staging.data(), src, f.down_off);
                 for (int r = 0; r < H; ++r) {
                     const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
@@ -294,6 +398,7 @@ bool MaxwellExperts::open(int device,
                         dscale[b * 2 + 1] = blk[1];
                         std::memcpy(dcode + b * 16, blk + 2, 16);
                     }
+                }
                 }
             }
         } else {
@@ -373,6 +478,7 @@ bool MaxwellExperts::open(int device,
     }
     if (!check(cudaEventCreateWithFlags(&ev_up_, cudaEventDisableTiming), "event", err)) { close(); return false; }
     if (!check(cudaEventCreateWithFlags(&ev_q_, cudaEventDisableTiming), "event", err)) { close(); return false; }
+    if (!check(cudaEventCreateWithFlags(&ev_d2h_done_, cudaEventDisableTiming), "event", err)) { close(); return false; }
 
     owned_idx_.assign((size_t) cap_entries_, -1);
     // P3.4 (rev 3, misurato): the chain runs inline on the caller's thread.  The persistent per-device worker
@@ -421,7 +527,13 @@ bool MaxwellExperts::open(int device,
             for (auto& v : x) v = nd(rng);
             strata::kernels::cpu::ActQ a;
             strata::kernels::cpu::act_quant_any(x.data(), (int) H, a);
-            // the reference: the float expert (fp64 dots, the SwiGLU in fp32 as the kernels have it)
+            // the reference: the float expert (fp64 dots, the SwiGLU in fp32 as the kernels have it).
+            // SPLIT_MODE_TENSOR: the reference is THIS CARD's partial - the same fp64 contraction
+            // restricted to the shard's blocks (the gate/up SwiGLU stays full-width on the host: the
+            // four cards' partials must sum to the full reference, and each is gated against its own).
+            const LayerGeo& gg = geo_[(size_t) L];
+            const int c0 = tp_cards_ > 1 ? gg.tp_blk_base * 64 : 0;
+            const int c1 = tp_cards_ > 1 ? (gg.tp_blk_base + gg.tp_blks) * 64 : (int) FF;
             std::vector<float> ref(H), h((size_t) FF);
             for (int64_t r = 0; r < FF; ++r) {
                 double g = 0, u = 0;
@@ -433,7 +545,7 @@ bool MaxwellExperts::open(int device,
             }
             for (int64_t r = 0; r < H; ++r) {
                 double o = 0;
-                for (int64_t i = 0; i < FF; ++i) o += (double) D[(size_t) r * FF + i] * h[i];
+                for (int64_t i = c0; i < c1; ++i) o += (double) D[(size_t) r * FF + i] * h[i];
                 ref[(size_t) r] = (float) o;
             }
             // the device: one job through the CONVERTED blob, the tier's own launch path
@@ -464,11 +576,13 @@ bool MaxwellExperts::open(int device,
             } else {
                 iq_expert_maxwell_gup_quant_batch_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes,
                                                         d_jobs_, 1, d_acts_, g.o_gate, g.o_up, g.gu_row,
-                                                        d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0]);
+                                                        d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0],
+                                                        g.tp_row_base, g.tp_rows);
             }
             s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, 1, d_faq_, d_fascale_, d_fahx_,
                                                d_out_, g.blob_bytes, g.d_codes_off, g.d_scales_off,
-                                               streams_[0]);
+                                               streams_[0], nullptr, 0, nullptr,
+                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
             if (!check(cudaStreamSynchronize(streams_[0]), "round-trip sync", err)) { close(); return false; }
             if (!check(cudaMemcpy(h_out_, d_out_, (size_t) H * sizeof(float), cudaMemcpyDeviceToHost),
                        "round-trip download", err)) { close(); return false; }
@@ -513,6 +627,7 @@ void MaxwellExperts::close() {
     }
     if (ev_up_) { cudaEventDestroy(ev_up_); ev_up_ = nullptr; }
     if (ev_q_) { cudaEventDestroy(ev_q_); ev_q_ = nullptr; }
+    if (ev_d2h_done_) { cudaEventDestroy(ev_d2h_done_); ev_d2h_done_ = nullptr; }
     if (d_blobs_) { cudaFree(d_blobs_); d_blobs_ = nullptr; }
     if (d_up_ && !zerocopy_) { cudaFree(d_up_); }   // zero-copy: d_up_ IS h_up_'s mapping
     d_up_ = nullptr;
@@ -660,8 +775,11 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     for (size_t j = 0; j < jobs.size(); ++j) {
         h_jobs_[j * 3] = jobs[j].slot;
         h_jobs_[j * 3 + 1] = (int32_t) jobs[j].tok;
-        h_jobs_[j * 3 + 2] = jobs[j].row;   // destination row: the token path's entry index.  finish_chain
-                                            // rewrites it (and re-uploads) for the prefill's staging order.
+        // SPLIT_MODE_TENSOR: the down's destination is the COMPACT JOB SLOT (not the entry index) - the
+        // partial block is then one contiguous jobs.size() x H region the copy engine D2Hs in a single
+        // transfer; the consumer re-expands via the dispatch's entry list.  Non-TP keeps the entry index
+        // (the token path scatters straight into the verifier's rows).
+        h_jobs_[j * 3 + 2] = tp_cards_ > 1 ? (int32_t) j : jobs[j].row;
     }
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
     // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
@@ -687,7 +805,8 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     } else {
         iq_expert_maxwell_gup_quant_batch_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_jobs_,
                                                 (int) jobs.size(), d_acts_, g.o_gate, g.o_up, g.gu_row,
-                                                d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0]);
+                                                d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0],
+                                                g.tp_row_base, g.tp_rows);
     }
     // The TOKEN path hands begin() the mapped destination: its down stage launches HERE and scatters each row
     // straight into `w_dst_` (the job table already carries every row's destination), so it runs while the
@@ -719,16 +838,40 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // fp16 rows (opt-in): H halves packed into the fp32 row's own slot (the first H/2 floats), so
             // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
             // cross the uplink; the verifier's row copy converts them back (its kind16 flags mark them).
+            // (No tensor-split form: TP clears rows_f16 in begin().)
             s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
                                                    d_fascale_, d_fahx_, (uint16_t*) dst_rows, g.blob_bytes,
                                                    g.d_codes_off, g.d_scales_off, streams_[0]);
+        } else if (tp_cards_ > 1 && !dlt) {
+            // SPLIT_MODE_TENSOR delivery: the down writes this card's PARTIAL rows to CARD-LOCAL VRAM -
+            // no mapped stores from the kernel (four concurrent downs writing mapped host memory
+            // measured 3x stretched, the LOCAL_DOWN shared-endpoint effect) - then the COPY ENGINE moves
+            // the compact partial block to the host partial area on a second stream, and a one-block
+            // kernel raises the E1 doorbell after it.  The down itself carries no tail; the ring
+            // advances with the raise.
+            if (ev_d2h_done_ != nullptr) cudaStreamWaitEvent(streams_[0], ev_d2h_done_, 0);  // d_out_ reuse
+            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
+                                               d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
+                                               g.d_scales_off, streams_[0], nullptr, 0, nullptr,
+                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+            cudaEventRecord(ev_down_[0], streams_[0]);
+            cudaStreamWaitEvent(streams_[1], ev_down_[0], 0);
+            cudaMemcpyAsync(w_dst_, d_out_, jobs.size() * (size_t) H * sizeof(float),
+                            cudaMemcpyDeviceToHost, streams_[1]);
+            if (e1) {
+                mw_tp_raise_flag_async(comp_flag_, ring, streams_[1]);
+                cudaEventRecord(ev_d2h_done_, streams_[1]);
+                comp_seq_ = ring;
+            }
         } else {
             s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
                                                d_fascale_, d_fahx_, dst_rows, g.blob_bytes, g.d_codes_off,
                                                g.d_scales_off, streams_[0],
-                                               e1 ? comp_flag_ : nullptr, ring, e1 ? d_ctr_ : nullptr);
+                                               e1 ? comp_flag_ : nullptr, ring, e1 ? d_ctr_ : nullptr,
+                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
         }
-        if (e1) comp_seq_ = ring;
+        if (e1 && tp_cards_ > 1 && !dlt) { /* the ring advanced with the raise above */ }
+        else if (e1) comp_seq_ = ring;
         down_launched_ = true;
     }
     for (size_t j = 0; j < jobs.size(); ++j) {
@@ -777,9 +920,20 @@ bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts
     }();
     w_dst_mapped_ = dst_mapped != nullptr && !local_down;
     w_rows_f16_ = rows_f16 && w_dst_mapped_;   // fp16 applies to the mapped token path only
+    if (w_rows_f16_ && tp_cards_ > 1) {
+        // SPLIT_MODE_TENSOR: the fp16 row form has no tensor-split variant (yet) - the partials ride the
+        // plain fp32 slots.  One note, then silently plain.
+        static const bool said = [] {
+            std::fprintf(stderr, "strata maxwell: tensor split ignores STRATA_MW_ROWS_F16 (partials stay fp32)\n");
+            return true;
+        }();
+        (void) said;
+        w_rows_f16_ = false;
+    }
     w_row_of_ = nullptr;
     w_row_base_ = 0;
     w_n_embd_ = H;
+    w_accumulate_ = false;
     return begin_chain(err);
 }
 
@@ -804,10 +958,11 @@ bool MaxwellExperts::finish(float* out, std::string& err) {
 }
 
 bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd,
-                               std::string& err) {
+                               std::string& err, bool accumulate) {
     if (device_ < 0) return true;
     w_dst_ = dst_rows; w_row_of_ = row_of_entry; w_row_base_ = row_base; w_n_embd_ = n_embd;
     w_dst_mapped_ = false;
+    w_accumulate_ = accumulate;
     return finish_chain(err);   // the prefill's down stage launches here, where its destination is known
 }
 
@@ -837,7 +992,8 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         const LayerGeo& g = geo_of(w_layer_);
         s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
                                            d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
-                                           g.d_scales_off, streams_[0]);
+                                           g.d_scales_off, streams_[0], nullptr, 0, nullptr,
+                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
         down_launched_ = true;
     }
     // S0 (STRATA_MW_LAYERPROF): the span ends after the down launch, whichever path launched it; the
@@ -908,8 +1064,12 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     for (size_t s = 0; s < owned_row_.size(); ++s) {
         const int32_t i = owned_row_[s];
         const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;
-        std::memcpy(w_dst_ + (size_t) row * (size_t) w_n_embd_, h_out_ + s * (size_t) w_n_embd_,
-                    (size_t) w_n_embd_ * sizeof(float));
+        float* dst = w_dst_ + (size_t) row * (size_t) w_n_embd_;
+        const float* src = h_out_ + s * (size_t) w_n_embd_;
+        if (w_accumulate_)   // SPLIT_MODE_TENSOR: this card's partial ADDED in rank order (deterministic)
+            for (int64_t e = 0; e < w_n_embd_; ++e) dst[e] += src[e];
+        else
+            std::memcpy(dst, src, (size_t) w_n_embd_ * sizeof(float));
     }
     return true;
 }

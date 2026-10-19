@@ -3865,6 +3865,11 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             for (int64_t t = 0; t < T; ++t)
                                 strata::kernels::cpu::act_quant_any(m.mw_mixed_h.data() + (size_t) t * N, (int) N,
                                                                     m.mw_acts[(size_t) t]);
+                            // SPLIT_MODE_TENSOR: every card computes every entry as a PARTIAL; the cards
+                            // finish in rank order and ADD into the same block (deterministic), so it is
+                            // zeroed once per layer here and finish_to takes `accumulate`.
+                            const bool mw_tp = m.mw_count > 0 && m.mw[0] != nullptr && m.mw[0]->tensor();
+                            if (mw_tp) std::memset(m.mw_block.data(), 0, (size_t) rows_mw * N * 4);
                             constexpr int64_t MW_SUB = 64;   // the tier's window (n_tok_max)
                             for (int64_t t0 = 0; t0 < T; t0 += MW_SUB) {
                                 const int64_t nt = std::min(MW_SUB, T - t0);
@@ -3874,7 +3879,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                         return false;
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
-                                                            N, err))
+                                                            N, err, mw_tp))
                                         return false;
                             }
                             // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw)

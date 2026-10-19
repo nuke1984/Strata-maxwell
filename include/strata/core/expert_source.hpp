@@ -612,6 +612,13 @@ struct ExpertDispatch {
     class MaxwellExperts* maxwell[4] = {};
     int maxwell_count = 0;
     int64_t maxwell_entries = 0;   ///< routed entries the Maxwell tier served
+    /// SPLIT_MODE_TENSOR (the Meta tier): the four cards hold tensor SHARDS of the same resident set and
+    /// every routed entry is computed by all of them; each card writes its PARTIAL row into its own
+    /// `mw_partial` area and the verifier assembles (rank-ordered sum) after the E1 flags.  `mw_tp_row`
+    /// are the double-buffered per-entry tier bitmaps (picked by the upcoming ring's parity); the
+    /// dispatch writes them, the assembly kernel reads them.  Inert while null.
+    float* mw_partial[4] = {};
+    int32_t* mw_tp_row[2] = {};   ///< [count, e0, ...] entry lists, double-buffered by ring parity
     /// Set when `dispatch` could not produce an answer.  The loop itself has no error channel, so this is
     /// where a source failure surfaces: the driver checks it after `session_loop` returns rather than the
     /// engine computing from a half-filled `parts`.
