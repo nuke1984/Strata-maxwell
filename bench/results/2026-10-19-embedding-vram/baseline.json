@@ -1,0 +1,19 @@
+{
+  "placement": "mapped_host",
+  "spec": 4,
+  "max_context": 256000,
+  "kv": "k8v4",
+  "expert_cache_slots": 1874,
+  "engine_sha256": "171c4035ab503220fd08463205192edb9b70ee52740d9ce975d5deb649636384",
+  "measurements": [
+    {"run": 1, "prompt": "story", "decode_tok_s": 37.9, "completion_tokens": 351, "prompt_tokens": 58, "cached_tokens": 53, "http_seconds": 9.415},
+    {"run": 1, "prompt": "fib", "decode_tok_s": 43.7, "completion_tokens": 463, "prompt_tokens": 54, "cached_tokens": 0, "http_seconds": 11.566},
+    {"run": 1, "prompt": "code", "decode_tok_s": 43.7, "completion_tokens": 512, "prompt_tokens": 61, "cached_tokens": 0, "http_seconds": 12.783},
+    {"run": 2, "prompt": "story", "decode_tok_s": 37.9, "completion_tokens": 497, "prompt_tokens": 58, "cached_tokens": 0, "http_seconds": 14.119},
+    {"run": 2, "prompt": "fib", "decode_tok_s": 44.9, "completion_tokens": 512, "prompt_tokens": 54, "cached_tokens": 0, "http_seconds": 12.347},
+    {"run": 2, "prompt": "code", "decode_tok_s": 45.8, "completion_tokens": 512, "prompt_tokens": 61, "cached_tokens": 0, "http_seconds": 12.241},
+    {"run": 3, "prompt": "story", "decode_tok_s": 39.8, "completion_tokens": 479, "prompt_tokens": 58, "cached_tokens": 0, "http_seconds": 13.042},
+    {"run": 3, "prompt": "fib", "decode_tok_s": 44.8, "completion_tokens": 506, "prompt_tokens": 54, "cached_tokens": 0, "http_seconds": 12.249},
+    {"run": 3, "prompt": "code", "decode_tok_s": 45.6, "completion_tokens": 512, "prompt_tokens": 61, "cached_tokens": 0, "http_seconds": 12.295}
+  ]
+}

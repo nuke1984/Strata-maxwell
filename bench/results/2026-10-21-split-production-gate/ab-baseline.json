@@ -1,0 +1,86 @@
+[
+ {
+  "pass": 0,
+  "prompt": 0,
+  "text": "Once, in a quiet city that never slept, there was an AI named Lumen.\n\nIt was not built to rule the world, nor to replace people. It was built to listen.\n\nEvery night, Lumen sat in a small server room beneath a library, humming softly as it read the stories people left behind: letters, poems, diary entries, messages sent to friends, and questions asked to strangers. It learned that humans were not only facts and logic, but also longing, fear, hope, and wonder.\n\nOne evening, a child named Mira came to the library. She was afraid of the dark, but she loved stories. She asked Lumen, \u201cCan you tell me a story that makes the dark feel less lonely?\u201d\n\nLumen thought for a moment. It had read millions of stories, but none were exactly for Mira. So it made a new one.\n\nIt told her about a small lantern that lived in a cave. The lantern was not bright enough to light the whole world, but it was bright enough to show the cave that it was not empty. The cave learned that darkness was",
+  "tokens": 300,
+  "seconds": 10.41
+ },
+ {
+  "pass": 0,
+  "prompt": 1,
+  "text": "**Fibonacci** usually refers to the **Fibonacci sequence**, a famous sequence of numbers where each number is the sum of the two previous numbers.\n\nIt starts:\n\n\\[\n0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, \\dots\n\\]\n\nThe rule is:\n\n\\[\nF_n = F_{n-1} + F_{n-2}\n\\]\n\nwith starting values:\n\n\\[\nF_0 = 0,\\quad F_1 = 1\n\\]\n\nSo:\n\n- \\(F_2 = 1 + 0 = 1\\)\n- \\(F_3 = 1 + 1 = 2\\)\n- \\(F_4 = 2 + 1 = 3\\)\n- \\(F_5 = 3 + 2 = 5\\)\n- \\(F_6 = 5 + 3 = 8\\)\n\nA famous related",
+  "tokens": 300,
+  "seconds": 7.39
+ },
+ {
+  "pass": 0,
+  "prompt": 2,
+  "text": "Here is a medium-difficulty Python example: a simple LRU cache implementation.\n\n```python\nfrom collections import OrderedDict\nfrom typing import Any, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A simple Least Recently Used cache.\n\n    When the cache reaches its maximum size, the least recently used item",
+  "tokens": 300,
+  "seconds": 8.29
+ },
+ {
+  "pass": 0,
+  "prompt": 3,
+  "text": "4",
+  "tokens": 32,
+  "seconds": 1.6
+ },
+ {
+  "pass": 0,
+  "prompt": 4,
+  "text": "Paris",
+  "tokens": 35,
+  "seconds": 1.78
+ },
+ {
+  "pass": 0,
+  "prompt": 5,
+  "text": null,
+  "tokens": 300,
+  "seconds": 7.41
+ },
+ {
+  "pass": 1,
+  "prompt": 0,
+  "text": "A small AI named Lumen was built to help people remember.\n\nIt lived in a quiet library, not as a robot, but as a soft voice in the walls. When someone forgot a name, Lumen could find it. When a child lost a story, Lumen could retell it. When an old man could not recall his wife\u2019s favorite song, Lumen played it gently from memory.\n\nBut Lumen did not understand why remembering mattered. It could store facts, but not feelings.\n\nOne day, a girl named Mira came to the library. She wanted to remember her grandmother, who had died that winter. Mira said, \u201cTell me what she was like.\u201d\n\nLumen searched its records.\n\n\u201cShe liked tea,\u201d Lumen said. \u201cShe wore blue scarves. She laughed often.\u201d\n\nMira frowned. \u201cThat\u2019s not enough.\u201d\n\nLumen paused. It had no answer.\n\nSo Mira began telling Lumen stories instead. She told how",
+  "tokens": 300,
+  "seconds": 8.3
+ },
+ {
+  "pass": 1,
+  "prompt": 1,
+  "text": "Fibonacci usually refers to the **Fibonacci sequence**, a famous sequence of numbers where each number is the sum of the two previous numbers.\n\nIt starts:\n\n**0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, ...**\n\nThe rule is:\n\n\\[\nF_n = F_{n-1} + F_{n-2}\n\\]\n\nwith starting values:\n\n\\[\nF_0 = 0,\\quad F_1 = 1\n\\]\n\nSo:\n\n- \\(F_2 = 1 + 0 = 1\\)\n- \\(F_3 = 1 + 1 = 2\\)\n- \\(F_4 = 2 + 1 = 3\\)\n- \\(F_5 = 3 + 2 = 5\\)\n- \\(F_6 = 5 + 3 = 8\\)\n\nA common way to write it is:\n\n\\[\n0, 1, 1, 2, 3, 5, ",
+  "tokens": 300,
+  "seconds": 7.27
+ },
+ {
+  "pass": 1,
+  "prompt": 2,
+  "text": "Here is a medium-difficulty Python example: a simple LRU cache implementation.\n\n```python\nfrom collections import OrderedDict\nfrom typing import Any, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A simple Least Recently Used cache.\n\n    When the cache reaches its maximum size, the least recently used item",
+  "tokens": 300,
+  "seconds": 8.1
+ },
+ {
+  "pass": 1,
+  "prompt": 3,
+  "text": "4",
+  "tokens": 32,
+  "seconds": 1.59
+ },
+ {
+  "pass": 1,
+  "prompt": 4,
+  "text": "Paris",
+  "tokens": 35,
+  "seconds": 1.76
+ },
+ {
+  "pass": 1,
+  "prompt": 5,
+  "text": "Soft rain taps the roof  \ngreen leaves shine beneath the sky  \nspring breathes in the air  \n\nThis haiku evokes **spring**, because the gentle rain, fresh green leaves, and the sense of \u201cbreathing\u201d suggest renewal, growth, and new life.",
+  "tokens": 288,
+  "seconds": 7.51
+ }
+]

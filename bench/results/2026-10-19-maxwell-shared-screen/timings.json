@@ -1,0 +1,17 @@
+[
+  {"repeat":1,"layer":0,"tokens":1,"native_graph_us":22.26,"tp_compute_max_us":60.12,"tp_host_staged_us":99.00},
+  {"repeat":1,"layer":0,"tokens":2,"native_graph_us":27.96,"tp_compute_max_us":67.35,"tp_host_staged_us":120.41},
+  {"repeat":1,"layer":0,"tokens":4,"native_graph_us":37.60,"tp_compute_max_us":86.18,"tp_host_staged_us":187.67},
+  {"repeat":1,"layer":1,"tokens":4,"native_graph_us":40.02,"tp_compute_max_us":86.16,"tp_host_staged_us":187.78},
+  {"repeat":1,"layer":8,"tokens":4,"native_graph_us":38.06,"tp_compute_max_us":86.13,"tp_host_staged_us":188.13},
+  {"repeat":2,"layer":0,"tokens":1,"native_graph_us":22.25,"tp_compute_max_us":60.18,"tp_host_staged_us":98.53},
+  {"repeat":2,"layer":0,"tokens":2,"native_graph_us":27.94,"tp_compute_max_us":67.23,"tp_host_staged_us":122.99},
+  {"repeat":2,"layer":0,"tokens":4,"native_graph_us":37.58,"tp_compute_max_us":86.12,"tp_host_staged_us":188.14},
+  {"repeat":2,"layer":1,"tokens":4,"native_graph_us":40.04,"tp_compute_max_us":86.22,"tp_host_staged_us":188.22},
+  {"repeat":2,"layer":8,"tokens":4,"native_graph_us":38.04,"tp_compute_max_us":86.17,"tp_host_staged_us":191.12},
+  {"repeat":3,"layer":0,"tokens":1,"native_graph_us":22.25,"tp_compute_max_us":60.16,"tp_host_staged_us":99.58},
+  {"repeat":3,"layer":0,"tokens":2,"native_graph_us":27.96,"tp_compute_max_us":67.17,"tp_host_staged_us":121.07},
+  {"repeat":3,"layer":0,"tokens":4,"native_graph_us":37.57,"tp_compute_max_us":86.18,"tp_host_staged_us":188.04},
+  {"repeat":3,"layer":1,"tokens":4,"native_graph_us":40.04,"tp_compute_max_us":86.22,"tp_host_staged_us":188.45},
+  {"repeat":3,"layer":8,"tokens":4,"native_graph_us":38.06,"tp_compute_max_us":86.19,"tp_host_staged_us":188.72}
+]

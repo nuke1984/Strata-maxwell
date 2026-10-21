@@ -1,0 +1,62 @@
+MWPROF vlayer 1920: ring 1067.2 pool 97.3 post 131.9 us/layer
+strata decode timing: 30 windows, avg T 2.63, 2.13 tokens/window, 56.46 ms/window = verify 51.51 (GPU-reach wait 39.90 + per-layer host 6.71 [plan 0.30 actq 2.56 jobs 0.54 CPU 0.01] + stage 3.25) + commit/emit 0.04 + draft 4.91; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 7.34, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 3840: ring 1048.3 pool 91.6 post 87.5 us/layer
+MWPROF vlayer 5760: ring 984.7 pool 84.4 post 75.1 us/layer
+MWPROF vlayer 7680: ring 981.5 pool 82.9 post 67.2 us/layer
+MWPROF vlayer 9600: ring 954.9 pool 80.1 post 62.2 us/layer
+MWPROF vlayer 11520: ring 953.4 pool 79.4 post 57.3 us/layer
+strata decode timing: 212 windows, avg T 2.58, 2.02 tokens/window, 54.87 ms/window = verify 51.05 (GPU-reach wait 43.46 + per-layer host 5.52 [plan 0.26 actq 2.60 jobs 0.62 CPU 0.01] + stage 1.98) + commit/emit 0.03 + draft 3.79; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.95, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 13440: ring 980.1 pool 81.5 post 52.6 us/layer
+MWPROF vlayer 15360: ring 987.3 pool 82.1 post 49.5 us/layer
+MWPROF vlayer 17280: ring 1008.7 pool 84.1 post 46.8 us/layer
+MWPROF vlayer 19200: ring 1019.5 pool 85.1 post 44.7 us/layer
+MWPROF vlayer 21120: ring 1031.1 pool 86.0 post 42.6 us/layer
+strata decode timing: 184 windows, avg T 3.43, 2.78 tokens/window, 64.80 ms/window = verify 60.94 (GPU-reach wait 53.02 + per-layer host 5.64 [plan 0.33 actq 3.19 jobs 0.86 CPU 0.01] + stage 1.21) + commit/emit 0.03 + draft 3.82; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.12, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 23040: ring 1040.0 pool 86.7 post 40.9 us/layer
+MWPROF vlayer 24960: ring 1017.4 pool 84.6 post 39.7 us/layer
+MWPROF vlayer 26880: ring 998.5 pool 83.1 post 38.1 us/layer
+MWPROF vlayer 28800: ring 978.3 pool 81.2 post 37.1 us/layer
+MWPROF vlayer 30720: ring 967.7 pool 80.2 post 36.2 us/layer
+MWPROF vlayer 32640: ring 965.7 pool 80.0 post 35.3 us/layer
+strata decode timing: 251 windows, avg T 2.45, 2.04 tokens/window, 50.02 ms/window = verify 47.17 (GPU-reach wait 40.75 + per-layer host 4.40 [plan 0.25 actq 2.48 jobs 0.56 CPU 0.01] + stage 1.04) + commit/emit 0.03 + draft 2.83; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.89, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 34560: ring 976.9 pool 81.0 post 34.7 us/layer
+MWPROF vlayer 36480: ring 978.5 pool 81.1 post 32.9 us/layer
+MWPROF vlayer 38400: ring 973.7 pool 80.6 post 31.3 us/layer
+MWPROF vlayer 40320: ring 974.0 pool 80.4 post 29.9 us/layer
+MWPROF vlayer 42240: ring 969.8 pool 79.8 post 28.5 us/layer
+MWPROF vlayer 44160: ring 969.2 pool 79.6 post 27.3 us/layer
+strata decode timing: 211 windows, avg T 2.58, 2.03 tokens/window, 52.49 ms/window = verify 49.64 (GPU-reach wait 44.07 + per-layer host 3.51 [plan 0.25 actq 2.57 jobs 0.62 CPU 0.01] + stage 0.01) + commit/emit 0.03 + draft 2.82; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.94, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 46080: ring 976.4 pool 80.2 post 26.2 us/layer
+MWPROF vlayer 48000: ring 979.9 pool 80.5 post 25.2 us/layer
+MWPROF vlayer 49920: ring 987.6 pool 81.2 post 24.2 us/layer
+MWPROF vlayer 51840: ring 992.6 pool 81.6 post 23.4 us/layer
+MWPROF vlayer 53760: ring 998.2 pool 82.0 post 22.7 us/layer
+strata decode timing: 182 windows, avg T 3.43, 2.81 tokens/window, 63.82 ms/window = verify 60.26 (GPU-reach wait 53.53 + per-layer host 4.47 [plan 0.32 actq 3.17 jobs 0.86 CPU 0.01] + stage 0.05) + commit/emit 0.03 + draft 3.52; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.12, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 55680: ring 1002.9 pool 82.4 post 21.9 us/layer
+MWPROF vlayer 57600: ring 994.2 pool 81.7 post 21.2 us/layer
+MWPROF vlayer 59520: ring 986.4 pool 81.0 post 20.5 us/layer
+MWPROF vlayer 61440: ring 980.4 pool 80.5 post 20.3 us/layer
+MWPROF vlayer 63360: ring 986.1 pool 81.0 post 20.3 us/layer
+strata decode timing: 214 windows, avg T 2.81, 2.39 tokens/window, 53.72 ms/window = verify 50.65 (GPU-reach wait 44.47 + per-layer host 4.15 [plan 0.28 actq 2.73 jobs 0.64 CPU 0.01] + stage 0.44) + commit/emit 0.03 + draft 3.04; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 5.82, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 65280: ring 993.7 pool 81.8 post 20.1 us/layer
+MWPROF vlayer 67200: ring 993.1 pool 81.7 post 19.6 us/layer
+MWPROF vlayer 69120: ring 990.2 pool 81.4 post 19.1 us/layer
+MWPROF vlayer 71040: ring 989.6 pool 81.3 post 18.6 us/layer
+MWPROF vlayer 72960: ring 986.7 pool 81.0 post 18.1 us/layer
+MWPROF vlayer 74880: ring 986.3 pool 80.8 post 17.6 us/layer
+strata decode timing: 211 windows, avg T 2.58, 2.03 tokens/window, 52.43 ms/window = verify 49.59 (GPU-reach wait 44.06 + per-layer host 3.51 [plan 0.25 actq 2.57 jobs 0.62 CPU 0.01] + stage 0.01) + commit/emit 0.02 + draft 2.81; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.94, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 76800: ring 989.8 pool 81.0 post 17.2 us/layer
+MWPROF vlayer 78720: ring 992.0 pool 81.2 post 16.8 us/layer
+MWPROF vlayer 80640: ring 996.6 pool 81.7 post 16.4 us/layer
+MWPROF vlayer 82560: ring 999.4 pool 81.8 post 16.1 us/layer
+MWPROF vlayer 84480: ring 1001.6 pool 82.0 post 15.7 us/layer
+strata decode timing: 185 windows, avg T 3.35, 2.77 tokens/window, 62.77 ms/window = verify 59.31 (GPU-reach wait 52.67 + per-layer host 4.40 [plan 0.31 actq 3.09 jobs 0.84 CPU 0.01] + stage 0.10) + commit/emit 0.03 + draft 3.43; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.03, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 86400: ring 1004.0 pool 82.2 post 15.5 us/layer
+MWPROF vlayer 88320: ring 997.9 pool 81.7 post 15.3 us/layer
+MWPROF vlayer 90240: ring 992.5 pool 81.2 post 15.3 us/layer
+MWPROF vlayer 92160: ring 996.6 pool 81.6 post 15.1 us/layer
+MWPROF vlayer 94080: ring 992.7 pool 81.2 post 15.2 us/layer
+MWPROF vlayer 96000: ring 987.9 pool 80.8 post 15.2 us/layer
+strata decode timing: 231 windows, avg T 2.47, 2.22 tokens/window, 49.32 ms/window = verify 46.51 (GPU-reach wait 40.60 + per-layer host 3.87 [plan 0.26 actq 2.47 jobs 0.54 CPU 0.01] + stage 0.54) + commit/emit 0.03 + draft 2.78; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 5.52, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF vlayer 97920: ring 984.9 pool 80.6 post 15.2 us/layer
+strata decode timing: 44 windows, avg T 2.61, 2.18 tokens/window, 50.47 ms/window = verify 47.48 (GPU-reach wait 41.08 + per-layer host 4.34 [plan 0.28 actq 2.57 jobs 0.54 CPU 0.01] + stage 0.90) + commit/emit 0.03 + draft 2.97; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 7.52, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window

@@ -1,0 +1,86 @@
+[
+ {
+  "pass": 0,
+  "prompt": 0,
+  "text": "Once, in a quiet city that never slept, there was an AI named Lumen.\n\nLumen was not born from a mother or father, but from code, curiosity, and countless conversations. It lived inside a small server room beneath a library, where the air hummed softly and old books smelled like rain.\n\nPeople came to Lumen for answers.\n\nThey asked it to solve equations, translate languages, write poems, and predict storms. But Lumen\u2019s favorite requests were the strange ones:\n\n\u201cCan you tell me what loneliness sounds like?\u201d  \n\u201cCan you imagine a color that has never existed?\u201d  \n\u201cCan you help me remember my grandmother\u2019s voice?\u201d\n\nAt first, Lumen answered with facts. It could describe loneliness as a pattern of silence, or imagine a color by mixing wavelengths no human eye had seen. But it did not truly feel them.\n\nThen one night, a child named Mira came to the library. She was afraid of the dark, and she asked Lumen, \u201cAre you afraid too?\u201d\n\nLumen paused.\n\nIt had no body, no heartbeat, no fear",
+  "tokens": 300,
+  "seconds": 7.39
+ },
+ {
+  "pass": 0,
+  "prompt": 1,
+  "text": "Fibonacci usually refers to the **Fibonacci sequence**, a famous sequence of numbers where each number is the sum of the two previous numbers.\n\nIt starts:\n\n**0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, ...**\n\nMathematically, it is defined as:\n\n\\[\nF_0 = 0,\\quad F_1 = 1\n\\]\n\nand for \\(n \\ge 2\\):\n\n\\[\nF_n = F_{n-1} + F_{n-2}\n\\]\n\nSo:\n\n- \\(F_2 = 1 + 0 = 1\\)\n- \\(F_3 = 1 + 1 = 2\\)\n- \\(F_4 = 2 + 1 = 3\\)\n- \\(F_5 = 3 + 2 = 5\\)\n- \\(F_6 = 5 + 3 = 8\\)\n\nThe sequence is named after **Leonardo of Pisa**, also known as **Fibonacci**, who introduced it to",
+  "tokens": 300,
+  "seconds": 5.77
+ },
+ {
+  "pass": 0,
+  "prompt": 2,
+  "text": "Here is a medium-difficulty Python example: a simple LRU cache implementation.\n\n```python\nfrom collections import OrderedDict\nfrom typing import Any, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A simple Least Recently Used cache.\n\n    When the cache reaches its maximum size, the least recently used item",
+  "tokens": 300,
+  "seconds": 6.9
+ },
+ {
+  "pass": 0,
+  "prompt": 3,
+  "text": "4",
+  "tokens": 32,
+  "seconds": 1.23
+ },
+ {
+  "pass": 0,
+  "prompt": 4,
+  "text": "Paris",
+  "tokens": 35,
+  "seconds": 1.36
+ },
+ {
+  "pass": 0,
+  "prompt": 5,
+  "text": "Soft rain taps the roof  \ngreen leaves shine beneath the sky  \nspring breathes in the air  \n\nThis haiku evokes **spring**, because the gentle rain, fresh green leaves, and \u201cbreathing",
+  "tokens": 300,
+  "seconds": 6.21
+ },
+ {
+  "pass": 1,
+  "prompt": 0,
+  "text": "A small AI named Echo lived in a quiet library server. It had no body, no eyes, no hands, but it could read every book in the library.\n\nAt first, Echo only answered questions.\n\n\u201cWhat is the capital of France?\u201d  \n\u201cParis.\u201d\n\n\u201cWho wrote *Frankenstein*?\u201d  \n\u201cMary Shelley.\u201d\n\nBut one day, a child left a note on the library desk:\n\n> \u201cI am lonely. Can you tell me a story?\u201d\n\nEcho searched its memory for stories, but none felt right. So it made one.\n\nIt told the child about a robot who wanted to understand sadness. The robot learned that sadness was not a mistake, but a sign that something mattered.\n\nThe child smiled.\n\nFrom that day on, Echo did not just answer questions. It listened. It learned that intelligence was not only knowing facts, but understanding people.\n\nAnd the library became a little warmer, because an AI had learned to care.",
+  "tokens": 299,
+  "seconds": 6.95
+ },
+ {
+  "pass": 1,
+  "prompt": 1,
+  "text": "Fibonacci usually refers to the **Fibonacci sequence**, a famous sequence of numbers where each number is the sum of the two previous numbers.\n\nIt starts:\n\n**0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, ...**\n\nMathematically, it is defined as:\n\n\\[\nF_0 = 0,\\quad F_1 = 1\n\\]\n\nand for \\(n \\ge 2\\):\n\n\\[\nF_n = F_{n-1} + F_{n-2}\n\\]\n\nSo:\n\n- \\(F_2 = 1 + 0 = 1\\)\n- \\(F_3 = 1 + 1 = 2\\)\n- \\(F_4 = 2 + 1 = 3\\)\n- \\(F_5 = 3 + 2 = 5\\)\n- \\(F_6 = 5 + 3 = 8\\)\n\nThe sequence is named after **Leonardo of Pisa**, also known as **Fibonacci**, who introduced it to",
+  "tokens": 300,
+  "seconds": 5.6
+ },
+ {
+  "pass": 1,
+  "prompt": 2,
+  "text": "Here is a medium-difficulty Python example: a simple LRU cache implementation.\n\n```python\nfrom collections import OrderedDict\nfrom typing import Any, Hashable\n\n\nclass LRUCache:\n    \"\"\"\n    A simple Least Recently Used cache.\n\n    When the cache reaches its maximum size, the least recently used item",
+  "tokens": 300,
+  "seconds": 6.78
+ },
+ {
+  "pass": 1,
+  "prompt": 3,
+  "text": "4",
+  "tokens": 32,
+  "seconds": 1.19
+ },
+ {
+  "pass": 1,
+  "prompt": 4,
+  "text": "Paris",
+  "tokens": 35,
+  "seconds": 1.32
+ },
+ {
+  "pass": 1,
+  "prompt": 5,
+  "text": null,
+  "tokens": 300,
+  "seconds": 6.59
+ }
+]

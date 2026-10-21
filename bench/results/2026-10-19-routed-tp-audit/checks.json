@@ -1,0 +1,89 @@
+{
+  "scope": "routed experts on four M10s only; no shared-expert TP",
+  "cpu_planner": {
+    "passed": true,
+    "layers": 48,
+    "ring_indices_checked": 10000,
+    "coverage": ["shard coverage", "sum of shard bytes", "rotation", "valid and invalid IQ geometry", "distinct device parsing"]
+  },
+  "cli_fail_fast": {"passed": true, "cases": 23},
+  "gpu_cases": [
+    {"env": {"STRATA_MW_GPUFLAG": "2"}, "passed": true, "worst_rel_l1": 1.741e-7},
+    {"env": {"STRATA_MW_GPUFLAG": "1"}, "passed": true, "worst_rel_l1": 1.741e-7},
+    {"env": {"STRATA_MW_GPUFLAG": "2", "STRATA_MW_IQ_SPLIT": "2"}, "passed": true, "worst_rel_l1": 1.680e-7},
+    {"env": {"STRATA_MW_GPUFLAG": "2", "STRATA_MW_IQ_T256": "1"}, "passed": true, "worst_rel_l1": 1.741e-7}
+  ],
+  "coverage_per_gpu_case": {
+    "layers": 48,
+    "real_experts_per_layer": 1,
+    "ranks": 4,
+    "decode_window_tokens": [1, 2, 3, 4],
+    "decode_services": 304,
+    "empty_services": 12,
+    "fixed_input_repeat_checks": 100,
+    "prefill_cases": 12,
+    "prefill_tokens": [1, 4, 63, 64],
+    "prefill_layers": [0, 1, 8],
+    "intermediate_bit_parity": true,
+    "gpu_reduction_vs_cpu_rank_order_bit_parity": true,
+    "nonfinite_output_rejected": true,
+    "whole_expert_relative_l1_threshold": 1e-5
+  },
+  "compute_sanitizer_memcheck": {"env": {"STRATA_MW_GPUFLAG": "2"}, "errors": 0},
+  "async_publication": {"iterations_per_consumer": 1000, "consumers": 3, "early_completions": 0},
+  "full_tp_serving": {
+    "engine_sha256": "c35277a9da8241d9341d0f8a80c5a4333fa0723275a65d897963ab9aedff2f4c",
+    "context": 256000,
+    "cache3060": 1874,
+    "shards_per_rank": [22702, 22702, 22702, 22702],
+    "m10_gib_rounded": [7.61, 7.63, 7.63, 7.61],
+    "cache_overlap": 0,
+    "load_roundtrips_passed": 4,
+    "ready_seconds": 535.3,
+    "391": true,
+    "9999": true,
+    "391_concurrent_requests": 8,
+    "prefill": {"prompt_tokens": 1509, "cached_tokens": 0, "answer": "391", "completion_tokens": 71, "http_seconds": 36.608}
+  },
+  "tp_decode_screen": {
+    "gpuflag": 2,
+    "story": [31.1, 32.0, 31.4],
+    "fib": [36.5, 35.5, 36.1],
+    "code": [37.3, 35.7, 35.9],
+    "mean_tok_s": 34.611111111111114,
+    "gpu_used_mib_after": [11407, 7913, 7932, 7935, 7916],
+    "gpu_free_mib_after": [503, 208, 190, 187, 206]
+  },
+  "normal_serving_return": {
+    "engine_sha256": "c35277a9da8241d9341d0f8a80c5a4333fa0723275a65d897963ab9aedff2f4c",
+    "tp_enabled": false,
+    "gpuflag": 0,
+    "embedding": "VRAM",
+    "config": "strata-iq2xs-embed-vram.json",
+    "ready_seconds": 456.9,
+    "load_roundtrips_passed": 4,
+    "391": true,
+    "9999": true,
+    "391_concurrent_requests": 8,
+    "prefill": {"prompt_tokens": 1509, "cached_tokens": 0, "answer": "391", "completion_tokens": 69, "http_seconds": 23.079},
+    "gpu_free_mib_final": [509, 190, 192, 203, 205],
+    "story": [37.8, 39.5, 39.5],
+    "fib": [43.9, 44.8, 44.7],
+    "code": [46.6, 45.5, 45.8],
+    "mean_tok_s": 43.12222222222222
+  },
+  "baseline_before": {
+    "embedding": "VRAM",
+    "spec": 4,
+    "context": 256000,
+    "kv": "k8v4",
+    "cache3060": 1874,
+    "m10_total_experts": 22702,
+    "engine_sha256": "cd0ce43dceec9b44911355628c3bb7ddebd30762e9bb8c18d184a0b84766f433",
+    "decode_tok_s": {
+      "story": [38.6, 39.6, 39.5],
+      "fib": [45.1, 47.3, 45.0],
+      "code": [45.8, 45.8, 45.1]
+    }
+  }
+}

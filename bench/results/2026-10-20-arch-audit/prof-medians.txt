@@ -1,0 +1,9 @@
+vlayer (us/layer, median over 51 reports): {'ring': 414.6, 'pool': 688.3, 'post': 14.3}
+layer  (us/layer, median over 51 reports): {'plan': 6.4, 'actq': 122.3, 'jobs': 14.4, 'run': 542.4}
+m10 per card medians: jobs/L distinct MB/L ideal kernel slack gup down syncwait
+CUDA1    6.6    4.6    6.3   76.0  432.0    5.6  342.0   90.0  373.0  n=67
+CUDA2    6.5    4.3    5.9   72.0  529.0    7.0  338.0  191.0   87.0  n=67
+CUDA3    6.7    4.6    6.3   76.0  586.0    7.4  345.0  241.0   56.0  n=67
+CUDA4    6.9    4.7    6.4   77.0  636.0    7.8  354.0  273.0   36.0  n=67
+decode timing (ms/window, median over 11 requests):
+  ms/win 54.27  GPUwait 19.04  host 30.46  hostCPU 23.70  draft 2.99  T 2.68

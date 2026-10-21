@@ -1,0 +1,164 @@
+[
+  {
+    "run": 1,
+    "prompt": "story",
+    "seconds": 13.19,
+    "usage": {
+      "prompt_tokens": 58,
+      "completion_tokens": 367,
+      "total_tokens": 425,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "44.9",
+      "30.9"
+    ],
+    "content_length": 1123
+  },
+  {
+    "run": 1,
+    "prompt": "fib",
+    "seconds": 15.147,
+    "usage": {
+      "prompt_tokens": 54,
+      "completion_tokens": 512,
+      "total_tokens": 566,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "45.9",
+      "36.7"
+    ],
+    "content_length": 1185
+  },
+  {
+    "run": 1,
+    "prompt": "code",
+    "seconds": 16.561,
+    "usage": {
+      "prompt_tokens": 61,
+      "completion_tokens": 512,
+      "total_tokens": 573,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "46.4",
+      "33.6"
+    ],
+    "content_length": 0
+  },
+  {
+    "run": 2,
+    "prompt": "story",
+    "seconds": 14.492,
+    "usage": {
+      "prompt_tokens": 58,
+      "completion_tokens": 412,
+      "total_tokens": 470,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "46.4",
+      "31.1"
+    ],
+    "content_length": 1480
+  },
+  {
+    "run": 2,
+    "prompt": "fib",
+    "seconds": 12.344,
+    "usage": {
+      "prompt_tokens": 54,
+      "completion_tokens": 409,
+      "total_tokens": 463,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "45.6",
+      "36.7"
+    ],
+    "content_length": 855
+  },
+  {
+    "run": 2,
+    "prompt": "code",
+    "seconds": 15.444,
+    "usage": {
+      "prompt_tokens": 61,
+      "completion_tokens": 512,
+      "total_tokens": 573,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "46.5",
+      "36.2"
+    ],
+    "content_length": 0
+  },
+  {
+    "run": 3,
+    "prompt": "story",
+    "seconds": 17.733,
+    "usage": {
+      "prompt_tokens": 58,
+      "completion_tokens": 512,
+      "total_tokens": 570,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "46.5",
+      "31.1"
+    ],
+    "content_length": 1828
+  },
+  {
+    "run": 3,
+    "prompt": "fib",
+    "seconds": 12.224,
+    "usage": {
+      "prompt_tokens": 54,
+      "completion_tokens": 409,
+      "total_tokens": 463,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "45.5",
+      "37.1"
+    ],
+    "content_length": 855
+  },
+  {
+    "run": 3,
+    "prompt": "code",
+    "seconds": 15.039,
+    "usage": {
+      "prompt_tokens": 61,
+      "completion_tokens": 512,
+      "total_tokens": 573,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "engine_rates": [
+      "46.7",
+      "37.3"
+    ],
+    "content_length": 0
+  }
+]

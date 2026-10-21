@@ -1,0 +1,102 @@
+{
+  "engine_sha256": "b6be3ea6973b869346aef4a97e8605c17d7bb293d6d1777344c965598eac1613",
+  "scope": "routed expert complement on four M10s; other model roles unchanged",
+  "spec": 4,
+  "context": 256000,
+  "kv": "k8v4",
+  "embedding": "VRAM",
+  "cache3060": 1874,
+  "m10_expert_set_size": 22702,
+  "unit": {
+    "real_layers": 48,
+    "real_experts_per_layer": 8,
+    "total_fixture_experts": 384,
+    "decode_services_per_case": 304,
+    "empty_services_per_case": 12,
+    "repeated_input_checks": 100,
+    "prefill_cases_per_case": 12,
+    "bit_parity_with_legacy_tp": true,
+    "worst_relative_l1_to_whole_expert": 1.482e-7,
+    "immutable_fallback_input": true,
+    "overlap_rejected": "one outstanding allowed (double-buffered), second refused",
+    "abort_releases_consumer": true,
+    "scatter_bounds_checked": true,
+    "failed_source_cleanup_checked": true,
+    "cli_rejection_cases": 23,
+    "publication_consumers": 5,
+    "publication_iterations_per_consumer": 1000,
+    "early_completions": 0,
+    "wire16_gate": "L1 < 5e-3 vs legacy on every window"
+   },
+   "memcheck": {"reference_errors": 0, "direct_errors": 0},
+   "normal_before": {
+     "engine_sha256": "c35277a9da8241d9341d0f8a80c5a4333fa0723275a65d897963ab9aedff2f4c",
+     "story": [39.7, 36.8, 39.6],
+     "fib": [44.8, 45.1, 45.1],
+     "code": [45.7, 44.2, 45.8]
+   },
+   "meta_direct_serving": {
+     "env": {"STRATA_MW_GPUFLAG": "2", "STRATA_MW_META_DIRECT": "1", "STRATA_MW_META_HEAVY_FIRST": "0"},
+     "ready_seconds": 502.7,
+     "rank_gib": [7.612, 7.630, 7.632, 7.614],
+     "shards_per_rank": [22702, 22702, 22702, 22702],
+     "cache_overlap": 0,
+     "load_roundtrips_passed": 4,
+     "391": true,
+     "9999": true,
+     "391_concurrent_requests": 8,
+     "prefill": {"prompt_tokens": 1509, "cached_tokens": 0, "answer": "391", "completion_tokens": 69, "http_seconds": 36.426},
+     "decode_tok_s": {
+       "story": [31.2, 32.2, 32.1],
+       "fib": [37.1, 37.6, 37.9],
+       "code": [36.9, 37.4, 37.2]
+     },
+     "mean_tok_s": 35.511111111111114
+   },
+   "legacy_tp_serving": {
+     "env": {"STRATA_MW_GPUFLAG": "2", "STRATA_MW_META_LEGACY": "1"},
+     "ready_seconds": 464.7,
+     "shards_per_rank": [22702, 22702, 22702, 22702],
+     "cache_overlap": 0,
+     "load_roundtrips_passed": 4,
+     "391": true,
+     "9999": true,
+     "391_concurrent_requests": 8,
+     "decode_tok_s": {
+       "story": [30.9, 31.1, 31.1],
+       "fib": [36.7, 36.7, 37.1],
+       "code": [33.6, 36.2, 37.3]
+     }
+   },
+   "meta_opt_serving": {
+     "env": {"STRATA_MW_GPUFLAG": "2", "STRATA_MW_META_DIRECT": "1", "STRATA_MW_META_HEAVY_FIRST": "1", "STRATA_MW_META_WIRE16": "1"},
+     "ready_seconds": 467.0,
+     "shards_per_rank": 22702,
+     "cache_overlap": 0,
+     "391": true,
+     "9999": true,
+     "391_concurrent_requests": 8,
+     "prefill": {"prompt_tokens": 1509, "answer": "391", "http_seconds": 36.459},
+     "ttft_s_unique_1509": 47.951,
+     "decode_tok_s": {
+       "story": [31.0, 32.1, 32.2],
+       "fib": [37.0, 37.6, 37.6],
+       "code": [36.9, 37.3, 37.3]
+     },
+     "mean_tok_s": 35.44444444444444
+   },
+   "normal_after": {
+     "engine_sha256": "b6be3ea6973b869346aef4a97e8605c17d7bb293d6d1777344c965598eac1613",
+     "tp_enabled": false,
+     "gpuflag": 0,
+     "391": true,
+     "9999": true,
+     "391_concurrent_requests": 8,
+     "decode_tok_s": {
+       "story": [37.6, 39.6, 39.3],
+       "fib": [46.8, 44.4, 44.7],
+       "code": [40.9, 45.6, 46.0]
+     },
+     "mean_tok_s": 42.766666666666666
+   }
+ }

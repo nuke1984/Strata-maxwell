@@ -1,0 +1,381 @@
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.39 distinct/L 4.90, 6.726 MB/L, ideal 81 us/L, kernel 637 us/L (slack 7.87x) [gup 381 + down 256], sync-wait 63 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.12 distinct/L 4.86, 6.702 MB/L, ideal 81 us/L, kernel 486 us/L (slack 6.02x) [gup 371 + down 115], sync-wait 400 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.11 distinct/L 4.81, 6.608 MB/L, ideal 80 us/L, kernel 638 us/L (slack 8.01x) [gup 364 + down 274], sync-wait 35 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.55 distinct/L 4.50, 6.189 MB/L, ideal 75 us/L, kernel 545 us/L (slack 7.31x) [gup 342 + down 203], sync-wait 80 us/L
+MWPROF layer 1920: plan 8.2 actq 160.5 jobs 14.8 run 540.0 us/layer (dispatch span 723.5)
+MWPROF vlayer 1920: ring 461.4 pool 724.6 post 75.9 us/layer
+strata decode timing: 34 windows, avg T 2.44, 1.88 tokens/window, 53.38 ms/window = verify 48.93 (GPU-reach wait 18.55 + per-layer host 26.57 [plan 0.30 actq 5.41 jobs 0.49 CPU 18.60] + stage 1.74) + commit/emit 0.02 + draft 4.42; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 6.87, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.98 distinct/L 5.36, 7.357 MB/L, ideal 89 us/L, kernel 660 us/L (slack 7.44x) [gup 408 + down 251], sync-wait 68 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.94 distinct/L 5.37, 7.396 MB/L, ideal 89 us/L, kernel 514 us/L (slack 5.76x) [gup 408 + down 106], sync-wait 447 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.76 distinct/L 5.31, 7.297 MB/L, ideal 88 us/L, kernel 694 us/L (slack 7.89x) [gup 394 + down 300], sync-wait 36 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.04 distinct/L 4.86, 6.690 MB/L, ideal 81 us/L, kernel 584 us/L (slack 7.24x) [gup 365 + down 219], sync-wait 77 us/L
+MWPROF layer 3840: plan 7.7 actq 141.6 jobs 14.7 run 539.4 us/layer (dispatch span 703.3)
+MWPROF vlayer 3840: ring 452.1 pool 704.4 post 51.7 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.42 distinct/L 3.60, 4.945 MB/L, ideal 60 us/L, kernel 392 us/L (slack 6.59x) [gup 241 + down 152], sync-wait 41 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.48 distinct/L 3.57, 4.895 MB/L, ideal 59 us/L, kernel 309 us/L (slack 5.24x) [gup 244 + down 65], sync-wait 254 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.13 distinct/L 3.32, 4.572 MB/L, ideal 55 us/L, kernel 369 us/L (slack 6.69x) [gup 228 + down 141], sync-wait 59 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.54 distinct/L 3.64, 4.993 MB/L, ideal 60 us/L, kernel 444 us/L (slack 7.38x) [gup 243 + down 201], sync-wait 23 us/L
+MWPROF layer 5760: plan 7.1 actq 133.7 jobs 14.3 run 533.6 us/layer (dispatch span 688.7)
+MWPROF vlayer 5760: ring 433.6 pool 689.7 post 42.9 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.68 distinct/L 4.55, 6.253 MB/L, ideal 75 us/L, kernel 629 us/L (slack 8.35x) [gup 345 + down 284], sync-wait 47 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.35 distinct/L 4.85, 6.707 MB/L, ideal 81 us/L, kernel 480 us/L (slack 5.94x) [gup 381 + down 99], sync-wait 418 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.19 distinct/L 4.73, 6.487 MB/L, ideal 78 us/L, kernel 583 us/L (slack 7.46x) [gup 371 + down 213], sync-wait 100 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.13 distinct/L 4.85, 6.650 MB/L, ideal 80 us/L, kernel 666 us/L (slack 8.31x) [gup 362 + down 304], sync-wait 36 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.18 distinct/L 4.95, 6.762 MB/L, ideal 81 us/L, kernel 619 us/L (slack 7.59x) [gup 366 + down 252], sync-wait 65 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.92 distinct/L 4.80, 6.647 MB/L, ideal 80 us/L, kernel 456 us/L (slack 5.69x) [gup 362 + down 94], sync-wait 395 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.74 distinct/L 4.68, 6.425 MB/L, ideal 77 us/L, kernel 548 us/L (slack 7.08x) [gup 349 + down 199], sync-wait 94 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.35 distinct/L 5.10, 6.997 MB/L, ideal 84 us/L, kernel 660 us/L (slack 7.83x) [gup 373 + down 287], sync-wait 48 us/L
+MWPROF layer 7680: plan 7.0 actq 131.4 jobs 14.7 run 552.6 us/layer (dispatch span 705.8)
+MWPROF vlayer 7680: ring 428.7 pool 706.8 post 37.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.67 distinct/L 4.00, 5.459 MB/L, ideal 66 us/L, kernel 515 us/L (slack 7.82x) [gup 297 + down 218], sync-wait 55 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.50 distinct/L 3.98, 5.528 MB/L, ideal 67 us/L, kernel 371 us/L (slack 5.58x) [gup 294 + down 77], sync-wait 316 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.46 distinct/L 3.91, 5.362 MB/L, ideal 65 us/L, kernel 449 us/L (slack 6.96x) [gup 289 + down 161], sync-wait 92 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.46 distinct/L 3.96, 5.419 MB/L, ideal 65 us/L, kernel 531 us/L (slack 8.13x) [gup 285 + down 246], sync-wait 31 us/L
+MWPROF layer 9600: plan 6.8 actq 128.9 jobs 14.4 run 547.0 us/layer (dispatch span 697.1)
+MWPROF vlayer 9600: ring 422.2 pool 698.1 post 34.8 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.67 distinct/L 4.47, 6.116 MB/L, ideal 74 us/L, kernel 584 us/L (slack 7.93x) [gup 343 + down 241], sync-wait 59 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.49 distinct/L 4.48, 6.199 MB/L, ideal 75 us/L, kernel 429 us/L (slack 5.75x) [gup 340 + down 89], sync-wait 370 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.82 distinct/L 4.53, 6.218 MB/L, ideal 75 us/L, kernel 540 us/L (slack 7.21x) [gup 353 + down 188], sync-wait 105 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.94 distinct/L 4.62, 6.327 MB/L, ideal 76 us/L, kernel 642 us/L (slack 8.42x) [gup 354 + down 288], sync-wait 51 us/L
+MWPROF layer 11520: plan 6.7 actq 127.5 jobs 14.4 run 546.8 us/layer (dispatch span 695.4)
+MWPROF vlayer 11520: ring 418.6 pool 696.4 post 32.5 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.37 distinct/L 4.37, 5.982 MB/L, ideal 72 us/L, kernel 557 us/L (slack 7.72x) [gup 329 + down 227], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.13 distinct/L 4.35, 6.034 MB/L, ideal 73 us/L, kernel 409 us/L (slack 5.62x) [gup 324 + down 85], sync-wait 351 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.47 distinct/L 4.49, 6.146 MB/L, ideal 74 us/L, kernel 587 us/L (slack 7.92x) [gup 334 + down 253], sync-wait 42 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.92 distinct/L 4.11, 5.638 MB/L, ideal 68 us/L, kernel 490 us/L (slack 7.21x) [gup 310 + down 180], sync-wait 88 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.96 distinct/L 4.05, 5.534 MB/L, ideal 67 us/L, kernel 540 us/L (slack 8.10x) [gup 309 + down 231], sync-wait 51 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.87 distinct/L 4.05, 5.616 MB/L, ideal 68 us/L, kernel 393 us/L (slack 5.81x) [gup 311 + down 82], sync-wait 336 us/L
+MWPROF layer 13440: plan 6.5 actq 126.0 jobs 14.3 run 542.9 us/layer (dispatch span 689.6)
+MWPROF vlayer 13440: ring 415.5 pool 690.6 post 29.9 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.02 distinct/L 4.00, 5.487 MB/L, ideal 66 us/L, kernel 477 us/L (slack 7.22x) [gup 316 + down 162], sync-wait 100 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.96 distinct/L 4.05, 5.556 MB/L, ideal 67 us/L, kernel 562 us/L (slack 8.40x) [gup 309 + down 254], sync-wait 35 us/L
+strata decode timing: 252 windows, avg T 2.71, 2.03 tokens/window, 57.22 ms/window = verify 53.47 (GPU-reach wait 19.04 + per-layer host 32.64 [plan 0.29 actq 5.67 jobs 0.64 CPU 25.00] + stage 0.99) + commit/emit 0.03 + draft 3.72; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.79, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.80 distinct/L 3.98, 5.449 MB/L, ideal 66 us/L, kernel 518 us/L (slack 7.88x) [gup 303 + down 214], sync-wait 54 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.94 distinct/L 4.24, 5.866 MB/L, ideal 71 us/L, kernel 397 us/L (slack 5.61x) [gup 314 + down 83], sync-wait 339 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.24 distinct/L 4.24, 5.818 MB/L, ideal 70 us/L, kernel 499 us/L (slack 7.11x) [gup 326 + down 172], sync-wait 97 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.37 distinct/L 4.29, 5.891 MB/L, ideal 71 us/L, kernel 603 us/L (slack 8.50x) [gup 328 + down 275], sync-wait 35 us/L
+MWPROF layer 15360: plan 6.5 actq 125.4 jobs 14.3 run 545.9 us/layer (dispatch span 692.2)
+MWPROF vlayer 15360: ring 418.3 pool 693.2 post 27.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.01 distinct/L 4.81, 6.594 MB/L, ideal 79 us/L, kernel 586 us/L (slack 7.37x) [gup 362 + down 224], sync-wait 62 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.56 distinct/L 4.58, 6.299 MB/L, ideal 76 us/L, kernel 432 us/L (slack 5.70x) [gup 342 + down 90], sync-wait 373 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.78 distinct/L 4.21, 5.796 MB/L, ideal 70 us/L, kernel 483 us/L (slack 6.92x) [gup 306 + down 178], sync-wait 75 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.13 distinct/L 4.45, 6.120 MB/L, ideal 74 us/L, kernel 567 us/L (slack 7.68x) [gup 319 + down 247], sync-wait 35 us/L
+MWPROF layer 17280: plan 6.5 actq 124.9 jobs 14.3 run 546.5 us/layer (dispatch span 692.3)
+MWPROF vlayer 17280: ring 417.2 pool 693.3 post 25.5 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.13 distinct/L 5.86, 8.019 MB/L, ideal 97 us/L, kernel 683 us/L (slack 7.07x) [gup 415 + down 268], sync-wait 63 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.15 distinct/L 5.80, 7.972 MB/L, ideal 96 us/L, kernel 526 us/L (slack 5.47x) [gup 417 + down 109], sync-wait 460 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.33 distinct/L 5.36, 7.372 MB/L, ideal 89 us/L, kernel 610 us/L (slack 6.86x) [gup 378 + down 232], sync-wait 82 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.78 distinct/L 6.11, 8.391 MB/L, ideal 101 us/L, kernel 750 us/L (slack 7.42x) [gup 443 + down 306], sync-wait 59 us/L
+MWPROF layer 19200: plan 6.7 actq 125.9 jobs 14.9 run 561.7 us/layer (dispatch span 709.2)
+MWPROF vlayer 19200: ring 419.1 pool 710.2 post 23.9 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.41 distinct/L 6.24, 8.539 MB/L, ideal 103 us/L, kernel 718 us/L (slack 6.98x) [gup 427 + down 291], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.83 distinct/L 6.52, 8.950 MB/L, ideal 108 us/L, kernel 566 us/L (slack 5.25x) [gup 449 + down 117], sync-wait 497 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.75 distinct/L 6.51, 8.954 MB/L, ideal 108 us/L, kernel 685 us/L (slack 6.34x) [gup 448 + down 237], sync-wait 110 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 9.05 distinct/L 6.66, 9.137 MB/L, ideal 110 us/L, kernel 781 us/L (slack 7.10x) [gup 458 + down 323], sync-wait 42 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.71 distinct/L 6.15, 8.428 MB/L, ideal 102 us/L, kernel 727 us/L (slack 7.16x) [gup 442 + down 285], sync-wait 65 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.76 distinct/L 6.13, 8.429 MB/L, ideal 102 us/L, kernel 562 us/L (slack 5.54x) [gup 446 + down 116], sync-wait 495 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.80 distinct/L 5.46, 7.499 MB/L, ideal 90 us/L, kernel 640 us/L (slack 7.08x) [gup 402 + down 238], sync-wait 89 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.80 distinct/L 6.03, 8.255 MB/L, ideal 99 us/L, kernel 768 us/L (slack 7.72x) [gup 444 + down 324], sync-wait 49 us/L
+MWPROF layer 21120: plan 6.7 actq 126.5 jobs 15.3 run 573.7 us/layer (dispatch span 722.1)
+MWPROF vlayer 21120: ring 422.5 pool 723.1 post 22.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.58 distinct/L 5.22, 7.152 MB/L, ideal 86 us/L, kernel 647 us/L (slack 7.51x) [gup 387 + down 260], sync-wait 66 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.25 distinct/L 5.05, 6.948 MB/L, ideal 84 us/L, kernel 474 us/L (slack 5.66x) [gup 376 + down 98], sync-wait 414 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.12 distinct/L 4.98, 6.865 MB/L, ideal 83 us/L, kernel 568 us/L (slack 6.87x) [gup 368 + down 200], sync-wait 95 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.00 distinct/L 5.48, 7.504 MB/L, ideal 90 us/L, kernel 701 us/L (slack 7.75x) [gup 406 + down 295], sync-wait 55 us/L
+MWPROF layer 23040: plan 6.7 actq 126.5 jobs 15.4 run 580.0 us/layer (dispatch span 728.7)
+MWPROF vlayer 23040: ring 423.0 pool 729.7 post 21.5 us/layer
+strata decode timing: 165 windows, avg T 3.46, 3.01 tokens/window, 65.02 ms/window = verify 61.26 (GPU-reach wait 20.70 + per-layer host 38.72 [plan 0.34 actq 6.16 jobs 0.84 CPU 30.89] + stage 0.43) + commit/emit 0.03 + draft 3.72; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.26, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 9.18 distinct/L 5.90, 8.079 MB/L, ideal 97 us/L, kernel 762 us/L (slack 7.83x) [gup 463 + down 298], sync-wait 75 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.96 distinct/L 5.83, 8.020 MB/L, ideal 97 us/L, kernel 574 us/L (slack 5.94x) [gup 456 + down 118], sync-wait 506 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.37 distinct/L 5.47, 7.539 MB/L, ideal 91 us/L, kernel 673 us/L (slack 7.41x) [gup 427 + down 247], sync-wait 100 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.87 distinct/L 5.78, 7.940 MB/L, ideal 96 us/L, kernel 794 us/L (slack 8.29x) [gup 448 + down 346], sync-wait 44 us/L
+MWPROF layer 24960: plan 6.8 actq 126.4 jobs 15.4 run 577.8 us/layer (dispatch span 726.3)
+MWPROF vlayer 24960: ring 424.9 pool 727.3 post 20.6 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.97 distinct/L 3.81, 5.224 MB/L, ideal 63 us/L, kernel 437 us/L (slack 6.95x) [gup 265 + down 172], sync-wait 41 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.64 distinct/L 3.56, 4.904 MB/L, ideal 59 us/L, kernel 319 us/L (slack 5.39x) [gup 251 + down 67], sync-wait 265 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.37 distinct/L 3.52, 4.833 MB/L, ideal 58 us/L, kernel 368 us/L (slack 6.33x) [gup 239 + down 129], sync-wait 72 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.58 distinct/L 3.65, 5.010 MB/L, ideal 60 us/L, kernel 436 us/L (slack 7.22x) [gup 248 + down 188], sync-wait 29 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.05 distinct/L 3.36, 4.585 MB/L, ideal 55 us/L, kernel 361 us/L (slack 6.54x) [gup 222 + down 140], sync-wait 37 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.01 distinct/L 3.27, 4.504 MB/L, ideal 54 us/L, kernel 281 us/L (slack 5.18x) [gup 221 + down 60], sync-wait 230 us/L
+MWPROF layer 26880: plan 6.7 actq 125.0 jobs 15.0 run 562.0 us/layer (dispatch span 708.7)
+MWPROF vlayer 26880: ring 421.2 pool 709.7 post 20.0 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.10 distinct/L 3.39, 4.665 MB/L, ideal 56 us/L, kernel 352 us/L (slack 6.25x) [gup 227 + down 125], sync-wait 63 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.36 distinct/L 3.56, 4.875 MB/L, ideal 59 us/L, kernel 417 us/L (slack 7.10x) [gup 237 + down 180], sync-wait 25 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.23 distinct/L 3.43, 4.683 MB/L, ideal 56 us/L, kernel 383 us/L (slack 6.80x) [gup 230 + down 154], sync-wait 37 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.99 distinct/L 3.31, 4.554 MB/L, ideal 55 us/L, kernel 280 us/L (slack 5.09x) [gup 220 + down 60], sync-wait 229 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 3.59 distinct/L 2.96, 4.079 MB/L, ideal 49 us/L, kernel 315 us/L (slack 6.40x) [gup 202 + down 113], sync-wait 62 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 3.84 distinct/L 3.15, 4.307 MB/L, ideal 52 us/L, kernel 375 us/L (slack 7.22x) [gup 213 + down 162], sync-wait 27 us/L
+MWPROF layer 28800: plan 6.5 actq 123.5 jobs 14.5 run 546.3 us/layer (dispatch span 690.9)
+MWPROF vlayer 28800: ring 417.2 pool 691.8 post 19.5 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.87 distinct/L 4.85, 6.641 MB/L, ideal 80 us/L, kernel 600 us/L (slack 7.50x) [gup 353 + down 247], sync-wait 47 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.01 distinct/L 4.89, 6.716 MB/L, ideal 81 us/L, kernel 457 us/L (slack 5.65x) [gup 362 + down 95], sync-wait 396 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.11 distinct/L 5.56, 7.653 MB/L, ideal 92 us/L, kernel 707 us/L (slack 7.66x) [gup 416 + down 290], sync-wait 47 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.63 distinct/L 5.26, 7.227 MB/L, ideal 87 us/L, kernel 605 us/L (slack 6.95x) [gup 393 + down 212], sync-wait 108 us/L
+MWPROF layer 30720: plan 6.6 actq 124.3 jobs 14.9 run 558.3 us/layer (dispatch span 704.1)
+MWPROF vlayer 30720: ring 419.2 pool 705.1 post 19.0 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.51 distinct/L 6.03, 8.266 MB/L, ideal 100 us/L, kernel 744 us/L (slack 7.47x) [gup 431 + down 313], sync-wait 52 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 9.09 distinct/L 6.25, 8.579 MB/L, ideal 103 us/L, kernel 581 us/L (slack 5.62x) [gup 461 + down 120], sync-wait 513 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.89 distinct/L 6.07, 8.356 MB/L, ideal 101 us/L, kernel 784 us/L (slack 7.79x) [gup 451 + down 333], sync-wait 47 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.58 distinct/L 5.93, 8.138 MB/L, ideal 98 us/L, kernel 675 us/L (slack 6.89x) [gup 437 + down 239], sync-wait 104 us/L
+MWPROF layer 32640: plan 6.6 actq 123.7 jobs 14.7 run 553.5 us/layer (dispatch span 698.6)
+MWPROF vlayer 32640: ring 417.8 pool 699.5 post 18.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.93 distinct/L 3.86, 5.272 MB/L, ideal 64 us/L, kernel 430 us/L (slack 6.76x) [gup 263 + down 167], sync-wait 42 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.65 distinct/L 3.65, 5.019 MB/L, ideal 60 us/L, kernel 318 us/L (slack 5.25x) [gup 250 + down 67], sync-wait 265 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.26 distinct/L 3.48, 4.763 MB/L, ideal 57 us/L, kernel 407 us/L (slack 7.10x) [gup 233 + down 175], sync-wait 30 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 3.93 distinct/L 3.31, 4.549 MB/L, ideal 55 us/L, kernel 337 us/L (slack 6.14x) [gup 219 + down 118], sync-wait 68 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.83 distinct/L 3.18, 4.367 MB/L, ideal 53 us/L, kernel 270 us/L (slack 5.13x) [gup 212 + down 58], sync-wait 220 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 3.93 distinct/L 3.26, 4.460 MB/L, ideal 54 us/L, kernel 359 us/L (slack 6.68x) [gup 216 + down 143], sync-wait 34 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 3.94 distinct/L 3.25, 4.448 MB/L, ideal 54 us/L, kernel 378 us/L (slack 7.04x) [gup 217 + down 160], sync-wait 28 us/L
+MWPROF layer 34560: plan 6.5 actq 122.6 jobs 14.3 run 541.0 us/layer (dispatch span 684.4)
+MWPROF vlayer 34560: ring 414.9 pool 685.4 post 18.0 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 3.71 distinct/L 3.09, 4.238 MB/L, ideal 51 us/L, kernel 321 us/L (slack 6.28x) [gup 207 + down 114], sync-wait 62 us/L
+strata decode timing: 231 windows, avg T 2.52, 2.22 tokens/window, 51.09 ms/window = verify 48.20 (GPU-reach wait 18.62 + per-layer host 27.84 [plan 0.27 actq 5.41 jobs 0.55 CPU 21.04] + stage 0.51) + commit/emit 0.02 + draft 2.87; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 5.48, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.46 distinct/L 5.00, 6.872 MB/L, ideal 83 us/L, kernel 624 us/L (slack 7.53x) [gup 383 + down 240], sync-wait 64 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.45 distinct/L 5.09, 7.003 MB/L, ideal 84 us/L, kernel 485 us/L (slack 5.74x) [gup 384 + down 100], sync-wait 418 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.29 distinct/L 4.99, 6.855 MB/L, ideal 83 us/L, kernel 667 us/L (slack 8.07x) [gup 375 + down 292], sync-wait 34 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.82 distinct/L 4.69, 6.454 MB/L, ideal 78 us/L, kernel 565 us/L (slack 7.27x) [gup 354 + down 211], sync-wait 80 us/L
+MWPROF layer 36480: plan 6.5 actq 122.6 jobs 14.4 run 540.6 us/layer (dispatch span 684.2)
+MWPROF vlayer 36480: ring 416.3 pool 685.1 post 17.2 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.36 distinct/L 3.53, 4.859 MB/L, ideal 59 us/L, kernel 401 us/L (slack 6.85x) [gup 237 + down 164], sync-wait 37 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.52 distinct/L 3.56, 4.887 MB/L, ideal 59 us/L, kernel 312 us/L (slack 5.29x) [gup 246 + down 66], sync-wait 258 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.79 distinct/L 3.76, 5.167 MB/L, ideal 62 us/L, kernel 464 us/L (slack 7.45x) [gup 256 + down 207], sync-wait 25 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.63 distinct/L 3.56, 4.898 MB/L, ideal 59 us/L, kernel 406 us/L (slack 6.89x) [gup 251 + down 155], sync-wait 66 us/L
+MWPROF layer 38400: plan 6.5 actq 122.3 jobs 14.3 run 537.1 us/layer (dispatch span 680.1)
+MWPROF vlayer 38400: ring 414.6 pool 681.0 post 16.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.38 distinct/L 3.94, 5.407 MB/L, ideal 65 us/L, kernel 510 us/L (slack 7.82x) [gup 284 + down 226], sync-wait 39 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.99 distinct/L 4.28, 5.927 MB/L, ideal 71 us/L, kernel 401 us/L (slack 5.62x) [gup 317 + down 84], sync-wait 342 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.68 distinct/L 4.19, 5.739 MB/L, ideal 69 us/L, kernel 539 us/L (slack 7.79x) [gup 297 + down 241], sync-wait 33 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.60 distinct/L 4.05, 5.554 MB/L, ideal 67 us/L, kernel 460 us/L (slack 6.88x) [gup 296 + down 164], sync-wait 83 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.21 distinct/L 4.32, 5.901 MB/L, ideal 71 us/L, kernel 539 us/L (slack 7.57x) [gup 322 + down 216], sync-wait 58 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.83 distinct/L 4.12, 5.710 MB/L, ideal 69 us/L, kernel 390 us/L (slack 5.67x) [gup 309 + down 81], sync-wait 334 us/L
+MWPROF layer 40320: plan 6.4 actq 121.9 jobs 14.2 run 535.4 us/layer (dispatch span 678.0)
+MWPROF vlayer 40320: ring 413.5 pool 679.0 post 16.1 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.87 distinct/L 4.13, 5.662 MB/L, ideal 68 us/L, kernel 551 us/L (slack 8.07x) [gup 305 + down 246], sync-wait 39 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.59 distinct/L 3.95, 5.407 MB/L, ideal 65 us/L, kernel 454 us/L (slack 6.97x) [gup 294 + down 160], sync-wait 87 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.19 distinct/L 4.48, 6.125 MB/L, ideal 74 us/L, kernel 534 us/L (slack 7.24x) [gup 322 + down 212], sync-wait 54 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.71 distinct/L 4.23, 5.865 MB/L, ideal 71 us/L, kernel 384 us/L (slack 5.43x) [gup 304 + down 80], sync-wait 327 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.09 distinct/L 4.43, 6.060 MB/L, ideal 73 us/L, kernel 573 us/L (slack 7.85x) [gup 315 + down 258], sync-wait 34 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.16 distinct/L 4.33, 5.945 MB/L, ideal 72 us/L, kernel 490 us/L (slack 6.84x) [gup 323 + down 167], sync-wait 95 us/L
+MWPROF layer 42240: plan 6.4 actq 121.8 jobs 14.2 run 534.5 us/layer (dispatch span 676.9)
+MWPROF vlayer 42240: ring 412.7 pool 677.9 post 15.7 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.86 distinct/L 4.60, 6.293 MB/L, ideal 76 us/L, kernel 604 us/L (slack 7.97x) [gup 352 + down 252], sync-wait 60 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.72 distinct/L 4.56, 6.324 MB/L, ideal 76 us/L, kernel 443 us/L (slack 5.81x) [gup 351 + down 92], sync-wait 383 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.02 distinct/L 4.70, 6.440 MB/L, ideal 78 us/L, kernel 655 us/L (slack 8.44x) [gup 359 + down 296], sync-wait 39 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.89 distinct/L 4.49, 6.159 MB/L, ideal 74 us/L, kernel 547 us/L (slack 7.37x) [gup 355 + down 192], sync-wait 111 us/L
+MWPROF layer 44160: plan 6.4 actq 121.9 jobs 14.3 run 537.5 us/layer (dispatch span 680.1)
+MWPROF vlayer 44160: ring 412.9 pool 681.0 post 15.5 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.03 distinct/L 4.64, 6.348 MB/L, ideal 76 us/L, kernel 634 us/L (slack 8.29x) [gup 360 + down 274], sync-wait 63 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.06 distinct/L 4.77, 6.604 MB/L, ideal 80 us/L, kernel 464 us/L (slack 5.83x) [gup 368 + down 96], sync-wait 403 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.98 distinct/L 4.65, 6.375 MB/L, ideal 77 us/L, kernel 666 us/L (slack 8.67x) [gup 357 + down 308], sync-wait 36 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.22 distinct/L 4.71, 6.466 MB/L, ideal 78 us/L, kernel 582 us/L (slack 7.47x) [gup 371 + down 211], sync-wait 111 us/L
+MWPROF layer 46080: plan 6.3 actq 121.8 jobs 14.2 run 537.8 us/layer (dispatch span 680.1)
+MWPROF vlayer 46080: ring 412.5 pool 681.1 post 15.3 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.00 distinct/L 4.25, 5.791 MB/L, ideal 70 us/L, kernel 523 us/L (slack 7.50x) [gup 311 + down 212], sync-wait 53 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.79 distinct/L 4.22, 5.844 MB/L, ideal 70 us/L, kernel 388 us/L (slack 5.52x) [gup 308 + down 81], sync-wait 332 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.78 distinct/L 4.17, 5.707 MB/L, ideal 69 us/L, kernel 545 us/L (slack 7.92x) [gup 300 + down 245], sync-wait 32 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.52 distinct/L 3.97, 5.462 MB/L, ideal 66 us/L, kernel 462 us/L (slack 7.02x) [gup 293 + down 169], sync-wait 80 us/L
+strata decode timing: 238 windows, avg T 2.68, 2.00 tokens/window, 55.43 ms/window = verify 52.41 (GPU-reach wait 19.02 + per-layer host 31.64 [plan 0.28 actq 5.66 jobs 0.65 CPU 24.66] + stage 0.34) + commit/emit 0.03 + draft 2.99; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.64, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.38 distinct/L 5.56, 7.625 MB/L, ideal 92 us/L, kernel 689 us/L (slack 7.49x) [gup 425 + down 263], sync-wait 71 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.98 distinct/L 5.46, 7.521 MB/L, ideal 91 us/L, kernel 517 us/L (slack 5.71x) [gup 410 + down 107], sync-wait 451 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.11 distinct/L 5.58, 7.672 MB/L, ideal 92 us/L, kernel 725 us/L (slack 7.84x) [gup 413 + down 312], sync-wait 42 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.40 distinct/L 5.18, 7.129 MB/L, ideal 86 us/L, kernel 592 us/L (slack 6.90x) [gup 383 + down 210], sync-wait 88 us/L
+MWPROF layer 48000: plan 6.4 actq 122.0 jobs 14.3 run 540.5 us/layer (dispatch span 683.3)
+MWPROF vlayer 48000: ring 414.2 pool 684.3 post 14.8 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.60 distinct/L 4.70, 6.442 MB/L, ideal 78 us/L, kernel 577 us/L (slack 7.43x) [gup 342 + down 235], sync-wait 58 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.94 distinct/L 4.86, 6.673 MB/L, ideal 80 us/L, kernel 454 us/L (slack 5.64x) [gup 359 + down 94], sync-wait 392 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.81 distinct/L 5.49, 7.542 MB/L, ideal 91 us/L, kernel 678 us/L (slack 7.47x) [gup 398 + down 280], sync-wait 52 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.76 distinct/L 4.96, 6.814 MB/L, ideal 82 us/L, kernel 574 us/L (slack 6.98x) [gup 351 + down 222], sync-wait 79 us/L
+MWPROF layer 49920: plan 6.4 actq 122.3 jobs 14.5 run 544.2 us/layer (dispatch span 687.3)
+MWPROF vlayer 49920: ring 414.4 pool 688.3 post 14.3 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.50 distinct/L 6.12, 8.376 MB/L, ideal 101 us/L, kernel 716 us/L (slack 7.10x) [gup 431 + down 285], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.50 distinct/L 6.01, 8.264 MB/L, ideal 100 us/L, kernel 548 us/L (slack 5.51x) [gup 435 + down 113], sync-wait 483 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.87 distinct/L 6.07, 8.323 MB/L, ideal 100 us/L, kernel 765 us/L (slack 7.63x) [gup 448 + down 317], sync-wait 48 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.25 distinct/L 5.75, 7.910 MB/L, ideal 95 us/L, kernel 654 us/L (slack 6.86x) [gup 421 + down 233], sync-wait 109 us/L
+MWPROF layer 51840: plan 6.5 actq 122.7 jobs 14.7 run 549.8 us/layer (dispatch span 693.7)
+MWPROF vlayer 51840: ring 415.4 pool 694.7 post 13.8 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.10 distinct/L 6.10, 8.356 MB/L, ideal 101 us/L, kernel 685 us/L (slack 6.80x) [gup 412 + down 273], sync-wait 54 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.35 distinct/L 6.33, 8.706 MB/L, ideal 105 us/L, kernel 538 us/L (slack 5.13x) [gup 427 + down 111], sync-wait 471 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.09 distinct/L 5.98, 8.175 MB/L, ideal 99 us/L, kernel 710 us/L (slack 7.21x) [gup 412 + down 298], sync-wait 36 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.73 distinct/L 5.81, 7.997 MB/L, ideal 96 us/L, kernel 613 us/L (slack 6.36x) [gup 399 + down 214], sync-wait 87 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.82 distinct/L 5.31, 7.280 MB/L, ideal 88 us/L, kernel 669 us/L (slack 7.63x) [gup 399 + down 271], sync-wait 60 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.84 distinct/L 5.28, 7.249 MB/L, ideal 87 us/L, kernel 508 us/L (slack 5.82x) [gup 403 + down 105], sync-wait 444 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.42 distinct/L 5.65, 7.756 MB/L, ideal 93 us/L, kernel 737 us/L (slack 7.88x) [gup 426 + down 310], sync-wait 59 us/L
+MWPROF layer 53760: plan 6.5 actq 123.0 jobs 14.8 run 553.7 us/layer (dispatch span 697.9)
+MWPROF vlayer 53760: ring 415.9 pool 698.9 post 13.5 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.71 distinct/L 5.23, 7.190 MB/L, ideal 87 us/L, kernel 612 us/L (slack 7.06x) [gup 395 + down 217], sync-wait 106 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.47 distinct/L 5.21, 7.146 MB/L, ideal 86 us/L, kernel 632 us/L (slack 7.34x) [gup 382 + down 250], sync-wait 66 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.92 distinct/L 4.85, 6.683 MB/L, ideal 81 us/L, kernel 455 us/L (slack 5.65x) [gup 361 + down 94], sync-wait 396 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.13 distinct/L 5.04, 6.912 MB/L, ideal 83 us/L, kernel 642 us/L (slack 7.71x) [gup 366 + down 276], sync-wait 40 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.57 distinct/L 4.68, 6.438 MB/L, ideal 78 us/L, kernel 535 us/L (slack 6.90x) [gup 343 + down 192], sync-wait 88 us/L
+MWPROF layer 55680: plan 6.5 actq 123.0 jobs 14.8 run 555.3 us/layer (dispatch span 699.5)
+MWPROF vlayer 55680: ring 416.0 pool 700.5 post 13.2 us/layer
+strata decode timing: 181 windows, avg T 3.38, 2.77 tokens/window, 63.44 ms/window = verify 59.91 (GPU-reach wait 20.37 + per-layer host 37.76 [plan 0.33 actq 6.13 jobs 0.83 CPU 30.28] + stage 0.13) + commit/emit 0.03 + draft 3.50; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.11, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.62 distinct/L 5.55, 7.612 MB/L, ideal 92 us/L, kernel 726 us/L (slack 7.92x) [gup 437 + down 289], sync-wait 70 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.84 distinct/L 5.72, 7.884 MB/L, ideal 95 us/L, kernel 567 us/L (slack 5.97x) [gup 451 + down 117], sync-wait 498 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.56 distinct/L 5.57, 7.662 MB/L, ideal 92 us/L, kernel 774 us/L (slack 8.39x) [gup 433 + down 341], sync-wait 43 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.79 distinct/L 5.13, 7.067 MB/L, ideal 85 us/L, kernel 644 us/L (slack 7.56x) [gup 399 + down 245], sync-wait 93 us/L
+MWPROF layer 57600: plan 6.5 actq 123.0 jobs 14.8 run 555.7 us/layer (dispatch span 700.1)
+MWPROF vlayer 57600: ring 417.2 pool 701.1 post 12.8 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.91 distinct/L 3.79, 5.190 MB/L, ideal 63 us/L, kernel 430 us/L (slack 6.87x) [gup 262 + down 167], sync-wait 41 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.42 distinct/L 3.46, 4.769 MB/L, ideal 57 us/L, kernel 306 us/L (slack 5.32x) [gup 241 + down 65], sync-wait 253 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.35 distinct/L 3.48, 4.771 MB/L, ideal 57 us/L, kernel 416 us/L (slack 7.24x) [gup 237 + down 179], sync-wait 29 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.01 distinct/L 3.27, 4.499 MB/L, ideal 54 us/L, kernel 337 us/L (slack 6.21x) [gup 222 + down 114], sync-wait 72 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.47 distinct/L 3.52, 4.809 MB/L, ideal 58 us/L, kernel 399 us/L (slack 6.88x) [gup 241 + down 158], sync-wait 39 us/L
+MWPROF layer 59520: plan 6.5 actq 122.5 jobs 14.7 run 549.3 us/layer (dispatch span 692.9)
+MWPROF vlayer 59520: ring 415.7 pool 693.9 post 12.5 us/layer
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.10 distinct/L 3.26, 4.486 MB/L, ideal 54 us/L, kernel 286 us/L (slack 5.29x) [gup 225 + down 61], sync-wait 235 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.52 distinct/L 3.57, 4.890 MB/L, ideal 59 us/L, kernel 432 us/L (slack 7.33x) [gup 245 + down 187], sync-wait 28 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.45 distinct/L 3.56, 4.902 MB/L, ideal 59 us/L, kernel 375 us/L (slack 6.34x) [gup 243 + down 132], sync-wait 73 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.81 distinct/L 3.78, 5.173 MB/L, ideal 62 us/L, kernel 427 us/L (slack 6.84x) [gup 258 + down 169], sync-wait 41 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.05 distinct/L 3.85, 5.284 MB/L, ideal 64 us/L, kernel 342 us/L (slack 5.38x) [gup 270 + down 72], sync-wait 287 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.47 distinct/L 3.54, 4.848 MB/L, ideal 58 us/L, kernel 428 us/L (slack 7.32x) [gup 243 + down 185], sync-wait 28 us/L
+MWPROF layer 61440: plan 6.4 actq 122.1 jobs 14.5 run 543.9 us/layer (dispatch span 686.9)
+MWPROF vlayer 61440: ring 414.5 pool 687.9 post 12.3 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.03 distinct/L 3.26, 4.483 MB/L, ideal 54 us/L, kernel 347 us/L (slack 6.42x) [gup 223 + down 124], sync-wait 62 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 3.71 distinct/L 3.12, 4.255 MB/L, ideal 51 us/L, kernel 342 us/L (slack 6.67x) [gup 205 + down 137], sync-wait 31 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.76 distinct/L 3.15, 4.324 MB/L, ideal 52 us/L, kernel 266 us/L (slack 5.10x) [gup 209 + down 57], sync-wait 215 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.18 distinct/L 3.81, 5.246 MB/L, ideal 63 us/L, kernel 479 us/L (slack 7.57x) [gup 277 + down 201], sync-wait 37 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.36 distinct/L 3.92, 5.393 MB/L, ideal 65 us/L, kernel 439 us/L (slack 6.76x) [gup 286 + down 153], sync-wait 87 us/L
+MWPROF layer 63360: plan 6.4 actq 121.9 jobs 14.5 run 542.4 us/layer (dispatch span 685.2)
+MWPROF vlayer 63360: ring 414.0 pool 686.2 post 12.0 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.49 distinct/L 5.75, 7.894 MB/L, ideal 95 us/L, kernel 739 us/L (slack 7.77x) [gup 429 + down 309], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.95 distinct/L 5.99, 8.234 MB/L, ideal 99 us/L, kernel 572 us/L (slack 5.77x) [gup 454 + down 118], sync-wait 504 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.95 distinct/L 6.05, 8.332 MB/L, ideal 100 us/L, kernel 788 us/L (slack 7.85x) [gup 454 + down 334], sync-wait 46 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.75 distinct/L 5.95, 8.166 MB/L, ideal 98 us/L, kernel 686 us/L (slack 6.98x) [gup 445 + down 242], sync-wait 101 us/L
+MWPROF layer 65280: plan 6.4 actq 122.2 jobs 14.6 run 546.0 us/layer (dispatch span 689.2)
+MWPROF vlayer 65280: ring 414.6 pool 690.2 post 11.7 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.90 distinct/L 5.05, 6.913 MB/L, ideal 83 us/L, kernel 608 us/L (slack 7.30x) [gup 355 + down 253], sync-wait 42 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.97 distinct/L 5.12, 7.025 MB/L, ideal 85 us/L, kernel 456 us/L (slack 5.39x) [gup 361 + down 95], sync-wait 395 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.93 distinct/L 4.46, 6.131 MB/L, ideal 74 us/L, kernel 538 us/L (slack 7.29x) [gup 312 + down 226], sync-wait 36 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.46 distinct/L 4.19, 5.766 MB/L, ideal 69 us/L, kernel 445 us/L (slack 6.40x) [gup 291 + down 154], sync-wait 78 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.05 distinct/L 3.31, 4.534 MB/L, ideal 55 us/L, kernel 366 us/L (slack 6.70x) [gup 222 + down 144], sync-wait 36 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.92 distinct/L 3.21, 4.414 MB/L, ideal 53 us/L, kernel 276 us/L (slack 5.19x) [gup 217 + down 59], sync-wait 224 us/L
+MWPROF layer 67200: plan 6.4 actq 121.7 jobs 14.4 run 539.9 us/layer (dispatch span 682.3)
+MWPROF vlayer 67200: ring 413.2 pool 683.3 post 11.6 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.33 distinct/L 3.41, 4.674 MB/L, ideal 56 us/L, kernel 418 us/L (slack 7.42x) [gup 236 + down 182], sync-wait 27 us/L
+strata decode timing: 230 windows, avg T 2.54, 2.23 tokens/window, 51.03 ms/window = verify 48.21 (GPU-reach wait 18.68 + per-layer host 27.79 [plan 0.28 actq 5.45 jobs 0.56 CPU 21.26] + stage 0.19) + commit/emit 0.02 + draft 2.80; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 5.41, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.79 distinct/L 3.66, 5.027 MB/L, ideal 61 us/L, kernel 403 us/L (slack 6.65x) [gup 258 + down 145], sync-wait 66 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.81 distinct/L 5.21, 7.155 MB/L, ideal 86 us/L, kernel 651 us/L (slack 7.56x) [gup 400 + down 251], sync-wait 66 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.12 distinct/L 5.43, 7.462 MB/L, ideal 90 us/L, kernel 524 us/L (slack 5.83x) [gup 416 + down 108], sync-wait 456 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.29 distinct/L 5.03, 6.911 MB/L, ideal 83 us/L, kernel 666 us/L (slack 7.99x) [gup 374 + down 291], sync-wait 34 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.87 distinct/L 4.20, 5.792 MB/L, ideal 70 us/L, kernel 505 us/L (slack 7.23x) [gup 310 + down 195], sync-wait 69 us/L
+MWPROF layer 69120: plan 6.4 actq 121.7 jobs 14.4 run 540.6 us/layer (dispatch span 683.2)
+MWPROF vlayer 69120: ring 414.2 pool 684.2 post 11.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.84 distinct/L 3.65, 5.024 MB/L, ideal 61 us/L, kernel 451 us/L (slack 7.45x) [gup 260 + down 191], sync-wait 39 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.14 distinct/L 3.85, 5.300 MB/L, ideal 64 us/L, kernel 349 us/L (slack 5.46x) [gup 276 + down 73], sync-wait 292 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.32 distinct/L 3.99, 5.479 MB/L, ideal 66 us/L, kernel 513 us/L (slack 7.76x) [gup 281 + down 232], sync-wait 29 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.48 distinct/L 3.96, 5.437 MB/L, ideal 66 us/L, kernel 462 us/L (slack 7.05x) [gup 291 + down 171], sync-wait 80 us/L
+MWPROF layer 71040: plan 6.4 actq 121.5 jobs 14.4 run 538.6 us/layer (dispatch span 680.8)
+MWPROF vlayer 71040: ring 413.3 pool 681.8 post 11.2 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.66 distinct/L 3.67, 5.025 MB/L, ideal 61 us/L, kernel 451 us/L (slack 7.45x) [gup 251 + down 200], sync-wait 34 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.07 distinct/L 3.92, 5.410 MB/L, ideal 65 us/L, kernel 345 us/L (slack 5.30x) [gup 273 + down 72], sync-wait 290 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 5.15 distinct/L 3.90, 5.357 MB/L, ideal 65 us/L, kernel 483 us/L (slack 7.47x) [gup 272 + down 210], sync-wait 30 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.22 distinct/L 3.84, 5.267 MB/L, ideal 63 us/L, kernel 427 us/L (slack 6.72x) [gup 277 + down 149], sync-wait 82 us/L
+MWPROF layer 72960: plan 6.3 actq 121.3 jobs 14.3 run 537.5 us/layer (dispatch span 679.5)
+MWPROF vlayer 72960: ring 412.6 pool 680.5 post 11.1 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.04 distinct/L 4.13, 5.662 MB/L, ideal 68 us/L, kernel 559 us/L (slack 8.19x) [gup 315 + down 244], sync-wait 48 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.32 distinct/L 4.21, 5.843 MB/L, ideal 70 us/L, kernel 420 us/L (slack 5.97x) [gup 333 + down 87], sync-wait 362 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.49 distinct/L 4.41, 6.045 MB/L, ideal 73 us/L, kernel 604 us/L (slack 8.29x) [gup 335 + down 269], sync-wait 35 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.51 distinct/L 4.25, 5.830 MB/L, ideal 70 us/L, kernel 529 us/L (slack 7.54x) [gup 338 + down 191], sync-wait 111 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.84 distinct/L 4.06, 5.551 MB/L, ideal 67 us/L, kernel 536 us/L (slack 8.02x) [gup 304 + down 232], sync-wait 54 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.90 distinct/L 4.12, 5.699 MB/L, ideal 69 us/L, kernel 395 us/L (slack 5.75x) [gup 313 + down 82], sync-wait 337 us/L
+MWPROF layer 74880: plan 6.3 actq 121.2 jobs 14.3 run 537.2 us/layer (dispatch span 679.1)
+MWPROF vlayer 74880: ring 412.2 pool 680.0 post 11.0 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.11 distinct/L 4.17, 5.724 MB/L, ideal 69 us/L, kernel 589 us/L (slack 8.54x) [gup 317 + down 273], sync-wait 37 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.00 distinct/L 4.05, 5.546 MB/L, ideal 67 us/L, kernel 482 us/L (slack 7.22x) [gup 314 + down 168], sync-wait 101 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.15 distinct/L 4.22, 5.770 MB/L, ideal 70 us/L, kernel 551 us/L (slack 7.92x) [gup 319 + down 232], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.91 distinct/L 4.22, 5.854 MB/L, ideal 71 us/L, kernel 395 us/L (slack 5.60x) [gup 313 + down 82], sync-wait 340 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.07 distinct/L 4.31, 5.906 MB/L, ideal 71 us/L, kernel 570 us/L (slack 8.02x) [gup 315 + down 256], sync-wait 36 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.02 distinct/L 4.25, 5.821 MB/L, ideal 70 us/L, kernel 493 us/L (slack 7.02x) [gup 315 + down 177], sync-wait 100 us/L
+MWPROF layer 76800: plan 6.3 actq 121.2 jobs 14.3 run 537.0 us/layer (dispatch span 678.8)
+MWPROF vlayer 76800: ring 411.9 pool 679.8 post 10.9 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.23 distinct/L 4.45, 6.079 MB/L, ideal 73 us/L, kernel 549 us/L (slack 7.50x) [gup 322 + down 227], sync-wait 53 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 5.76 distinct/L 4.18, 5.780 MB/L, ideal 70 us/L, kernel 387 us/L (slack 5.56x) [gup 307 + down 81], sync-wait 330 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.07 distinct/L 4.37, 5.998 MB/L, ideal 72 us/L, kernel 575 us/L (slack 7.96x) [gup 315 + down 260], sync-wait 35 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.91 distinct/L 4.19, 5.754 MB/L, ideal 69 us/L, kernel 483 us/L (slack 6.97x) [gup 311 + down 172], sync-wait 89 us/L
+strata decode timing: 217 windows, avg T 2.54, 2.00 tokens/window, 53.82 ms/window = verify 50.93 (GPU-reach wait 18.74 + per-layer host 30.46 [plan 0.27 actq 5.56 jobs 0.61 CPU 23.67] + stage 0.30) + commit/emit 0.02 + draft 2.86; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 3.41, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF layer 78720: plan 6.3 actq 121.3 jobs 14.3 run 538.3 us/layer (dispatch span 680.3)
+MWPROF vlayer 78720: ring 412.7 pool 681.3 post 10.8 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.68 distinct/L 5.10, 6.990 MB/L, ideal 84 us/L, kernel 650 us/L (slack 7.72x) [gup 392 + down 258], sync-wait 66 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.73 distinct/L 5.24, 7.236 MB/L, ideal 87 us/L, kernel 502 us/L (slack 5.76x) [gup 398 + down 104], sync-wait 437 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.78 distinct/L 5.25, 7.211 MB/L, ideal 87 us/L, kernel 702 us/L (slack 8.08x) [gup 397 + down 305], sync-wait 40 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.09 distinct/L 4.97, 6.835 MB/L, ideal 82 us/L, kernel 567 us/L (slack 6.89x) [gup 368 + down 199], sync-wait 90 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 6.28 distinct/L 4.53, 6.212 MB/L, ideal 75 us/L, kernel 543 us/L (slack 7.25x) [gup 327 + down 216], sync-wait 56 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.37 distinct/L 4.54, 6.235 MB/L, ideal 75 us/L, kernel 420 us/L (slack 5.59x) [gup 332 + down 88], sync-wait 362 us/L
+MWPROF layer 80640: plan 6.3 actq 121.3 jobs 14.3 run 538.6 us/layer (dispatch span 680.5)
+MWPROF vlayer 80640: ring 412.6 pool 681.5 post 10.6 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.19 distinct/L 5.03, 6.921 MB/L, ideal 83 us/L, kernel 636 us/L (slack 7.63x) [gup 369 + down 267], sync-wait 48 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.50 distinct/L 4.70, 6.474 MB/L, ideal 78 us/L, kernel 554 us/L (slack 7.10x) [gup 339 + down 215], sync-wait 79 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.45 distinct/L 6.11, 8.350 MB/L, ideal 101 us/L, kernel 712 us/L (slack 7.07x) [gup 429 + down 282], sync-wait 59 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.43 distinct/L 6.02, 8.278 MB/L, ideal 100 us/L, kernel 543 us/L (slack 5.45x) [gup 431 + down 112], sync-wait 476 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.85 distinct/L 6.32, 8.663 MB/L, ideal 104 us/L, kernel 758 us/L (slack 7.27x) [gup 447 + down 311], sync-wait 53 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.11 distinct/L 5.99, 8.231 MB/L, ideal 99 us/L, kernel 641 us/L (slack 6.46x) [gup 416 + down 224], sync-wait 106 us/L
+MWPROF layer 82560: plan 6.4 actq 121.6 jobs 14.5 run 542.4 us/layer (dispatch span 684.9)
+MWPROF vlayer 82560: ring 413.2 pool 685.8 post 10.4 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.23 distinct/L 6.01, 8.244 MB/L, ideal 99 us/L, kernel 694 us/L (slack 6.99x) [gup 418 + down 276], sync-wait 58 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.39 distinct/L 6.21, 8.538 MB/L, ideal 103 us/L, kernel 540 us/L (slack 5.25x) [gup 428 + down 112], sync-wait 473 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.83 distinct/L 5.68, 7.782 MB/L, ideal 94 us/L, kernel 685 us/L (slack 7.30x) [gup 400 + down 285], sync-wait 43 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.02 distinct/L 5.16, 7.096 MB/L, ideal 86 us/L, kernel 562 us/L (slack 6.57x) [gup 364 + down 198], sync-wait 85 us/L
+MWPROF layer 84480: plan 6.4 actq 121.7 jobs 14.5 run 544.4 us/layer (dispatch span 687.1)
+MWPROF vlayer 84480: ring 413.4 pool 688.1 post 10.2 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.40 distinct/L 5.16, 7.075 MB/L, ideal 85 us/L, kernel 630 us/L (slack 7.39x) [gup 379 + down 251], sync-wait 59 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 7.10 distinct/L 4.92, 6.760 MB/L, ideal 81 us/L, kernel 465 us/L (slack 5.70x) [gup 368 + down 96], sync-wait 404 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 8.15 distinct/L 5.53, 7.584 MB/L, ideal 91 us/L, kernel 718 us/L (slack 7.85x) [gup 413 + down 304], sync-wait 50 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.52 distinct/L 5.09, 6.997 MB/L, ideal 84 us/L, kernel 601 us/L (slack 7.13x) [gup 387 + down 214], sync-wait 109 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 7.02 distinct/L 4.96, 6.782 MB/L, ideal 82 us/L, kernel 602 us/L (slack 7.36x) [gup 360 + down 242], sync-wait 64 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.66 distinct/L 4.74, 6.532 MB/L, ideal 79 us/L, kernel 439 us/L (slack 5.58x) [gup 348 + down 91], sync-wait 377 us/L
+MWPROF layer 86400: plan 6.4 actq 121.8 jobs 14.6 run 545.1 us/layer (dispatch span 687.8)
+MWPROF vlayer 86400: ring 413.4 pool 688.8 post 10.0 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 6.74 distinct/L 4.88, 6.689 MB/L, ideal 81 us/L, kernel 621 us/L (slack 7.70x) [gup 347 + down 273], sync-wait 36 us/L
+strata decode timing: 164 windows, avg T 3.30, 2.66 tokens/window, 62.29 ms/window = verify 58.87 (GPU-reach wait 20.18 + per-layer host 36.92 [plan 0.33 actq 6.10 jobs 0.81 CPU 29.54] + stage 0.07) + commit/emit 0.03 + draft 3.40; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 4.10, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA2 layers 1440: jobs/L 6.88 distinct/L 4.81, 6.619 MB/L, ideal 80 us/L, kernel 572 us/L (slack 7.18x) [gup 357 + down 215], sync-wait 78 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.40 distinct/L 5.53, 7.600 MB/L, ideal 92 us/L, kernel 695 us/L (slack 7.59x) [gup 427 + down 269], sync-wait 65 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.29 distinct/L 5.54, 7.636 MB/L, ideal 92 us/L, kernel 535 us/L (slack 5.81x) [gup 425 + down 110], sync-wait 467 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.58 distinct/L 5.12, 7.040 MB/L, ideal 85 us/L, kernel 688 us/L (slack 8.10x) [gup 389 + down 299], sync-wait 39 us/L
+MWPROF layer 88320: plan 6.4 actq 121.9 jobs 14.6 run 546.1 us/layer (dispatch span 689.0)
+MWPROF vlayer 88320: ring 414.3 pool 690.0 post 9.8 us/layer
+MWPROF m10 CUDA2 layers 1440: jobs/L 5.93 distinct/L 4.22, 5.818 MB/L, ideal 70 us/L, kernel 495 us/L (slack 7.05x) [gup 313 + down 182], sync-wait 85 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 3.94 distinct/L 3.20, 4.370 MB/L, ideal 53 us/L, kernel 359 us/L (slack 6.82x) [gup 216 + down 143], sync-wait 35 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.58 distinct/L 2.94, 4.058 MB/L, ideal 49 us/L, kernel 256 us/L (slack 5.23x) [gup 201 + down 55], sync-wait 209 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 3.79 distinct/L 3.20, 4.384 MB/L, ideal 53 us/L, kernel 371 us/L (slack 7.01x) [gup 211 + down 160], sync-wait 27 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 3.52 distinct/L 3.03, 4.173 MB/L, ideal 50 us/L, kernel 305 us/L (slack 6.07x) [gup 198 + down 107], sync-wait 59 us/L
+MWPROF layer 90240: plan 6.4 actq 121.5 jobs 14.4 run 541.3 us/layer (dispatch span 683.5)
+MWPROF vlayer 90240: ring 413.2 pool 684.5 post 9.7 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 4.11 distinct/L 3.38, 4.621 MB/L, ideal 56 us/L, kernel 368 us/L (slack 6.60x) [gup 224 + down 144], sync-wait 36 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.95 distinct/L 3.25, 4.462 MB/L, ideal 54 us/L, kernel 277 us/L (slack 5.16x) [gup 218 + down 59], sync-wait 227 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 3.92 distinct/L 3.23, 4.427 MB/L, ideal 53 us/L, kernel 376 us/L (slack 7.05x) [gup 216 + down 160], sync-wait 28 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 3.70 distinct/L 3.07, 4.224 MB/L, ideal 51 us/L, kernel 320 us/L (slack 6.28x) [gup 207 + down 113], sync-wait 65 us/L
+MWPROF layer 92160: plan 6.3 actq 121.1 jobs 14.3 run 537.4 us/layer (dispatch span 679.2)
+MWPROF vlayer 92160: ring 412.3 pool 680.1 post 9.6 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 3.93 distinct/L 3.26, 4.448 MB/L, ideal 54 us/L, kernel 360 us/L (slack 6.72x) [gup 216 + down 144], sync-wait 36 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 3.89 distinct/L 3.22, 4.433 MB/L, ideal 53 us/L, kernel 274 us/L (slack 5.13x) [gup 215 + down 58], sync-wait 223 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.23 distinct/L 3.46, 4.739 MB/L, ideal 57 us/L, kernel 405 us/L (slack 7.09x) [gup 231 + down 174], sync-wait 29 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.12 distinct/L 3.38, 4.647 MB/L, ideal 56 us/L, kernel 353 us/L (slack 6.31x) [gup 227 + down 126], sync-wait 62 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 5.83 distinct/L 4.18, 5.723 MB/L, ideal 69 us/L, kernel 511 us/L (slack 7.41x) [gup 305 + down 206], sync-wait 48 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 6.30 distinct/L 4.48, 6.152 MB/L, ideal 74 us/L, kernel 416 us/L (slack 5.61x) [gup 329 + down 87], sync-wait 357 us/L
+MWPROF layer 94080: plan 6.3 actq 121.0 jobs 14.3 run 536.6 us/layer (dispatch span 678.3)
+MWPROF vlayer 94080: ring 412.0 pool 679.3 post 9.5 us/layer
+MWPROF m10 CUDA4 layers 1440: jobs/L 7.35 distinct/L 5.12, 7.038 MB/L, ideal 85 us/L, kernel 648 us/L (slack 7.64x) [gup 380 + down 268], sync-wait 44 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 7.50 distinct/L 5.12, 7.041 MB/L, ideal 85 us/L, kernel 595 us/L (slack 7.01x) [gup 386 + down 209], sync-wait 105 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.49 distinct/L 6.01, 8.258 MB/L, ideal 100 us/L, kernel 732 us/L (slack 7.35x) [gup 430 + down 301], sync-wait 53 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.94 distinct/L 6.24, 8.564 MB/L, ideal 103 us/L, kernel 572 us/L (slack 5.54x) [gup 454 + down 118], sync-wait 506 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 9.17 distinct/L 6.21, 8.553 MB/L, ideal 103 us/L, kernel 809 us/L (slack 7.85x) [gup 465 + down 345], sync-wait 48 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 8.73 distinct/L 6.01, 8.253 MB/L, ideal 99 us/L, kernel 678 us/L (slack 6.82x) [gup 443 + down 234], sync-wait 102 us/L
+MWPROF layer 96000: plan 6.3 actq 121.2 jobs 14.4 run 540.2 us/layer (dispatch span 682.2)
+MWPROF vlayer 96000: ring 412.6 pool 683.1 post 9.3 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 8.92 distinct/L 6.19, 8.475 MB/L, ideal 102 us/L, kernel 724 us/L (slack 7.09x) [gup 450 + down 275], sync-wait 65 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 8.57 distinct/L 6.07, 8.321 MB/L, ideal 100 us/L, kernel 549 us/L (slack 5.48x) [gup 435 + down 114], sync-wait 484 us/L
+strata decode timing: 208 windows, avg T 2.80, 2.46 tokens/window, 54.27 ms/window = verify 51.28 (GPU-reach wait 19.17 + per-layer host 30.37 [plan 0.29 actq 5.56 jobs 0.62 CPU 23.70] + stage 0.14) + commit/emit 0.03 + draft 2.97; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 5.22, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window
+MWPROF m10 CUDA4 layers 1440: jobs/L 13.54 distinct/L 6.94, 9.530 MB/L, ideal 115 us/L, kernel 1199 us/L (slack 10.44x) [gup 667 + down 532], sync-wait 105 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 30.85 distinct/L 8.53, 11.721 MB/L, ideal 141 us/L, kernel 2416 us/L (slack 17.10x) [gup 1470 + down 946], sync-wait 492 us/L
+MWPROF m10 CUDA3 layers 1440: jobs/L 113.56 distinct/L 14.95, 20.500 MB/L, ideal 247 us/L, kernel 10062 us/L (slack 40.73x) [gup 4943 + down 5120], sync-wait 1446 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 116.04 distinct/L 16.70, 23.054 MB/L, ideal 278 us/L, kernel 6867 us/L (slack 24.72x) [gup 5487 + down 1380], sync-wait 6678 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 107.95 distinct/L 14.83, 20.484 MB/L, ideal 247 us/L, kernel 12584 us/L (slack 50.98x) [gup 4668 + down 7915], sync-wait 1186 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 97.07 distinct/L 12.73, 17.588 MB/L, ideal 212 us/L, kernel 7383 us/L (slack 34.83x) [gup 4184 + down 3199], sync-wait 1530 us/L
+MWPROF layer 97920: plan 6.4 actq 121.3 jobs 14.4 run 540.6 us/layer (dispatch span 682.7)
+MWPROF vlayer 97920: ring 412.9 pool 683.6 post 9.2 us/layer
+MWPROF m10 CUDA3 layers 1440: jobs/L 18.39 distinct/L 5.04, 6.960 MB/L, ideal 84 us/L, kernel 1687 us/L (slack 20.12x) [gup 828 + down 860], sync-wait 206 us/L
+MWPROF m10 CUDA1 layers 1440: jobs/L 4.77 distinct/L 3.73, 5.121 MB/L, ideal 62 us/L, kernel 327 us/L (slack 5.30x) [gup 258 + down 69], sync-wait 271 us/L
+MWPROF m10 CUDA4 layers 1440: jobs/L 4.43 distinct/L 3.54, 4.870 MB/L, ideal 59 us/L, kernel 412 us/L (slack 7.02x) [gup 219 + down 193], sync-wait 23 us/L
+MWPROF m10 CUDA2 layers 1440: jobs/L 4.03 distinct/L 3.23, 4.444 MB/L, ideal 54 us/L, kernel 344 us/L (slack 6.43x) [gup 201 + down 143], sync-wait 42 us/L
+strata decode timing: 49 windows, avg T 2.43, 1.96 tokens/window, 47.88 ms/window = verify 45.13 (GPU-reach wait 19.06 + per-layer host 24.32 [plan 0.28 actq 5.26 jobs 0.47 CPU 17.85] + stage 0.40) + commit/emit 0.02 + draft 2.73; per layer-window: CPU experts 0.00 (0.00 entries), VRAM hits 7.30, PCIe 0.00; adapt wait 0.00 join 0.00, 0.0 swaps/window

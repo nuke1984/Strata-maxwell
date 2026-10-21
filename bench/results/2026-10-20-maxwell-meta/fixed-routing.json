@@ -1,0 +1,238 @@
+[
+  {
+    "case": "reference",
+    "direct": 0,
+    "heavy": 0,
+    "exit": 0,
+    "stdout": "META_BENCH 0 1066.874063 1051.576000 1050.728313 1068.006750\nMETA_BENCH 1 1067.008583 1050.938333 1050.728875 1067.112188\nMETA_BENCH 2 1066.429417 1051.322187 1050.195146 1067.342646\nMETA_BENCH 3 1065.579542 1050.190604 1049.982083 1068.093875\nMETA_BENCH 4 1066.747562 1050.489750 1050.558271 1066.640896\nMETA_BENCH 5 1067.313875 1051.409208 1049.832708 1063.310813\nMETA_BENCH 6 1065.159583 1051.770083 1050.130208 1069.798687\nMeta PASS: exact legacy TP parity, hit/fallback rows, consumption tickets, overlap rejection, abort release, scatter bounds, failed-source cleanup; direct=0 heavy=0\nPASS: 48-layer loader + exact shard intermediates, 304 decode services (12 empty), 100 reuse repetitions, 12 prefill cases, rank-order GPU/CPU bit parity; TP vs whole worst relL1 1.482e-07\n",
+    "stderr": "MaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.5 s\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.5 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=0 heavy-first=0\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=0 heavy-first=0\n",
+    "abba_us_per_layer": [
+      [
+        1066.874063,
+        1051.576,
+        1050.728313,
+        1068.00675
+      ],
+      [
+        1067.008583,
+        1050.938333,
+        1050.728875,
+        1067.112188
+      ],
+      [
+        1066.429417,
+        1051.322187,
+        1050.195146,
+        1067.342646
+      ],
+      [
+        1065.579542,
+        1050.190604,
+        1049.982083,
+        1068.093875
+      ],
+      [
+        1066.747562,
+        1050.48975,
+        1050.558271,
+        1066.640896
+      ],
+      [
+        1067.313875,
+        1051.409208,
+        1049.832708,
+        1063.310813
+      ],
+      [
+        1065.159583,
+        1051.770083,
+        1050.130208,
+        1069.798687
+      ]
+    ],
+    "mean_gain_percent": 1.5334410288652915,
+    "ci95_percent": [
+      1.4749324891266447,
+      1.5919495686039384
+    ],
+    "legacy_us": 1066.8156057142858,
+    "meta_us": 1050.7036977857142
+  },
+  {
+    "case": "direct",
+    "direct": 1,
+    "heavy": 0,
+    "exit": 0,
+    "stdout": "META_BENCH 0 1074.077458 1016.206479 1015.015729 1075.300771\nMETA_BENCH 1 1076.012687 1017.166958 1014.013729 1073.871688\nMETA_BENCH 2 1073.859771 1015.338417 1016.083542 1074.704187\nMETA_BENCH 3 1073.442854 1016.333854 1014.696792 1070.458792\nMETA_BENCH 4 1072.037021 1016.418354 1015.870333 1075.876604\nMETA_BENCH 5 1073.110000 1016.338896 1015.123167 1075.066667\nMETA_BENCH 6 1074.153458 1015.267896 1016.147417 1075.258521\nMeta PASS: exact legacy TP parity, hit/fallback rows, consumption tickets, overlap rejection, abort release, scatter bounds, failed-source cleanup; direct=1 heavy=0\nPASS: 48-layer loader + exact shard intermediates, 304 decode services (12 empty), 100 reuse repetitions, 12 prefill cases, rank-order GPU/CPU bit parity; TP vs whole worst relL1 1.482e-07\n",
+    "stderr": "MaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=1 heavy-first=0\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=1 heavy-first=0\n",
+    "abba_us_per_layer": [
+      [
+        1074.077458,
+        1016.206479,
+        1015.015729,
+        1075.300771
+      ],
+      [
+        1076.012687,
+        1017.166958,
+        1014.013729,
+        1073.871688
+      ],
+      [
+        1073.859771,
+        1015.338417,
+        1016.083542,
+        1074.704187
+      ],
+      [
+        1073.442854,
+        1016.333854,
+        1014.696792,
+        1070.458792
+      ],
+      [
+        1072.037021,
+        1016.418354,
+        1015.870333,
+        1075.876604
+      ],
+      [
+        1073.11,
+        1016.338896,
+        1015.123167,
+        1075.066667
+      ],
+      [
+        1074.153458,
+        1015.267896,
+        1016.147417,
+        1075.258521
+      ]
+    ],
+    "mean_gain_percent": 5.746890383655875,
+    "ci95_percent": [
+      5.656122505334071,
+      5.837658261977678
+    ],
+    "legacy_us": 1074.0878913571428,
+    "meta_us": 1015.7158259285715
+  },
+  {
+    "case": "heavy",
+    "direct": 0,
+    "heavy": 1,
+    "exit": 0,
+    "stdout": "META_BENCH 0 1067.382792 1064.674875 1064.181417 1070.872708\nMETA_BENCH 1 1068.392000 1064.888604 1063.717167 1070.076042\nMETA_BENCH 2 1069.106979 1065.614250 1064.274792 1069.264167\nMETA_BENCH 3 1070.857479 1064.035083 1065.875250 1069.605083\nMETA_BENCH 4 1066.881375 1065.764146 1067.282417 1068.261896\nMETA_BENCH 5 1068.483646 1063.651417 1066.280458 1069.093396\nMETA_BENCH 6 1069.955625 1066.047521 1062.590708 1067.940479\nMeta PASS: exact legacy TP parity, hit/fallback rows, consumption tickets, overlap rejection, abort release, scatter bounds, failed-source cleanup; direct=0 heavy=1\nPASS: 48-layer loader + exact shard intermediates, 304 decode services (12 empty), 100 reuse repetitions, 12 prefill cases, rank-order GPU/CPU bit parity; TP vs whole worst relL1 1.482e-07\n",
+    "stderr": "MaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=0 heavy-first=1\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=0 heavy-first=1\n",
+    "abba_us_per_layer": [
+      [
+        1067.382792,
+        1064.674875,
+        1064.181417,
+        1070.872708
+      ],
+      [
+        1068.392,
+        1064.888604,
+        1063.717167,
+        1070.076042
+      ],
+      [
+        1069.106979,
+        1065.61425,
+        1064.274792,
+        1069.264167
+      ],
+      [
+        1070.857479,
+        1064.035083,
+        1065.87525,
+        1069.605083
+      ],
+      [
+        1066.881375,
+        1065.764146,
+        1067.282417,
+        1068.261896
+      ],
+      [
+        1068.483646,
+        1063.651417,
+        1066.280458,
+        1069.093396
+      ],
+      [
+        1069.955625,
+        1066.047521,
+        1062.590708,
+        1067.940479
+      ]
+    ],
+    "mean_gain_percent": 0.38438048281296744,
+    "ci95_percent": [
+      0.2608372624001979,
+      0.507923703225737
+    ],
+    "legacy_us": 1069.0124047857144,
+    "meta_us": 1064.9198646428572
+  },
+  {
+    "case": "both",
+    "direct": 1,
+    "heavy": 1,
+    "exit": 0,
+    "stdout": "META_BENCH 0 1072.802937 1025.422271 1025.000958 1072.506104\nMETA_BENCH 1 1071.580229 1025.998583 1024.168521 1071.845625\nMETA_BENCH 2 1071.421271 1025.935333 1027.367708 1071.675354\nMETA_BENCH 3 1073.463104 1025.166479 1024.957813 1070.864146\nMETA_BENCH 4 1072.165083 1025.657667 1025.896500 1071.418083\nMETA_BENCH 5 1072.346354 1024.954604 1027.112458 1073.274458\nMETA_BENCH 6 1072.060708 1025.162042 1025.582750 1071.419375\nMeta PASS: exact legacy TP parity, hit/fallback rows, consumption tickets, overlap rejection, abort release, scatter bounds, failed-source cleanup; direct=1 heavy=1\nPASS: 48-layer loader + exact shard intermediates, 304 decode services (12 empty), 100 reuse repetitions, 12 prefill cases, rank-order GPU/CPU bit parity; TP vs whole worst relL1 1.482e-07\n",
+    "stderr": "MaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=1 heavy-first=1\nMaxwellExperts (CUDA3): round-trip gate layer 0 expert 7 (iq2_s): rel 1.02e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 0 expert 7 (iq2_s): rel 1.17e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 0 expert 7 (iq2_s): rel 1.13e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 0 expert 7 (iq2_s): rel 1.07e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.25e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate layer 8 expert 143 (iq1_m): rel 1.36e-02 vs the float reference\nMaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.36e-02, 384 blobs converted)\nstrata Meta rank 2 CUDA3: 384 routed shards, 0.129 GiB, 0.3 s\nMaxwellExperts (CUDA2): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.14e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.31e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate layer 1 expert 24 (iq2_xxs): rel 1.33e-02 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate layer 8 expert 143 (iq1_m): rel 9.93e-03 vs the float reference\nMaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.14e-02, 384 blobs converted)\nstrata Meta rank 1 CUDA2: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA4): round-trip gate layer 8 expert 143 (iq1_m): rel 1.22e-02 vs the float reference\nMaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.33e-02, 384 blobs converted)\nstrata Meta rank 3 CUDA4: 384 routed shards, 0.129 GiB, 0.4 s\nMaxwellExperts (CUDA1): round-trip gate layer 8 expert 143 (iq1_m): rel 1.05e-02 vs the float reference\nMaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.31e-02, 384 blobs converted)\nstrata Meta rank 0 CUDA1: 384 routed shards, 0.129 GiB, 0.4 s\nstrata Maxwell Meta: ONE routed-expert tier, 384 experts, direct=1 heavy-first=1\n",
+    "abba_us_per_layer": [
+      [
+        1072.802937,
+        1025.422271,
+        1025.000958,
+        1072.506104
+      ],
+      [
+        1071.580229,
+        1025.998583,
+        1024.168521,
+        1071.845625
+      ],
+      [
+        1071.421271,
+        1025.935333,
+        1027.367708,
+        1071.675354
+      ],
+      [
+        1073.463104,
+        1025.166479,
+        1024.957813,
+        1070.864146
+      ],
+      [
+        1072.165083,
+        1025.657667,
+        1025.8965,
+        1071.418083
+      ],
+      [
+        1072.346354,
+        1024.954604,
+        1027.112458,
+        1073.274458
+      ],
+      [
+        1072.060708,
+        1025.162042,
+        1025.58275,
+        1071.419375
+      ]
+    ],
+    "mean_gain_percent": 4.530203244915998,
+    "ci95_percent": [
+      4.453219521539483,
+      4.607186968292512
+    ],
+    "legacy_us": 1072.0602022142857,
+    "meta_us": 1025.5988347857144
+  }
+]
