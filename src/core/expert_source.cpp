@@ -6,6 +6,7 @@
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/peer_experts.hpp"
 #include "strata/core/maxwell_experts.hpp"
+#include "strata/core/maxwell_meta.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 
@@ -3924,8 +3925,8 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 const int32_t e = ids[distinct[q]];
                 if (e < 0 || e >= d.n_expert || minr[q] < tail_rank) continue;
                 if (d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) continue;   // resident
-                if (d.maxwell_count > 0) {   // a Maxwell tier holds it in VRAM too: not a miss to skip
-                    bool mw_held = false;
+                if (d.maxwell_meta || d.maxwell_count > 0) {   // a Maxwell tier holds it in VRAM too: not a miss to skip
+                    bool mw_held = d.maxwell_meta && d.maxwell_meta->owns(d.layers, e);
                     for (int m2 = 0; m2 < d.maxwell_count; ++m2) mw_held |= d.maxwell[m2]->owns(d.layers, e);
                     if (mw_held) continue;
                 }
@@ -3960,7 +3961,7 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 // Maxwell (sm_50) tier FIRST: with STRATA_MAXWELL_HOT the M10s also hold hot experts the
                 // 3060's cache has, and the M10 must win so that routed entry leaves the 3060's hit path
                 // (the load balance between the two).  The block below keeps its own check: it is false now.
-                bool maxwell_held = false;
+                bool maxwell_held = d.maxwell_meta && d.maxwell_meta->owns(d.layers, e);
                 if (d.maxwell_count > 0)
                     for (int m = 0; m < d.maxwell_count; ++m) maxwell_held |= d.maxwell[m]->owns(d.layers, e);
                 const int32_t slot = d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e];
@@ -4031,7 +4032,8 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
         for (int64_t i = 0; i < n; ++i) {
             const int32_t e = ids[i];
             int kd = -1;
-            if (e >= 0 && e < d.n_expert && d.host_res != nullptr &&
+            if (e >= 0 && e < d.n_expert && d.maxwell_meta && d.maxwell_meta->owns(d.layers, e)) kd = 3;
+            else if (e >= 0 && e < d.n_expert && d.host_res != nullptr &&
                 d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) kd = 0;
             else if (e >= 0 && e < d.n_expert && d.peer != nullptr && d.peer->has(d.layers, e)) kd = 2;
             else if (e >= 0 && e < d.n_expert && d.maxwell_count > 0) {
@@ -4090,7 +4092,7 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     }
     const auto c1 = std::chrono::steady_clock::now();
     bool any_mw = false;
-    if (d.maxwell_count > 0)
+    if (d.maxwell_meta || d.maxwell_count > 0)
         for (int64_t i = 0; i < n; ++i) if (kind[i] == 3) { any_mw = true; break; }
     if (any_cpu || any_mw) {
         // #578 --remote-expert-opt: a token whose experts all run on a GPU (CUDA0 or a helper) needs no CPU activation
@@ -4119,7 +4121,12 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     // (d.act_multi), so there is zero quantisation divergence between the two paths.  NO !native guard:
     // kind=3 is assigned above for native packs too, and a guarded begin would leave those rows ZERO
     // (the jobs loop skips them for the CPU) - which corrupted every reply until here.
-    if (d.maxwell_count > 0) {
+    if (d.maxwell_meta) {
+        static thread_local std::string meta_error;
+        if (!d.maxwell_meta->decode(d.layers, d.act_multi.data(), ids, n_tok, k, meta_error)) {
+            d.failed = true; d.fail = meta_error.c_str(); d.fail_layer = d.layers; return;
+        }
+    } else if (d.maxwell_count > 0) {
         static thread_local std::string maxwell_error;
         // LPT (P6.x): the begin() calls are serial (~21.5 us each in this VM), so the LAST device's chain
         // starts ~64 us after the first.  Beginning the busiest device FIRST minimises the maximum

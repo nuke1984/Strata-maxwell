@@ -552,6 +552,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   add_library(strata_engine STATIC src/core/layer.cpp src/core/session.cpp src/core/expert_source.cpp src/core/remote_experts.cpp
     src/core/remote_expert_opt.cu
     src/core/expert_cache.cpp src/core/native_head.cpp src/core/native_dense.cpp src/core/verify.cpp src/core/mtp.cpp
+    src/core/maxwell_meta.cpp
     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp src/core/peer_experts.cpp
     src/core/arch_defaults.cpp src/core/vmm.cpp src/core/conversation_file.cpp src/core/maxwell_experts.cpp)
   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -572,6 +573,17 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   target_include_directories(strata_maxwell PRIVATE third_party/ggml)
   set_target_properties(strata_maxwell PROPERTIES CUDA_ARCHITECTURES 50)
   target_link_libraries(strata_engine PUBLIC strata_maxwell)
+  if(STRATA_ENABLE_CUDA)
+    add_executable(maxwell_tp_plan_test EXCLUDE_FROM_ALL tests/core/maxwell_tp_plan_test.cpp)
+    target_include_directories(maxwell_tp_plan_test PRIVATE include)
+    add_executable(maxwell_tp_chain_test EXCLUDE_FROM_ALL tests/core/maxwell_tp_chain_test.cpp)
+    target_link_libraries(maxwell_tp_chain_test PRIVATE strata_engine strata_artifact)
+    add_executable(maxwell_tp_publish_test EXCLUDE_FROM_ALL tests/core/maxwell_tp_publish_test.cpp)
+    target_link_libraries(maxwell_tp_publish_test PRIVATE strata_kernels)
+    # Requires a real GGUF and enough VRAM for its embedding alongside the mapped-host copy.
+    add_executable(native_embed_placement_test EXCLUDE_FROM_ALL tests/core/native_embed_placement_test.cpp)
+    target_link_libraries(native_embed_placement_test PRIVATE strata_engine strata_artifact)
+  endif()
   if(STRATA_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/exchange_storage_test.cpp")
     add_executable(exchange_storage_test tests/core/exchange_storage_test.cpp)
     target_include_directories(exchange_storage_test PRIVATE include)
@@ -1859,6 +1871,14 @@ if(STRATA_NATIVE_EXPERTS)
       add_executable(iq_gup_bench src/kernels/cuda/iq_gup_bench.cpp)
       target_include_directories(iq_gup_bench PRIVATE ${_strata_gpu_include_directories})
       target_link_libraries(iq_gup_bench PRIVATE strata_maxwell strata_kernels strata_kernels_cpu
+        strata_artifact ${_strata_gpu_runtime_target})
+      # X1 screening only: real shared-expert tensors, FP16-weight TP vs native main-GPU compute.
+      # Kept out of normal builds; does not add a serving path or alter any defaults.
+      add_executable(maxwell_shared_bench EXCLUDE_FROM_ALL
+        src/kernels/cuda/maxwell_shared_bench.cpp src/kernels/cuda/maxwell_shared_bench.cu)
+      target_include_directories(maxwell_shared_bench PRIVATE ${_strata_gpu_include_directories} third_party/ggml)
+      set_target_properties(maxwell_shared_bench PROPERTIES CUDA_ARCHITECTURES 50)
+      target_link_libraries(maxwell_shared_bench PRIVATE strata_kernels strata_kernels_cpu
         strata_artifact ${_strata_gpu_runtime_target})
     endif()
     if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)

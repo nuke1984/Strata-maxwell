@@ -25,6 +25,7 @@
 #define GGML_COMMON_DECL_CUDA
 #define GGML_COMMON_IMPL_CUDA
 #include "ggml-common.h"
+#include "strata/core/maxwell_tp_plan.hpp"
 
 namespace strata::kernels::cuda {
 namespace {
@@ -481,28 +482,32 @@ __global__ void expert_s2_stage1_batch_v2(const uint8_t* __restrict__ blobs, con
     }
 }
 
-template <int SPLIT, bool F16 = false>
-__global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, size_t blob_stride,
-                                          size_t d_codes_off, size_t d_scales_off,
-                                          const MaxJob* __restrict__ jobs,
-                                          int njobs, const int8_t* __restrict__ faq,
-                                          const float* __restrict__ fasc, const float* __restrict__ fahx,
-                                          float* __restrict__ out,
-                                          volatile uint32_t* __restrict__ mflag, const uint32_t ring,
-                                          uint32_t* __restrict__ ctr,
-                                          int blk_base, int blks,
-                                          size_t d_row_stride, size_t d_scale_stride) {
+// The v2 down body, extracted so the persistent kernel (STRATA_MW_PERSIST) can run the SAME code
+// per virtual block (the batched launch below = one body call on blockIdx.x; the persistent kernel
+// grid-strides it).  `smem` carries the body's scratch: one 2.9 KB union, laid out at offset 0 -
+// the arithmetic is the inline version's, untouched.
+template <int SPLIT, bool F16>
+__device__ __forceinline__ void s2_stage2_v2_body(const int vb, char* smem,
+                                                  const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                                  size_t d_codes_off, size_t d_scales_off,
+                                                  const MaxJob* __restrict__ jobs,
+                                                  int njobs, const int8_t* __restrict__ faq,
+                                                  const float* __restrict__ fasc, const float* __restrict__ fahx,
+                                                  float* __restrict__ out,
+                                                  int blk_base, int blks,
+                                                  size_t d_row_stride, size_t d_scale_stride) {
     constexpr int PER_BLOCK = 128 / SPLIT;
     static_assert(H % PER_BLOCK == 0, "v2 stages one job per block: H must be a multiple of PER_BLOCK");
-    const int row0 = blockIdx.x * PER_BLOCK;
+    int8_t* sq = (int8_t*) smem;                                        // FF bytes
+    float* ssc = (float*) (smem + FF);                                  // FF/32
+    float* shx = ssc + FF / 32;                                         // FF/32
+    uint32_t* slut = (uint32_t*) (smem + FF + 2 * (FF / 32) * 4);       // 256 entries
+    float2* sh = (float2*) (slut + 256);                                // 128 entries
+    const int row0 = vb * PER_BLOCK;
     if (row0 >= njobs * H) return;
     const int j = row0 / H;
     const MaxJob jd = jobs[j];
     const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
-    __shared__ __align__(16) int8_t sq[FF];
-    __shared__ float ssc[FF / 32];
-    __shared__ float shx[FF / 32];
-    __shared__ uint32_t slut[256];
     {
         const int4* srcq = (const int4*) (faq + (size_t) j * FF);
         int4* dstq = (int4*) sq;
@@ -535,7 +540,6 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
         acc += d * ssc[2 * b + 1] * (float) d1;
         corr += d * (shx[2 * b] + shx[2 * b + 1]);
     }
-    __shared__ float2 sh[128];
     sh[threadIdx.x] = make_float2(acc, corr);
     __syncthreads();
     if (part == 0) {
@@ -548,6 +552,26 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
         if (F16) ((uint16_t*) out)[(size_t) jd.dst * H + row] = f2h_rn(r);   // half the uplink bytes
         else     out[(size_t) jd.dst * H + row] = r;
     }
+}
+
+// kPersistSmem (below) needs the down body's scratch total; keep the two in one place.
+constexpr int kS2DownSmem = FF + 2 * (FF / 32) * 4 + 256 * 4 + 128 * (int) sizeof(float2);
+
+template <int SPLIT, bool F16 = false>
+__global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                          size_t d_codes_off, size_t d_scales_off,
+                                          const MaxJob* __restrict__ jobs,
+                                          int njobs, const int8_t* __restrict__ faq,
+                                          const float* __restrict__ fasc, const float* __restrict__ fahx,
+                                          float* __restrict__ out,
+                                          volatile uint32_t* __restrict__ mflag, const uint32_t ring,
+                                          uint32_t* __restrict__ ctr,
+                                          int blk_base, int blks,
+                                          size_t d_row_stride, size_t d_scale_stride) {
+    __shared__ __align__(16) char smem[kS2DownSmem];
+    s2_stage2_v2_body<SPLIT, F16>((int) blockIdx.x, smem, blobs, blob_stride, d_codes_off, d_scales_off,
+                                  jobs, njobs, faq, fasc, fahx, out, blk_base, blks, d_row_stride,
+                                  d_scale_stride);
     // E1 (2026-10-12): the GPU-raised doorbell.  When wired (mflag != nullptr), the LAST block of this
     // launch makes its rows visible system-wide and raises the tier's mapped completion flag to `ring`;
     // the 3060's graph multi-waits on the four tier flags plus the host's main flag, and the host never
@@ -876,31 +900,40 @@ template <> struct IqFmt<29> {
 // doubling resident threads per SM; the per-output summation order is untouched (the SPLIT meet and
 // the chunk tree walk the same sequence), so the image stays bit-identical - a launch-geometry
 // change only, exactly like the SPLIT sweep it generalizes.
-template <int TY, int SPLIT, int THREADS = 128>
-__global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
-                                           const MaxJob* __restrict__ jobs, int njobs,
-                                           const uint8_t* __restrict__ acts_base,
-                                           size_t o_gate, size_t o_up, size_t gu_row,
-                                           int8_t* __restrict__ faq, float* __restrict__ fasc,
-                                           float* __restrict__ fahx, float* __restrict__ ff_dbg,
-                                           int row_base, int rows_slice) {
+// The IQ gup body, extracted like the down body above: the batched launch = one call on blockIdx.x,
+// the persistent kernel (STRATA_MW_PERSIST) grid-strides the SAME code.  `smem` carries the union:
+// [sact (H/32 blocks)][align 16][sx PER_BLOCK floats][align 16][sgrid grid_bytes].  The arithmetic
+// is the inline version's, untouched - bit-identical by construction.
+template <int TY, int SPLIT, int THREADS>
+__device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
+                                                   const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                                   const MaxJob* __restrict__ jobs, int njobs,
+                                                   const uint8_t* __restrict__ acts_base,
+                                                   size_t o_gate, size_t o_up, size_t gu_row,
+                                                   int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                                   float* __restrict__ fahx, float* __restrict__ ff_dbg,
+                                                   int row_base, int rows_slice) {
     using F = IqFmt<TY>;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    constexpr int kSact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
+    constexpr int kSx = (PER_BLOCK * 4 + 15) & ~15;
+    block_q8_1* sact = (block_q8_1*) smem;
+    float* sx = (float*) (smem + kSact);
+    uint8_t* sgrid = (uint8_t*) (smem + kSact + kSx);
     // SPLIT is the sweep knob (STRATA_MW_IQ_SPLIT, default 4).  The fused quant epilogue below walks
     // PER_BLOCK/32 chunks, so any SPLIT that divides 32 keeps the chunk tree bit-identical: with 4 it
     // compiles to exactly the one-chunk body this kernel shipped with.
     static_assert(SPLIT == 1 || SPLIT == 2 || SPLIT == 4, "the IQ gup kernel takes SPLIT 1, 2 or 4");
-    constexpr int PER_BLOCK = THREADS / SPLIT;
     // SPLIT_MODE_TENSOR: `rows_slice` is this card's gate/up row count (its slice of FF; a multiple of
     // PER_BLOCK for every shard the planner emits).  The blob stores exactly those rows, compact, so the
     // mapping is the full kernel's with row -> row_base + local; every per-row value stays bit-identical.
     static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
-    const int row0 = blockIdx.x * PER_BLOCK;
+    const int row0 = vb * PER_BLOCK;
     if (row0 >= njobs * rows_slice) return;
     const int j = row0 / rows_slice;         // every row of this block is in job j (rows_slice % PER_BLOCK == 0)
     const MaxJob jd = jobs[j];
     const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
     const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
-    __shared__ __align__(16) block_q8_1 sact[H / 32];
     {
         // the job's token's activation as q8_1 blocks: ActQ.q verbatim (8 int32 per block, the act is
         // 4-aligned here), d = f2h_rn(scale) with the #606 clamp, s = 0 (unused by these dots).
@@ -919,7 +952,6 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
     // the codebook grids staged once per block: the dots hit them at data-dependent indices, and a
     // shared copy turns those latency-exposed global reads (~21 GB/s measured, 18% of the ceiling)
     // into shared lookups.  2 KB (IQ2_XXS) or 8 KB (IQ2_S / IQ1_M); staged coalesced.
-    __shared__ __align__(16) uint8_t sgrid[F::grid_bytes];
     {
         const int4* g = (const int4*) F::grid_dev();
         int4* d = (int4*) sgrid;
@@ -939,7 +971,6 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
         accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
         accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
     }
-    __shared__ float sx[PER_BLOCK];
     // the SPLIT partial sums meet by warp shuffles, in the SAME sequential order the shared-buffer
     // reduction used (s = 0, 1, ... SPLIT-1), so the image stays bit-identical; a part-group never
     // crosses a warp boundary (SPLIT divides 32).  EVERY lane shuffles (a shfl under divergent
@@ -990,6 +1021,149 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
             fasc[chunk] = sc;
             fahx[chunk] = __fmul_rn(sc, (float) ssum);
         }
+        }
+    }
+}
+
+template <int TY, int SPLIT, int THREADS>
+__host__ __device__ constexpr int iq_v2q_smem() {
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    constexpr int kSact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
+    constexpr int kSx = (PER_BLOCK * 4 + 15) & ~15;
+    return kSact + kSx + (TY == 16 ? 2048 : 8192);   // + F::grid_bytes (XXS 2 KB, S/IQ1_M 8 KB)
+}
+
+template <int TY, int SPLIT, int THREADS = 128>
+__global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                           const MaxJob* __restrict__ jobs, int njobs,
+                                           const uint8_t* __restrict__ acts_base,
+                                           size_t o_gate, size_t o_up, size_t gu_row,
+                                           int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                           float* __restrict__ fahx, float* __restrict__ ff_dbg,
+                                           int row_base, int rows_slice) {
+    __shared__ __align__(16) char smem[iq_v2q_smem<TY, SPLIT, THREADS>()];
+    iq_stage1_v2q_body<TY, SPLIT, THREADS>((int) blockIdx.x, smem, blobs, blob_stride, jobs, njobs,
+                                           acts_base, o_gate, o_up, gu_row, faq, fasc, fahx, ff_dbg,
+                                           row_base, rows_slice);
+}
+
+// ---- STRATA_MW_PERSIST: the self-service tier's kernel ---------------------------------------
+//
+// One resident kernel per card serves the whole decode stream.  Per service: block 0 polls the
+// mapped doorbell and broadcasts the service number through DEVICE memory (the other blocks never
+// touch the uplink while waiting); every block then stages the service's acts+jobs from the mapped
+// ring slot into device memory in ONE bulk cooperative copy (volatile reads: uncached sysmem on
+// sm_50, and the slot is host-rewritten two services later); a generation grid barrier orders the
+// phases (the grid never exceeds the kernel's own occupancy, so all blocks are resident and the
+// barrier cannot deadlock - sm_50 has no cooperative launch); the gup and down phases grid-stride
+// the SAME bodies the batched kernels run, bit-identical by construction; and after a final
+// system-wide fence block 0 raises the tier's E1 completion flag, the exact contract the batched
+// down's last block carried.  The host's per-layer dispatch is pinned writes + one doorbell store:
+// zero CUDA API calls per layer per card - the visit-order poison has no call to pay it with.
+__device__ __forceinline__ void persist_grid_barrier(PersistCtl* c) {
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const unsigned gen = *(volatile unsigned*) &c->bar_gen;
+        if (atomicAdd(&c->bar_count, 1u) == gridDim.x - 1u) {
+            c->bar_count = 0;
+            __threadfence();
+            *(volatile unsigned*) &c->bar_gen = gen + 1u;
+        } else {
+            while (*(volatile unsigned*) &c->bar_gen == gen) {}
+        }
+    }
+    __syncthreads();
+}
+
+template <int SPLIT, int THREADS>
+__global__ void __launch_bounds__(THREADS) maxwell_persist_kernel(const PersistParams* __restrict__ pp,
+                                                                  PersistCtl* c) {
+    constexpr int kGupSmem = iq_v2q_smem<22, SPLIT, THREADS>() > iq_v2q_smem<29, SPLIT, THREADS>()
+                                 ? iq_v2q_smem<22, SPLIT, THREADS>()
+                                 : iq_v2q_smem<29, SPLIT, THREADS>();
+    constexpr int kSmem = kGupSmem > kS2DownSmem ? kGupSmem : kS2DownSmem;
+    __shared__ __align__(16) char smem[kSmem];
+    __shared__ int sh_s;
+    const volatile uint32_t* seq = pp->d_seq;   // DEVICE doorbell: L2 poll, no PCIe on this path
+    constexpr int kGupPer = THREADS / SPLIT;    // 32 at the armed <4, 128>
+    constexpr int kDownPer = 64;                // the down body's PER_BLOCK at SPLIT 2
+    // Services are served STRICTLY IN ORDER (seen+1, never "the newest"): under the split window
+    // (P6) the host can legitimately run TWO services ahead - B(l)'s ring fires before A(l)'s
+    // multi-wait - so two doorbells can queue, and serving the newest would SKIP the one between:
+    // its rows never compute and its tier flag never rises (the hang of the first compound arm).
+    // The doorbell counts RELATIVE per launch (1, 2, ...); an EMPTY service (njobs 0) is delivered
+    // the same way, so every service the verifier counts is one the kernel raises.
+    unsigned seen = 0;
+    for (;;) {
+        __syncthreads();
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            int s = 0;
+            uint32_t polls = 0;
+            for (;;) {
+                const uint32_t v = *seq;           // L2 poll: the fast path, no PCIe
+                if (v == PERSIST_HALT) { s = -1; break; }
+                if (v > seen) { s = (int) seen + 1; break; }   // serve the NEXT, not the newest
+                // the stop word is a host store to mapped memory (a stream write cannot reach this
+                // kernel: IT owns its stream, and a queued write would wait for it to exit); the
+                // periodic mapped read keeps the idle poll loop PCIe-quiet
+                if ((++polls & 1023u) == 0 && *pp->halt) { s = -1; break; }
+            }
+            __threadfence();
+            *(volatile int*) &c->service = s;
+        }
+        if (threadIdx.x == 0) {
+            int s;
+            while ((s = *(volatile int*) &c->service) == (int) seen) {}
+            sh_s = s;
+        }
+        __syncthreads();
+        const int s = sh_s;
+        if (s < 0) return;
+        seen = (unsigned) s;
+        // the staging [hdr|acts|jobs] already landed in d_up[parity] via the H2D the copy engine
+        // ran before writing the doorbell - the header is a device read, like everything else
+        const uint8_t* dslot = pp->d_up[seen & 1u];
+        const PersistHdr* hp = (const PersistHdr*) dslot;
+        const PersistHdr h = *hp;
+        const size_t acts_bytes = (size_t) h.n_tok * ACTS_STRIDE;
+        const uint8_t* acts_base = dslot + PERSIST_HDR_BYTES;
+        const MaxJob* jobs = (const MaxJob*) (acts_base + acts_bytes);
+        const uint8_t* blobs = pp->blobs + h.blob_base;
+        persist_grid_barrier(c);   // all blocks see the staged bytes before anyone consumes them
+        // the switch OUTSIDE the virtual-block walk: gu_type is per-service, and a switch inside the
+        // loop made the register allocator carry every branch's pressure across iterations (126
+        // registers, 4 blocks/SM - the batched kernel needs ~8).  One loop per branch keeps the
+        // live ranges clean.
+        const int gup_blocks = (int) (((size_t) h.njobs * (size_t) h.tp_rows + kGupPer - 1) / kGupPer);
+        switch (h.gu_type) {   // arm time guarantees 22/16/29 (native pack, no S2/42 layer)
+            case 22:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<22, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            case 16:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<16, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            case 29:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<29, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            default:
+                break;
+        }
+        persist_grid_barrier(c);
+        const int down_blocks = (int) (((size_t) h.njobs * (size_t) H + kDownPer - 1) / kDownPer);
+        for (int vb = (int) blockIdx.x; vb < down_blocks; vb += gridDim.x)
+            s2_stage2_v2_body<2, false>(vb, smem, blobs, h.blob_stride, h.d_codes_off, h.d_scales_off,
+                                        jobs, (int) h.njobs, pp->faq, pp->fasc, pp->fahx, h.dst,
+                                        h.tp_blk_base, h.tp_blks, h.d_row_stride, h.d_scale_stride);
+        // the rows are system-visible, the whole grid passes one barrier, then block 0 rings the bell
+        __threadfence_system();
+        __syncthreads();
+        persist_grid_barrier(c);
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            *pp->comp_flag = h.ring;
+            __threadfence_system();
         }
     }
 }
@@ -1187,7 +1361,8 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                             const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
                                             uint16_t* d_out16, size_t blob_stride, size_t d_codes_off,
-                                            size_t d_scales_off, cudaStream_t stream) {
+                                            size_t d_scales_off, cudaStream_t stream,
+                                            int blk_base, int blks, size_t d_row_stride, size_t d_scale_stride) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2;
     constexpr int PER_BLOCK = 128 / SPLIT;
@@ -1195,7 +1370,7 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
     expert_s2_stage2_batch_v2<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
         d_faq, d_fasc, d_fahx, (float*) d_out16, nullptr, 0, nullptr,   // fp16 takes no completion tail
-        0, SC_D, ROW_D, (size_t) SC_D * 2);                             // full range: no tensor-split fp16 yet
+        blk_base, blks, d_row_stride, d_scale_stride);
 }
 
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
@@ -1241,6 +1416,11 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
         return on;
     }();
     const bool wide = t256 && split >= 2;
+    if (!::strata::core::maxwell_tp::iq_slice_valid(row_base, rows_slice, split, wide)) {
+        std::fprintf(stderr, "strata maxwell: IQ slice [%d,%d) is incompatible with SPLIT=%d THREADS=%d\n",
+                     row_base, row_base + rows_slice, split, wide ? 256 : 128);
+        std::exit(1);
+    }
     const int pb = (wide ? 256 : 128) / split;
     const int tot_rows = njobs * rows_slice;   // SPLIT_MODE_TENSOR: the card's slice of every job
     const int blocks = (tot_rows + pb - 1) / pb;
@@ -1274,6 +1454,41 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
             std::exit(1);
     }
 #undef STRATA_LAUNCH_IQ
+}
+
+// STRATA_MW_PERSIST: launch the resident kernel.  The grid is the kernel's OWN occupancy x SMs -
+// never more - so the in-kernel generation barrier is deadlock-free by construction.  The ctl is
+// zeroed in-stream first (service 0, barrier 0/0).  Returns the block count, or 0 with err set.
+int maxwell_persist_launch(const PersistParams* d_params, PersistCtl* d_ctl, cudaStream_t stream,
+                           std::string& err) {
+    using namespace strata::kernels::cuda;
+    if (cudaMemsetAsync((void*) d_ctl, 0, sizeof(PersistCtl), stream) != cudaSuccess) {
+        err = "persist: ctl memset failed";
+        return 0;
+    }
+    int per_sm = 0;
+    cudaError_t e = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, maxwell_persist_kernel<4, 128>, 128, 0);
+    if (e != cudaSuccess || per_sm <= 0) {
+        err = std::string("persist: occupancy query failed: ") + cudaGetErrorString(e ? e : cudaErrorInvalidValue);
+        return 0;
+    }
+    int sms = 0;
+    int dev = -1;   // the CURRENT device (the caller scoped it): ordinal 0 is the 3060 elsewhere
+    e = cudaGetDevice(&dev);
+    if (e == cudaSuccess)
+        e = cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev);
+    if (e != cudaSuccess || sms <= 0) {
+        err = std::string("persist: SM count query failed: ") + cudaGetErrorString(e ? e : cudaErrorInvalidValue);
+        return 0;
+    }
+    const int blocks = per_sm * sms;
+    maxwell_persist_kernel<4, 128><<<blocks, 128, 0, stream>>>(d_params, d_ctl);
+    e = cudaGetLastError();
+    if (e != cudaSuccess) {
+        err = std::string("persist: launch failed: ") + cudaGetErrorString(e);
+        return 0;
+    }
+    return blocks;
 }
 
 void s2_expert_maxwell_down(const uint8_t* d_blob, const int8_t* d_aq, const float* d_ascale,

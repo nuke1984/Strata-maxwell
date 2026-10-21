@@ -9,6 +9,7 @@
 // This is deliberately synchronous (no stream overlap with the CPU pool) for the proof: correctness first,
 // overlap later.  The CPU pool and the M10 work sequentially, so the M10 still replaces CPU work 1:1.
 #include "strata/core/maxwell_experts.hpp"
+#include "strata/core/maxwell_tp_plan.hpp"
 #include "strata/core/peer_experts.hpp"
 
 #include "strata/kernels/cuda/expert_maxwell.hpp"
@@ -16,6 +17,7 @@
 #include "strata/kernels/cpu/expert_layout.hpp"
 
 #include <cuda_runtime.h>
+#include <cuda.h>   // cuStreamWriteValue32: the persist doorbell rides the copy engine's stream
 
 #include "ggml.h"
 #include "ggml-cpu.h"   // ggml_cpu_init (the round-trip gate's to_float tables)
@@ -112,6 +114,10 @@ bool MaxwellExperts::open(int device,
                           int64_t n_layers, int64_t n_expert, int reserve_mib,
                           std::string& err, int tp_card, int tp_cards) {
     close();
+    if ((tp_cards != 1 && tp_cards != 4) || tp_card < 0 || tp_card >= tp_cards) {
+        err = "MaxwellExperts: tensor layout requires four ranks (or one whole-expert device)";
+        return false;
+    }
     tp_card_ = tp_card;
     tp_cards_ = tp_cards < 1 ? 1 : tp_cards;
     // STRATA_MW_BLOCKSYNC (opt-in): put this M10's context in BLOCKING-sync mode before anything
@@ -187,17 +193,14 @@ bool MaxwellExperts::open(int device,
     // SPLIT_MODE_TENSOR: the SC_D (=10) 64-element blocks split across the cards at BLOCK granularity
     // (block granularity keeps every shared fp16 down scale whole on one card): slot s of tp_cards takes
     // q + (s < r) blocks.  With 4 cards that is {3,3,2,2}; the layers rotate the slot
-    // ((tp_card + layer) % tp_cards), and 48 layers % 4 == 0, so every card holds each slot exactly 12
-    // times - the per-card totals are IDENTICAL and equal 1/tp_cards of the whole-expert bytes.
-    const int nblk_q = SC_D / tp_cards_, nblk_r = SC_D % tp_cards_;
-    const auto slot_blks = [&](int s) { return nblk_q + (s < nblk_r ? 1 : 0); };
-    const auto slot_base = [&](int s) { return s * nblk_q + (s < nblk_r ? s : nblk_r); };
+    // ((tp_card + layer) % tp_cards). Rotation balances the number of large slices, not exact bytes:
+    // per-layer formats and the profile's number of resident experts vary. The four shard sizes SUM
+    // exactly to the full store; each card's actual total must fit independently.
     const auto blob_of = [&](int64_t layer) -> uint64_t {
         if (tp_cards_ <= 1) return lay.native ? lay.blob_bytes(layer) : (uint64_t) BLOB;
         const auto& f = lay.fmt[(size_t) layer];
-        const int s = (tp_card_ + (int) (layer % tp_cards_)) % tp_cards_;
         // shard = 2 * (64*blks) gate/up rows (gu_row bytes each) + H rows * blks * (16 codes + 2 scale)
-        return (uint64_t) slot_blks(s) * (128ull * (uint64_t) f.gu_row + 46080ull);
+        return maxwell_tp::shard_bytes(maxwell_tp::slice(tp_card_, (int) layer), f.gu_row);
     };
 
     // take experts in assignment order until the device is full
@@ -268,11 +271,11 @@ bool MaxwellExperts::open(int device,
             // the full-blob offsets above.  tp_cards == 1 keeps the full-range defaults (the branch below
             // never fires and the store is byte-identical to the whole-expert layout).
             if (tp_cards_ > 1) {
-                const int s = (tp_card_ + (int) (L % tp_cards_)) % tp_cards_;
-                g.tp_blk_base = slot_base(s);
-                g.tp_blks = slot_blks(s);
-                g.tp_row_base = 64 * g.tp_blk_base;
-                g.tp_rows = 64 * g.tp_blks;
+                const auto part = maxwell_tp::slice(tp_card_, (int) L);
+                g.tp_blk_base = part.block_base;
+                g.tp_blks = part.blocks;
+                g.tp_row_base = part.row_base;
+                g.tp_rows = part.rows;
                 g.o_gate = 0;
                 g.o_up = (size_t) g.tp_rows * (size_t) f.gu_row;
                 g.gu_row = f.gu_row;
@@ -598,11 +601,11 @@ bool MaxwellExperts::open(int device,
                          device_, (long long) L, (long long) e,
                          ggml_type_name((ggml_type) f.gu_type), rv);
             std::fflush(stderr);
-            if (rv > 3e-2) {
+            if (!std::isfinite(rv) || rv > 3e-2) {
                 char buf[256];
                 std::snprintf(buf, sizeof(buf),
                               "MaxwellExperts (CUDA%d): the round-trip gate FAILED on layer %lld "
-                              "expert %lld (%s): rel %.2e > 3e-2 - the conversion is wrong, refusing",
+                               "expert %lld (%s): rel %.2e is non-finite or > 3e-2 - refusing",
                               device_, (long long) L, (long long) e,
                               ggml_type_name((ggml_type) f.gu_type), rv);
                 err = buf;
@@ -614,11 +617,84 @@ bool MaxwellExperts::open(int device,
                              "%lld blobs converted)\n", device_, worst, (long long) resident_);
         std::fflush(stderr);
     }
+
+    // ---- STRATA_MW_PERSIST: arm the resident decode kernel -----------------------------------
+    // Conditions: the env asks for it; the whole-expert layout (no tensor split); no zero-copy; a
+    // native pack whose every layer is an i-quant the persistent kernel's switch covers (22/16/29 -
+    // a 42/S2 gate/up layer or the canonical pack declines: this model's packs are all-i-quant);
+    // the default gup geometry (STRATA_MW_IQ_SPLIT 4, no T256), which is what <4,128> instantiates.
+    static const bool persist_env = [] {
+        const char* e = std::getenv("STRATA_MW_PERSIST");
+        const bool on = e != nullptr && e[0] != '\0' && e[0] != '0';
+        if (on) std::fprintf(stderr, "strata maxwell: PERSISTENT decode tier (STRATA_MW_PERSIST)\n");
+        return on;
+    }();
+    if (persist_env) {
+        bool ok = !zerocopy_ && tp_cards_ == 1 && !geo_.empty();
+        if (ok) {
+            static const int iq_split_env = [] {
+                const char* e = std::getenv("STRATA_MW_IQ_SPLIT");
+                return e ? std::atoi(e) : 4;
+            }();
+            static const bool t256_env = [] {
+                const char* e = std::getenv("STRATA_MW_IQ_T256");
+                return e != nullptr && e[0] != '\0' && e[0] != '0';
+            }();
+            ok = iq_split_env == 4 && !t256_env;
+        }
+        if (ok)
+            for (const auto& g : geo_)
+                if (g.gu_type != 22 && g.gu_type != 16 && g.gu_type != 29) { ok = false; break; }
+        if (!ok) {
+            std::fprintf(stderr, "strata maxwell (CUDA%d): PERSIST declined (needs whole-expert, no "
+                                 "zero-copy, an all-i-quant native pack, SPLIT 4 / 128 threads)\n", device_);
+        } else {
+            if (d_up2_ == nullptr && !check(cudaMalloc(&d_up2_, up_bytes_), "cudaMalloc staging2", err)) {
+                close();
+                return false;
+            }
+            if (!check(cudaMalloc(&d_seq_, 4), "cudaMalloc persist seq", err)) { close(); return false; }
+            if (!check(cudaMemset(d_seq_, 0, 4), "memset persist seq", err)) { close(); return false; }
+            if (!check(cudaHostAlloc((void**) &h_halt_, 4,
+                                     cudaHostAllocMapped | (::strata::core::maxwell_portable() ? cudaHostAllocPortable : 0)),
+                       "cudaHostAlloc persist halt", err)) { close(); return false; }
+            {
+                void* dh = nullptr;
+                if (!check(cudaHostGetDevicePointer(&dh, (void*) h_halt_, 0), "map persist halt", err)) {
+                    close();
+                    return false;
+                }
+                d_halt_ = (const volatile uint32_t*) dh;
+            }
+            *h_halt_ = 0;
+            if (!check(cudaMalloc(&d_pctl_, sizeof(*d_pctl_)), "cudaMalloc persist ctl", err)) { close(); return false; }
+            if (!check(cudaMalloc(&d_pparams_, sizeof(*d_pparams_)), "cudaMalloc persist params", err)) { close(); return false; }
+            strata::kernels::cuda::PersistParams pp{};
+            pp.blobs = d_blobs_;
+            pp.d_up[0] = d_up_;
+            pp.d_up[1] = d_up2_;
+            pp.faq = d_faq_;
+            pp.fasc = d_fascale_;
+            pp.fahx = d_fahx_;
+            pp.comp_flag = comp_flag_;   // null until set_completion_flag; refreshed at every launch
+            pp.d_seq = d_seq_;
+            pp.halt = d_halt_;
+            if (!check(cudaMemcpy(d_pparams_, &pp, sizeof(pp), cudaMemcpyHostToDevice), "copy persist params", err)) {
+                close();
+                return false;
+            }
+            persist_armed_ = true;
+            std::fprintf(stderr, "strata maxwell (CUDA%d): persistent tier armed (DMA dispatch + device "
+                                 "doorbell; STRATA_MW_GPUFLAG=%d, recommended 2)\n",
+                         device_, gpuflag_mode());
+        }
+    }
     return true;
 }
 
 void MaxwellExperts::close() {
     if (device_ < 0) return;
+    persist_halt();   // the resident kernel must retire before anything it touches is freed
     DeviceScope scope(device_);
     for (int s = 0; s < 4; ++s) {
         if (streams_[s]) { cudaStreamDestroy(streams_[s]); streams_[s] = nullptr; }
@@ -646,11 +722,72 @@ void MaxwellExperts::close() {
     if (s0_a_ != nullptr) { cudaEventDestroy(s0_a_); s0_a_ = nullptr; }
     if (s0_b_ != nullptr) { cudaEventDestroy(s0_b_); s0_b_ = nullptr; }
     if (s0_m_ != nullptr) { cudaEventDestroy(s0_m_); s0_m_ = nullptr; }
+    if (d_pctl_) { cudaFree(d_pctl_); d_pctl_ = nullptr; }
+    if (d_pparams_) { cudaFree(d_pparams_); d_pparams_ = nullptr; }
+    if (d_seq_) { cudaFree(d_seq_); d_seq_ = nullptr; }
+    if (h_halt_) { cudaFreeHost((void*) h_halt_); h_halt_ = nullptr; }
+    d_halt_ = nullptr;
+    persist_armed_ = false;
+    persist_live_ = false;
+    w_persisted_ = false;
     device_ = -1;
     resident_ = 0;
     gib_ = 0.0;
     res_.clear();
     held_.clear();
+}
+
+// STRATA_MW_PERSIST: (re)launch the resident kernel.  The params are refreshed each time - the
+// completion flag is handed over by set_completion_flag AFTER open(), and a halt/relaunch cycle
+// around a prefill must pick up the same words.
+bool MaxwellExperts::persist_launch(std::string& err) {
+    if (comp_flag_ == nullptr) {
+        err = "persist: no completion flag wired (this path does not arm the E1 flags)";
+        return false;
+    }
+    DeviceScope scope(device_);
+    if (!scope.ok) { err = scope.err; return false; }
+    strata::kernels::cuda::PersistParams pp{};
+    pp.blobs = d_blobs_;
+    pp.d_up[0] = d_up_;
+    pp.d_up[1] = d_up2_;
+    pp.faq = d_faq_;
+    pp.fasc = d_fascale_;
+    pp.fahx = d_fahx_;
+    pp.comp_flag = comp_flag_;
+    pp.d_seq = d_seq_;
+    pp.halt = d_halt_;
+    if (!check(cudaMemcpy(d_pparams_, &pp, sizeof(pp), cudaMemcpyHostToDevice), "copy persist params", err))
+        return false;
+    if (!check(cudaMemset(d_seq_, 0, 4), "reset persist seq", err)) return false;
+    persist_nseq_ = 0;   // the doorbell counts relative services: a fresh kernel serves 1, 2, ...
+    const int blocks = strata::kernels::cuda::maxwell_persist_launch(d_pparams_, d_pctl_, streams_[2], err);
+    if (blocks <= 0) return false;
+    persist_live_ = true;
+    static thread_local int said_blocks = -1;
+    if (blocks != said_blocks) {
+        said_blocks = blocks;
+        std::fprintf(stderr, "strata maxwell (CUDA%d): persistent tier resident (%d blocks)\n", device_, blocks);
+    }
+    return true;
+}
+
+// The stop word is a HOST STORE to the mapped halt word - the resident kernel owns its stream, so
+// a stream-ordered write could never reach it (it would queue behind the kernel and both would
+// wait for each other).  The kernel's poll loop reads the word periodically; a service mid-flight
+// finishes first (its rows and flag raise are harmless - the window's expected values moved on).
+void MaxwellExperts::persist_halt() {
+    if (!persist_live_ || h_halt_ == nullptr) return;
+    persist_live_ = false;
+    {
+        DeviceScope scope(device_);
+        if (scope.ok) {
+            __atomic_store_n((volatile uint32_t*) h_halt_, 1u, __ATOMIC_SEQ_CST);
+            cudaStreamSynchronize(streams_[2]);
+            cudaStreamSynchronize(streams_[0]);   // any in-flight service H2D retires too
+            *h_halt_ = 0;                          // re-arm for the next launch
+        }
+    }
 }
 
 bool MaxwellExperts::owns(int64_t layer, int64_t expert) const {
@@ -698,6 +835,79 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         const int32_t slot = res_[(size_t) layer * (size_t) n_expert_ + (size_t) e];
         if (slot < 0) continue;
         jobs.push_back({slot, i / k, (int32_t) i});
+    }
+    // ---- STRATA_MW_PERSIST: the service is [pack pinned][ONE H2D][ONE stream-written doorbell]. ----
+    // Both calls are issued while every M10 sits idle at its doorbell (no down window open to
+    // poison); the copy engine does the staging (an in-kernel mapped pull measured ~2 ms/layer).
+    // Packed layout [PersistHdr][acts][jobs]; the DEVICE doorbell counts RELATIVE services per
+    // launch - the kernel serves them STRICTLY IN ORDER (the split window queues up to two, and
+    // serving the newest would skip the one between: its flag would never rise) - while the hdr's
+    // ring field carries the GLOBAL service value the verifier's multi-wait expects.  EMPTY
+    // services (njobs 0) ride the same doorbell: every counted service is one the kernel raises.
+    if (persist_armed_ && w_dst_mapped_ && !w_rows_f16_) {
+        if (!persist_live_ && !persist_launch(err)) return false;
+        const uint32_t ring = comp_seq_ + 1;
+        const uint32_t nseq = ++persist_nseq_;
+        uint8_t* hsel = (nseq & 1u) ? h_up2_ : h_up_;
+        uint8_t* dsel = (nseq & 1u) ? d_up2_ : d_up_;
+        namespace mk = strata::kernels::cuda;
+        {
+            const size_t nc4 = (size_t) (H / 32) * 4;
+            uint8_t* abuf = hsel + mk::PERSIST_HDR_BYTES;
+            if (shared_acts_ != nullptr) {
+                std::memcpy(abuf, shared_acts_, (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE);
+            } else
+            for (int64_t t = 0; t < n_tok; ++t) {
+                const auto& A = acts[t];
+                uint8_t* at = abuf + (size_t) t * mk::expert_maxwell_geo::ACTS_STRIDE;
+                std::memcpy(at, A.q, H);
+                std::memcpy(at + H, A.scale, nc4);
+                std::memcpy(at + H + nc4, A.hx, nc4);
+            }
+            int32_t* hj = (int32_t*) (abuf + (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE);
+            for (size_t j = 0; j < jobs.size(); ++j) {
+                hj[j * 3] = jobs[j].slot;
+                hj[j * 3 + 1] = (int32_t) jobs[j].tok;
+                hj[j * 3 + 2] = jobs[j].row;   // non-TP: the entry index (the down body's scatter key)
+            }
+            const LayerGeo& g = geo_of(layer);
+            mk::PersistHdr* hd = (mk::PersistHdr*) hsel;
+            hd->njobs = (uint32_t) jobs.size();
+            hd->n_tok = (uint32_t) n_tok;
+            hd->gu_type = (uint32_t) g.gu_type;
+            hd->ring = ring;
+            hd->tp_row_base = g.tp_row_base;
+            hd->tp_rows = g.tp_rows;
+            hd->tp_blk_base = g.tp_blk_base;
+            hd->tp_blks = g.tp_blks;
+            hd->blob_base = g.base;
+            hd->blob_stride = g.blob_bytes;
+            hd->o_gate = g.o_gate;
+            hd->o_up = g.o_up;
+            hd->gu_row = g.gu_row;
+            hd->d_codes_off = g.d_codes_off;
+            hd->d_scales_off = g.d_scales_off;
+            hd->d_row_stride = g.d_row_stride;
+            hd->d_scale_stride = g.d_scale_stride;
+            hd->dst = w_dst_;
+        }
+        const size_t bytes = mk::PERSIST_HDR_BYTES + (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE +
+                             jobs.size() * 3 * sizeof(int32_t);
+        if (!check(cudaMemcpyAsync(dsel, hsel, bytes, cudaMemcpyHostToDevice, streams_[0]),
+                   "persist H2D", err)) return false;
+        if (CUDA_SUCCESS != cuStreamWriteValue32((CUstream) streams_[0], (CUdeviceptr) (uintptr_t) d_seq_,
+                                                 nseq, 0)) {
+            err = "persist: the doorbell write failed";
+            return false;
+        }
+        comp_seq_ = ring;
+        for (size_t j = 0; j < jobs.size(); ++j) {
+            owned_row_.push_back(jobs[j].row);
+            computed_.fetch_add(1, std::memory_order_relaxed);
+        }
+        down_launched_ = true;   // the kernel's down phase covers it; finish must not re-stage
+        w_persisted_ = true;
+        return true;
     }
     if (jobs.empty()) return true;
     if ((int64_t) jobs.size() > cap_entries_) {
@@ -762,6 +972,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         h_acts_ = hsel;
         d_acts_ = dsel;
         const size_t nc4 = (size_t) (H / 32) * 4;
+        if (shared_acts_ != nullptr) {
+            // Meta packed the window once: one bulk copy per rank instead of the per-token loop x4.
+            std::memcpy(h_acts_, shared_acts_, (size_t) n_tok * ACTS_STRIDE);
+        } else
         for (int64_t t = 0; t < n_tok; ++t) {
             const auto& A = acts[t];
             uint8_t* at = h_acts_ + (size_t) t * ACTS_STRIDE;
@@ -849,15 +1063,36 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // the compact partial block to the host partial area on a second stream, and a one-block
             // kernel raises the E1 doorbell after it.  The down itself carries no tail; the ring
             // advances with the raise.
+            // The block is moved in CHUNKS: each chunk's D2H only waits for its own downs, so the wire
+            // hides under the remaining down work (the copy engine does not contend with the kernels -
+            // measured in the LOCAL_DOWN campaign).  STRATA_MW_TP_WIRE16=1 halves the bytes further:
+            // the down writes fp16 partials and the 3060-side reduce converts them back exactly.
             if (ev_d2h_done_ != nullptr) cudaStreamWaitEvent(streams_[0], ev_d2h_done_, 0);  // d_out_ reuse
-            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
-                                               d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
-                                               g.d_scales_off, streams_[0], nullptr, 0, nullptr,
-                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
-            cudaEventRecord(ev_down_[0], streams_[0]);
-            cudaStreamWaitEvent(streams_[1], ev_down_[0], 0);
-            cudaMemcpyAsync(w_dst_, d_out_, jobs.size() * (size_t) H * sizeof(float),
-                            cudaMemcpyDeviceToHost, streams_[1]);
+            const int njobs = (int) jobs.size();
+            const size_t row_b = tp_wire16_ ? (size_t) H * 2 : (size_t) H * 4;
+            int chunk = (njobs + 3) / 4;
+            if (chunk < 1) chunk = 1;
+            for (int j0 = 0, c = 0; j0 < njobs; j0 += chunk, ++c) {
+                const int nj = std::min(chunk, njobs - j0);
+                if (tp_wire16_)
+                    s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_ + (size_t) j0 * 3, nj,
+                                                           d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32),
+                                                           d_fahx_ + (size_t) j0 * (FF / 32), (uint16_t*) d_out_,
+                                                           g.blob_bytes, g.d_codes_off, g.d_scales_off, streams_[0],
+                                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+                else
+                    s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_ + (size_t) j0 * 3, nj,
+                                                       d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32),
+                                                       d_fahx_ + (size_t) j0 * (FF / 32), d_out_,
+                                                       g.blob_bytes, g.d_codes_off, g.d_scales_off, streams_[0],
+                                                       nullptr, 0, nullptr,
+                                                       g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+                cudaEventRecord(ev_down_[c & 3], streams_[0]);
+                cudaStreamWaitEvent(streams_[1], ev_down_[c & 3], 0);
+                cudaMemcpyAsync((uint8_t*) w_dst_ + (size_t) j0 * row_b,
+                                (const uint8_t*) d_out_ + (size_t) j0 * row_b,
+                                (size_t) nj * row_b, cudaMemcpyDeviceToHost, streams_[1]);
+            }
             if (e1) {
                 mw_tp_raise_flag_async(comp_flag_, ring, streams_[1]);
                 cudaEventRecord(ev_d2h_done_, streams_[1]);
@@ -905,6 +1140,7 @@ bool MaxwellExperts::begin(int64_t layer, const strata::kernels::cpu::ActQ* acts
     }
     w_layer_ = layer; w_acts_ = acts; w_ids_ = ids; w_n_tok_ = n_tok; w_k_ = k;
     w_dst_ = dst_mapped;
+    w_persisted_ = false;   // set by begin_chain's persist branch; never carried across services
     // STRATA_MW_LOCAL_DOWN (opt-in experiment, S0): route the down stage through card-local d_out_ +
     // one pinned D2H + a host row scatter, instead of the down kernel's writes into the mapped host
     // rows.  The S0 events show the mapped-write downs slow down in card-visit order (83 -> 240 us/L
@@ -960,6 +1196,7 @@ bool MaxwellExperts::finish(float* out, std::string& err) {
 bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd,
                                std::string& err, bool accumulate) {
     if (device_ < 0) return true;
+    persist_halt();   // Maxwell has no preemption: the prefill's launches need the whole card
     w_dst_ = dst_rows; w_row_of_ = row_of_entry; w_row_base_ = row_base; w_n_embd_ = n_embd;
     w_dst_mapped_ = false;
     w_accumulate_ = accumulate;
@@ -967,10 +1204,21 @@ bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int
 }
 
 bool MaxwellExperts::finish_chain(std::string& err) {
+    // STRATA_MW_PERSIST first: the service (empty ones included - they rode the doorbell too) is
+    // already complete (or completing) inside the resident kernel; the legacy empty-raise below
+    // must not also fire for it (two writers could regress the monotonic flag word).
+    if (w_persisted_) {
+        w_persisted_ = false;
+        if (comp_flag_ != nullptr && gpuflag_mode() < 2) {
+            const uint32_t want = comp_seq_;
+            while (__atomic_load_n(comp_flag_, __ATOMIC_ACQUIRE) < want) { /* spin: the kernel is finishing */ }
+        }
+        return true;
+    }
     // E1: a decode service this tier sat out still advances the completion sequence - the verifier's
     // expected value counts every service, so the flag must rise here (a mapped write, one fence).
     if (owned_row_.empty()) {
-        if (comp_flag_ != nullptr && w_dst_mapped_ && gpuflag_mode() >= 1) {
+        if (comp_flag_ != nullptr && w_dst_mapped_ && (gpuflag_mode() >= 1 || persist_armed_)) {
             __atomic_store_n(comp_flag_, comp_seq_ + 1, __ATOMIC_SEQ_CST);
             comp_seq_ += 1;
         }

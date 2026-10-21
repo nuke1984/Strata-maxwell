@@ -352,6 +352,7 @@ public:
         tp_armed_ = true;
     }
     bool tp_armed() const { return tp_armed_; }
+    void set_maxwell_meta(MaxwellMetaTier* tier) { maxwell_meta_ = tier; }
     uint32_t* mw_flags(int i) { return h_mwf_[i]; }   // the tiers write these; the wiring hands them out
     uint32_t** mw_flags_ptr() { return h_mwf_; }      // for set_mw_wait's array form
     /// Plan v0.3 P6: how the PCIe share of the misses reaches the GPU: 0 = DMA into staging (the copy engine works
@@ -599,6 +600,7 @@ private:
     float* tp_p_[4] = {};
     int32_t* tp_row_a_ = nullptr, * tp_row_b_ = nullptr;
     bool tp_armed_ = false;
+    MaxwellMetaTier* maxwell_meta_ = nullptr;   // one opaque consumer; physical rank details stay inside Meta
     uint32_t* h_mwe_ = nullptr; uint32_t* m_mwe_ = nullptr;   // 64 slots, indexed by step & 63
     bool mw_wait_ = false;             // the tiers are wired: the graph waits their flags too
     int64_t mw_services_ = 0;          // the tier launch counter the expected values track

@@ -436,6 +436,95 @@ __global__ void sum_tp_rows_mw_kernel(float4* __restrict__ rows, int64_t row4,
     }
 }
 
+// Meta is one consumer endpoint. Wait for the parent's publication BEFORE reading
+// expected, so an old ticket cannot be accepted during the main-flag transition.
+__global__ void maxwell_meta_reduce_kernel(const volatile uint32_t* main, uint32_t ring,
+    const volatile uint32_t* expected, const volatile uint32_t* f0, const volatile uint32_t* f1,
+    const volatile uint32_t* f2, const volatile uint32_t* f3,
+    const float4* a0, const float4* a1, const float4* a2, const float4* a3,
+    const float4* b0, const float4* b1, const float4* b2, const float4* b3,
+    const int32_t* ma, const int32_t* mb, float4* dst, const float4* fallback, int64_t width4,
+    const int32_t* hits, const int32_t* count, bool direct, bool wire16,
+    const volatile uint32_t* cancel, uint32_t* counter, volatile uint32_t* consumed) {
+    __shared__ int job, zero, stopped;
+    __shared__ uint32_t ticket;
+    const int row = (int) blockIdx.x;
+    if (threadIdx.x == 0) {
+        while (*main < ring && !*cancel) strata_spin_pause();
+        ticket = *expected;
+        while (!*cancel && (*f0 < ticket || *f1 < ticket || *f2 < ticket || *f3 < ticket)) strata_spin_pause();
+        __threadfence_system();
+        stopped = *cancel != 0;
+        job = stopped ? -1 : ((ticket & 1u) ? mb[row] : ma[row]);
+        zero = stopped;
+        if (job < 0 && !stopped)
+            for (int i = 0; i < *count; ++i) zero |= hits[i] == row;
+    }
+    __syncthreads();
+    // Double-buffered partial areas: the submission's parity is baked into the ticket the
+    // ranks' flags carry, so the consumer picks the same set the writer used - no host gate.
+    const float4* base[4] = {((ticket & 1u) ? b0 : a0), ((ticket & 1u) ? b1 : a1),
+                             ((ticket & 1u) ? b2 : a2), ((ticket & 1u) ? b3 : a3)};
+    for (int64_t i = threadIdx.x; i < width4; i += blockDim.x) {
+        float4 value;
+        if (stopped) value = make_float4(0, 0, 0, 0);
+        else if (job >= 0) {
+            const int64_t at = (int64_t) job * width4 + i;
+            float4 s[4];
+            for (int r = 0; r < 4; ++r) {
+                if (!wire16) {
+                    s[r] = base[r][at];
+                } else {
+                    // fp16 wire: halves are ROW-MAJOR (H per row), so this float4 (=4 floats)
+                    // pairs with halves [4i,4i+4): one uint2 (8 B) load. Conversion is exact.
+                    const uint2 h = ((const uint2*) base[r])[at];
+                    const uint16_t q[4] = {(uint16_t) h.x, (uint16_t) (h.x >> 16),
+                                           (uint16_t) h.y, (uint16_t) (h.y >> 16)};
+                    s[r] = make_float4(strata::kernels::f32_from_f16(q[0]), strata::kernels::f32_from_f16(q[1]),
+                                       strata::kernels::f32_from_f16(q[2]), strata::kernels::f32_from_f16(q[3]));
+                }
+            }
+            value = make_float4(((s[0].x + s[1].x) + s[2].x) + s[3].x, ((s[0].y + s[1].y) + s[2].y) + s[3].y,
+                               ((s[0].z + s[1].z) + s[2].z) + s[3].z, ((s[0].w + s[1].w) + s[2].w) + s[3].w);
+        } else if (zero) {
+            if (!direct) continue;   // the reference copy zeroes hits, so no host write is needed
+            value = make_float4(0, 0, 0, 0);
+        } else value = fallback[(int64_t) row * width4 + i];
+        dst[(int64_t) row * width4 + i] = value;
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (direct && threadIdx.x == 0 && atomicAdd(counter, 1u) == gridDim.x - 1) {
+        *counter = 0;
+        __threadfence_system();
+        *consumed = ticket;
+        __threadfence_system();
+    }
+}
+
+__global__ void maxwell_meta_complete_kernel(const volatile uint32_t* expected, volatile uint32_t* consumed) {
+    __threadfence_system();
+    *consumed = *expected;
+    __threadfence_system();
+}
+void maxwell_meta_complete(const uint32_t* expected, uint32_t* consumed, void* stream) {
+    maxwell_meta_complete_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(expected, consumed);
+}
+
+void maxwell_meta_reduce(const uint32_t* main, uint32_t ring, const uint32_t* expected,
+    const uint32_t* const* flags, const float* const* partials_a, const float* const* partials_b,
+    const int32_t* ma, const int32_t* mb,
+    float* dst, const float* fallback, int64_t rows, int64_t width, const int32_t* hits,
+    const int32_t* count, bool direct, bool wire16, const uint32_t* cancel, uint32_t* counter,
+    uint32_t* consumed, void* stream) {
+    maxwell_meta_reduce_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        main, ring, expected, flags[0], flags[1], flags[2], flags[3],
+        (const float4*) partials_a[0], (const float4*) partials_a[1], (const float4*) partials_a[2], (const float4*) partials_a[3],
+        (const float4*) partials_b[0], (const float4*) partials_b[1], (const float4*) partials_b[2], (const float4*) partials_b[3],
+        ma, mb, (float4*) dst, (const float4*) fallback, width / 4, hits, count, direct, wire16,
+        cancel, counter, consumed);
+}
+
 // mode 3: the E1 multi-wait (main + 4 tier flags + expected ring) fused into the row copy's blocks -
 // one launch, one poll, the unfused [wait_mw + copy] pair replaced.
 void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,

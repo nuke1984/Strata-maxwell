@@ -610,6 +610,7 @@ struct ExpertDispatch {
     /// are computed there instead of on the CPU (kind 3).  Like the peer, but static (no adaptive swaps)
     /// and with the scalar Maxwell kernel instead of moe_grouped_s2.
     class MaxwellExperts* maxwell[4] = {};
+    class MaxwellMetaTier* maxwell_meta = nullptr;   ///< one opaque routed-expert device; no rank orchestration here
     int maxwell_count = 0;
     int64_t maxwell_entries = 0;   ///< routed entries the Maxwell tier served
     /// SPLIT_MODE_TENSOR (the Meta tier): the four cards hold tensor SHARDS of the same resident set and

@@ -13,6 +13,7 @@
 #include "strata/core/on_device.hpp"
 #include "strata/platform/aux_cpus.hpp"
 #include "strata/core/maxwell_experts.hpp"
+#include "strata/core/maxwell_meta.hpp"
 
 #include "strata/core/layout.hpp"
 #include "strata/kernels/cpu/expert.hpp"
@@ -942,6 +943,7 @@ struct Prefill::Impl {
     // Maxwell (sm_50) tiers: their experts are computed THERE for the prompt chunk (not read from the arena),
     // and written into the grouped Dm rows before the combine.  on_mw marks them per expert for the layer.
     core::MaxwellExperts* mw[4] = {};
+    core::MaxwellMetaTier* meta = nullptr;
     int mw_count = 0;
     std::vector<char> on_mw;
     std::vector<strata::kernels::cpu::ActQ> mw_acts;   // one per token of the chunk (the M10s' ActQ contract)
@@ -1439,7 +1441,7 @@ bool Prefill::carve(size_t T, void* alloc) {
     m.max_blocks = ss.qsa_states[ss.qsa_primary()].max_cells / s.idx_block + 2;
     {
         // one region for the attention half's and the MoE half's scratch (see gdn_set_bytes)
-        const bool fz = fused_layout(T, m.src != nullptr) && m.mw_count == 0;   // Maxwell: the MMQ layout
+        const bool fz = fused_layout(T, m.src != nullptr) && m.mw_count == 0 && !m.meta;   // Maxwell: the MMQ layout
         m.fused_bufs = fz;
         const MoeBufs mb = moe_bufs(T, m.g->n_expert, fz);
         const uint64_t region = std::max({gdn_set_bytes(T), qsa_set_bytes(T, m.cap, m.max_blocks, m.sel_batch,
@@ -2053,6 +2055,17 @@ bool Prefill::set_maxwell(core::MaxwellExperts** tiers, int count, std::string& 
     return true;
 }
 
+bool Prefill::set_maxwell_meta(core::MaxwellMetaTier* tier, std::string& err) {
+    Impl& m = *impl_;
+    if (!tier || !tier->valid() || !mmq_plan().any) { err = "prefill Meta: needs a loaded tier and MMQ"; return false; }
+    m.meta = tier;
+    m.on_mw.assign((size_t) m.g->n_expert, 0);
+    m.mw_acts.resize((size_t) m.T_max);
+    m.mw_block.resize((size_t) m.T_max * (size_t) K * (size_t) N);
+    std::fprintf(stderr, "strata prefill: ONE Maxwell Meta routed-expert device\n");
+    return true;
+}
+
 void Prefill::set_pinned_share(double share) { g_pinned_share = share; }
 void Prefill::set_ring_override(int slots) { g_ring_override = slots > 0 ? slots : 0; }
 void Prefill::set_ring_budget(int slots, int64_t small_max) {
@@ -2406,6 +2419,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
     // whether a Maxwell (sm_50) tier owns this (layer, expert): its rows are computed THERE, never read from
     // the arena (this is what lets the arena be released after startup)
     auto mw_owns = [&](int64_t l, int32_t e) {
+        if (m.meta) return m.meta->owns(l, e);
         for (int i = 0; i < m.mw_count; ++i) if (m.mw[i]->owns(l, e)) return true;
         return false;
     };
@@ -2524,7 +2538,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
         }
         if (std::getenv("STRATA_TRACE")) { std::fprintf(stderr, "strata trace: prompt chunk %lld of %lld\n", (long long) c0, (long long) n); std::fflush(stderr); }
         const int64_t T = std::min(C, n - c0), p0 = pos0 + c0;
-        if (m.mw_count > 0) m.mw_mixed_h.resize((size_t) T * N);   // the Maxwell path's D2H staging
+        if (m.meta || m.mw_count > 0) m.mw_mixed_h.resize((size_t) T * N);   // the Maxwell path's D2H staging
         core::progress_at("reading the prompt (batched): preparing the chunk from token", p0);   // #251
         ++stats_.chunks;
         pt.mark(kPfStart, cs);
@@ -2763,7 +2777,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                 for (int32_t e = 0; e < m.g->n_expert; ++e) {
                     if (m.host_res && m.cache && m.host_res[(size_t) l * m.g->n_expert + e] >= 0) continue;
                     if (m.pp && m.pp->peer && m.pp->peer->has(l, e)) continue;   // multi-GPU: computed on (or read from) the peer
-                    if (m.mw_count > 0 && mw_owns(l, e)) continue; // the Maxwell tier computes it: never read the arena
+                    if ((m.meta || m.mw_count > 0) && mw_owns(l, e)) continue; // never read the arena for Meta-owned experts
                     int job = -1;
                     const uint8_t* b = nullptr;
                     if (m.src->transient(l, e)) {   // CS-T: copied by the source into the stager's buffer
@@ -3412,7 +3426,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                     const int mmq_dt = lay.native ? lay.fmt[(size_t) l].d_type : 42;
                     // --peer-device: MMQ only, whether or not the peer took the prompt path (set_peer can decline), as
                     // fused_ring() sized the ring and the buffers for it
-                    const bool no_peer = !core::peer_portable() && m.mw_count == 0;   // Maxwell: MMQ, like the peer
+                    const bool no_peer = !core::peer_portable() && m.mw_count == 0 && !m.meta;   // Maxwell: MMQ
                     const bool fused_only = mmq_plan().any && mmq_plan().fo[(size_t) l];
                     const bool fused_nat = (use_mmq || fused_only) && stream_all && no_peer && lay.native && fused::native_supported(mmq_gt, mmq_dt);
                     const bool fused_l = (use_mmq && stream_all && no_peer && !lay.native && fused::enabled()) || fused_nat;
@@ -3692,7 +3706,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         // Maxwell (sm_50): the experts a tier owns are computed there; their rows go last in Dm
                         // (after the peer's), and they never enter `order` (the primary does not compute them).
                         std::vector<char> on_mw_l;
-                        if (m.mw_count > 0) {
+                        if (m.meta || m.mw_count > 0) {
                             on_mw_l.assign((size_t) m.g->n_expert, 0);
                             for (int32_t e = 0; e < m.g->n_expert; ++e) {
                                 const int32_t c = m.cnt[(size_t) e];
@@ -3871,8 +3885,13 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             const bool mw_tp = m.mw_count > 0 && m.mw[0] != nullptr && m.mw[0]->tensor();
                             if (mw_tp) std::memset(m.mw_block.data(), 0, (size_t) rows_mw * N * 4);
                             constexpr int64_t MW_SUB = 64;   // the tier's window (n_tok_max)
-                            for (int64_t t0 = 0; t0 < T; t0 += MW_SUB) {
-                                const int64_t nt = std::min(MW_SUB, T - t0);
+                             for (int64_t t0 = 0; t0 < T; t0 += MW_SUB) {
+                                 const int64_t nt = std::min(MW_SUB, T - t0);
+                                 if (m.meta) {
+                                     if (!m.meta->prefill(l, m.mw_acts.data() + t0, ids_h + t0 * K, nt, K,
+                                                          m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local, rows_mw, err)) return false;
+                                     continue;
+                                 }
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->begin(l, m.mw_acts.data() + t0, ids_h + t0 * K, nt, K, nullptr,
                                                         nullptr, false, err))

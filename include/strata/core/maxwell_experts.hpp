@@ -49,11 +49,13 @@ public:
     ///
     /// `src_blob` is a callback returning the host pointer of one expert's 1,382,400-byte blob.
     ///
-    /// SPLIT_MODE_TENSOR (`tp_cards` > 1): the Meta tier.  Every card takes the WHOLE `assign` list and
+    /// SPLIT_MODE_TENSOR (`tp_cards` == 4): one physical rank of the routed-expert TP tier.
+    /// MaxwellMetaTier owns/orchestrates these ranks. Every card takes the WHOLE `assign` list and
     /// stores a TENSOR SHARD of every expert instead of whole experts: gate/up rows [64*blk_base,
     /// 64*(blk_base+blks)) and down blocks [blk_base, blk_base+blks) of the SC_D 64-element blocks, the
     /// slice rotating by layer (`(tp_card + layer) % tp_cards`) so the {3,3,2,2}-block split of 10 over
-    /// 4 cards evens out exactly (48 layers % 4 == 0).  The four shards sum to the full blob; every
+    /// 4 cards rotates evenly (48 layers % 4 == 0). Byte totals still vary with per-layer formats and
+    /// expert counts. The four shards sum to the full blob; every
     /// routed entry is then computed by ALL cards concurrently, each writing a PARTIAL output row the
     /// consumer sums in rank order.  `tp_cards` == 1 (default) keeps the whole-expert layout, and the
     /// whole function is byte-identical to the previous behaviour.
@@ -87,6 +89,12 @@ public:
     /// E1: hand this tier its mapped completion flag (the verifier allocates four).  When set, the
     /// decode down kernel raises it and (mode 2) the host stops waiting for the M10s.
     void set_completion_flag(uint32_t* f) { comp_flag_ = f; }
+    /// Routed-TP wire option: the down writes fp16 partial rows and the D2H moves half
+    /// the bytes (the reduce converts back exactly). Set before the first begin().
+    void set_tp_wire16(bool on) { tp_wire16_ = on; }
+    /// Meta packs the window's activations ONCE and shares them: begin() then bulk-copies
+    /// the packed block instead of re-packing per rank (four times the same bytes today).
+    void set_shared_acts(const uint8_t* packed) { shared_acts_ = packed; }
     bool begin(int64_t layer, const strata::kernels::cpu::ActQ* acts, const int32_t* ids, int64_t n_tok,
                int64_t k, const int32_t* kind, float* dst_mapped, bool rows_f16, std::string& err);
     /// Wait for this device's staged rows and write them into `out` (row i = entry i, n_embd floats) - the
@@ -111,6 +119,10 @@ public:
     /// dispatcher reads it to pick the double-buffered staging parity of the UPCOMING service - its
     /// ring value is seq()+1, the same value the verifier publishes as this step's expected sequence.
     uint32_t seq() const { return comp_seq_; }
+    /// STRATA_MW_PERSIST: whether open() armed this card's resident decode kernel.  The driver wires
+    /// the E1 completion flags whenever any tier is persist-armed (the kernel raises them whatever
+    /// STRATA_MW_GPUFLAG says - mode 0 then behaves like mode 1, the host wait kept).
+    bool persist_armed() const { return persist_armed_; }
     /// The (layer, expert) pairs actually resident on this device (subset of the assignment that fit).
     /// Used by the driver to exclude them from the RAM complement (no duplication).
     const std::vector<std::pair<int32_t, int32_t>>& held_pairs() const { return held_; }
@@ -167,6 +179,8 @@ private:
     // service whose jobs list came out empty.  Mode (STRATA_MW_GPUFLAG): 0 off, 1 flags+multi-wait
     // with the host sync kept, 2 also drops the decode-path sync (double-buffered staging).
     uint32_t* comp_flag_ = nullptr;
+    bool tp_wire16_ = false;        // routed-TP delivery: fp16 partial rows on the wire
+    const uint8_t* shared_acts_ = nullptr;   // Meta's once-packed activation block (null: pack per rank)
     uint32_t comp_seq_ = 0;
     uint32_t pending_raise_ = 0;
     uint32_t* d_ctr_ = nullptr;
@@ -234,6 +248,24 @@ private:
     bool down_launched_ = false;  // the down stage of this layer already ran at begin() time
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);
+
+    // STRATA_MW_PERSIST (see include/strata/kernels/cuda/expert_maxwell.hpp): the resident decode
+    // kernel.  The decode dispatch becomes pinned-ring writes + one doorbell store - zero CUDA API
+    // calls per layer - and the batched launches/syncs (and with them the visit-order poison) apply
+    // only to the non-persist paths.  `w_persisted_` carries "this service went through the ring"
+    // from begin_chain to finish_chain; the prefill (finish_to) and close() halt the kernel first:
+    // Maxwell has no preemption, so nothing else may share the card with it.
+    bool persist_armed_ = false;
+    bool persist_live_ = false;
+    bool w_persisted_ = false;
+    uint32_t persist_nseq_ = 0;                // the RELATIVE doorbell counter (reset at every launch)
+    uint32_t* d_seq_ = nullptr;                // the DEVICE doorbell (the copy engine rings it)
+    volatile uint32_t* h_halt_ = nullptr;      // the MAPPED stop word (a host store; the kernel polls it)
+    const volatile uint32_t* d_halt_ = nullptr;
+    strata::kernels::cuda::PersistParams* d_pparams_ = nullptr;
+    strata::kernels::cuda::PersistCtl* d_pctl_ = nullptr;
+    bool persist_launch(std::string& err);
+    void persist_halt();
 
     bool check(cudaError_t e, const char* what, std::string& err);
 };

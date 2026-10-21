@@ -23,7 +23,7 @@
 #include <string>
 
 namespace strata::kernels::cpu { class ExpertPool; }
-namespace strata::core { class PeerExperts; class MaxwellExperts; }
+namespace strata::core { class PeerExperts; class MaxwellExperts; class MaxwellMetaTier; }
 
 namespace strata::prefill {
 
@@ -179,6 +179,7 @@ public:
     /// the layer's grouped `Dm` rows (via finish_to), so the arena is never read for them and can be released.
     /// `tiers`/`count` are the driver's MaxwellExperts instances.  Call after init and after the tiers are open.
     bool set_maxwell(core::MaxwellExperts** tiers, int count, std::string& err);
+    bool set_maxwell_meta(core::MaxwellMetaTier* tier, std::string& err);
 
     /// Plan v0.3 P6: called after every chunk with the chunk's final multi-stream residual rows (device,
     /// T x hc*n_embd, valid until the next chunk) and the chunk's first position; the MTP draft layer builds its

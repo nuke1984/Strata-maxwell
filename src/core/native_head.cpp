@@ -7,6 +7,7 @@
 #include <cuda_runtime.h>
 #include <climits>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 
@@ -143,6 +144,26 @@ bool NativeEmbed::load(const std::vector<std::string>& shards, int64_t n_embd, i
             return false;
         }
         strata::platform::advise_willneed(gguf.tensor_data(*t), bytes_);   // copied out of the mapping below
+        const char* embed_vram = std::getenv("STRATA_EMBED_VRAM");
+        if (embed_vram != nullptr && std::atoi(embed_vram) != 0) {
+            // Placement only: identical GGUF bytes, row stride and gather kernels. The table is loaded before
+            // expert-cache sizing, so its VRAM use is visible to the normal memory budget, not a hidden overcommit.
+            void* d = nullptr;
+            cudaError_t status = cudaMalloc(&d, bytes_);
+            if (status == cudaSuccess)
+                status = cudaMemcpy(d, gguf.tensor_data(*t), bytes_, cudaMemcpyHostToDevice);
+            if (status != cudaSuccess) {
+                if (d) cudaFree(d);
+                err = "native embedding: STRATA_EMBED_VRAM requested " + std::to_string(bytes_ >> 20) +
+                      " MiB in VRAM: " + cudaGetErrorString(status);
+                return false;
+            }
+            dev_ = d;
+            type_ = (int) t->type;
+            n_embd_ = n_embd;
+            n_vocab_ = n_vocab;
+            return true;
+        }
         cudaError_t host_err = cudaHostAlloc(&host_, bytes_, cudaHostAllocMapped | cudaHostAllocPortable);
         if (host_err != cudaSuccess) {
             // Under WSL2 the driver's pinned/mapped host budget (~1 GiB) can be spent by the GPU contexts

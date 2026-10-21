@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <cuda_runtime.h>
 
@@ -121,7 +122,10 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
                                             uint16_t* d_out16, size_t blob_stride = expert_maxwell_geo::BLOB,
                                             size_t d_codes_off = expert_maxwell_geo::O_D_CODES,
                                             size_t d_scales_off = expert_maxwell_geo::O_D_SCALES,
-                                            cudaStream_t stream = 0);
+                                            cudaStream_t stream = 0,
+                                            int blk_base = 0, int blks = expert_maxwell_geo::SC_D,
+                                            size_t d_row_stride = expert_maxwell_geo::ROW_D,
+                                            size_t d_scale_stride = (size_t) expert_maxwell_geo::SC_D * 2);
 void s2_expert_maxwell_sync();
 
 /// SPLIT_MODE_TENSOR delivery: raise the tier's mapped completion flag to `ring` on `stream`, ordered
@@ -131,5 +135,55 @@ void mw_tp_raise_flag_async(volatile uint32_t* mflag, uint32_t ring, cudaStream_
 /// Whether the v2 batch kernels are enabled (STRATA_S2_V2, default on): the caller picks the fused
 /// gup_quant call when true, the v1 gup_batch + quant_ff pair otherwise.
 bool s2_expert_maxwell_v2();
+
+// ---- STRATA_MW_PERSIST: the self-service tier ------------------------------------------------
+//
+// One PERSISTENT kernel per card runs the decode services; the host's per-layer dispatch becomes
+// pure pinned-memory writes (acts + job table + header into a 2-slot ring, then one doorbell store)
+// - ZERO CUDA API calls per layer per card, so the visit-order "poison" (every host call during the
+// down window stretches the cards served after it) cannot occur and the two per-layer launches
+// disappear.  The kernel polls the mapped doorbell (block 0 only; the broadcast rides device
+// memory so the uplink stays quiet), stages the service's acts+jobs from the mapped slot into
+// device memory ONCE and in bulk (P7's lesson honoured: no mapped reads inside any dot), grid-
+// barriers on a hand-rolled generation counter (the grid is sized to the kernel's own occupancy,
+// so every block is resident and the barrier cannot deadlock - sm_50 has no cooperative launch),
+// runs the SAME gup and down bodies the batched kernels run, and after a final system-wide fence
+// block 0 raises the E1 tier completion flag exactly like the batched down's last block did.
+struct PersistParams {          // device memory, written once before the launch
+    const uint8_t* blobs;       ///< d_blobs_ (the layer region rides the per-service header)
+    uint8_t* d_up[2];           ///< the two device staging sets (parity per service)
+    int8_t* faq;                ///< the FF quant image (gup writes, down reads)
+    float* fasc;
+    float* fahx;
+    volatile uint32_t* comp_flag;   ///< the verifier's mapped tier flag (E1 contract)
+    volatile uint32_t* d_seq;       ///< DEVICE doorbell: the copy engine writes the service number
+                                    ///< after the service's H2D (cuStreamWriteValue32); 0xFFFFFFFF = halt
+    const volatile uint32_t* halt;  ///< MAPPED stop word (a host store - the ONLY way to reach a kernel
+                                    ///< that owns its stream; checked periodically by the poll loop)
+};
+struct PersistCtl {             // device memory, zeroed before every launch
+    volatile int service;       ///< block 0's broadcast of the newest doorbell value (-1 = stop)
+    unsigned bar_count;         ///< the grid barrier's arrival count
+    volatile unsigned bar_gen;  ///< ..and its generation
+};
+static_assert(sizeof(PersistCtl) % 4 == 0);
+/// One service's header, the FIRST 128 bytes of the packed staging the H2D copies (so it lands in
+/// device memory with the acts and the job table in ONE transfer).  Host-written, kernel-read.
+struct PersistHdr {
+    uint32_t njobs, n_tok, gu_type, ring;               ///< the E1 flag value this service raises
+    int tp_row_base, tp_rows, tp_blk_base, tp_blks;     ///< non-TP: (0, FF, 0, SC_D)
+    uint32_t pad0[4];
+    size_t blob_base, blob_stride, o_gate, o_up, gu_row;
+    size_t d_codes_off, d_scales_off, d_row_stride, d_scale_stride;
+    float* dst;                                         ///< the service's mapped rows base
+};
+static_assert(sizeof(PersistHdr) == 128);
+/// The device staging layout: [PersistHdr][acts n_tok*ACTS_STRIDE][job table njobs*12].
+inline constexpr size_t PERSIST_HDR_BYTES = sizeof(PersistHdr);
+inline constexpr uint32_t PERSIST_HALT = 0xFFFFFFFFu;   ///< the device doorbell's stop value
+
+/// Launch the persistent kernel (grid = its own occupancy x SMs) on `stream`.  The ctl is zeroed
+/// in-stream first.  Returns the block count (0 + err on failure).
+int maxwell_persist_launch(const PersistParams* d_params, PersistCtl* d_ctl, cudaStream_t stream, std::string& err);
 
 }  // namespace strata::kernels::cuda

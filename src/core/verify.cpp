@@ -3,6 +3,8 @@
 #include "strata/core/sm75_series.hpp"
 #include "strata/kernels/gfx_arch.hpp"
 #include "strata/core/verify.hpp"
+#include "strata/core/maxwell_tp_plan.hpp"
+#include "strata/core/maxwell_meta.hpp"
 #if !defined(STRATA_USE_HIP) && !defined(STRATA_HIP_GFX906)
 #include "strata/core/host_graph_launch.hpp"
 #endif
@@ -464,6 +466,7 @@ const int64_t g_test_drop = [] {
 
 bool Verifier::release_gpu_waits(int timeout_ms) {
     released_.store(true);
+    if (maxwell_meta_) maxwell_meta_->abort();   // one cancellation endpoint, no physical rank flags here
     trace_ev("RELEASE", -1, -1, timeout_ms);
     // the words the spin kernels read (wait_flag_ge, wait_flag_ge_or) are mapped host memory, so a store here
     // reaches them with no API call; UINT32_MAX is past every ring.  (E-6's skip words are device memory, but
@@ -2060,24 +2063,31 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 // (rank-ordered sum, deterministic).  It sits where the plain path waits, so everything
                 // below reads completed rows; the fused-mw copy is disarmed (it would race the
                 // assembly), and the wait_mw below it passes instantly once the flags are up.
+                if (maxwell_meta_) {
+                    if (!maxwell_meta_->record_consume(cs, m_flag_, ring, (int) l,
+                            parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
+                            p_dst, p_counts + 1, err)) return false;
+                }
                 if (tp_armed_ && mw_wait_) {
                     const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
                     const float* pp[4] = { tp_p_[0], tp_p_[1], tp_p_[2], tp_p_[3] };
-                    sum_tp_rows_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,
+                    sum_tp_rows_after_mw(m_flag_, ring, m_mwe_ + maxwell_tp::expected_slot((l - lb_) * G + grp), mw,
                                          m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N, pp,
                                          tp_row_a_, tp_row_b_, cs);
                 }
                 const bool fuse_mw = fuse_rows && mw_wait_ && fuse_mw_on && !tp_armed_;
-                if (fuse_mw) {
+                if (maxwell_meta_) {
+                    // Completion, reduction and delivery have been recorded through one Meta endpoint.
+                } else if (fuse_mw) {
                     const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
-                    copy_rows_from_mapped_after_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw,
+                    copy_rows_from_mapped_after_mw(m_flag_, ring, m_mwe_ + maxwell_tp::expected_slot((l - lb_) * G + grp), mw,
                                                    parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K, N,
                                                    p_dst, p_counts + 1, cs);
                 } else if (mw_wait_) {
                     // E1: the wait ALSO gates on the tiers' GPU-raised flags - the expected sequence
                     // comes from this step's ring slot at run time (the capture bakes only pointers).
                     const uint32_t* mw[4] = { m_mwf_[0], m_mwf_[1], m_mwf_[2], m_mwf_[3] };
-                    wait_mw(m_flag_, ring, m_mwe_ + ((l - lb_) * G + grp) * 1, mw, cs);
+                    wait_mw(m_flag_, ring, m_mwe_ + maxwell_tp::expected_slot((l - lb_) * G + grp), mw, cs);
                 } else if (!fuse_rows) {
                     if (m_bal_ != nullptr)   // set_pcie_balance: ... and ends as it waits for the CPU's rows
                         wait_flag_ge_stamped(m_flag_, ring, m_bal_ + ((l - lb_) * 2 + grp) * 4 + 2, nullptr, cs);
@@ -2085,7 +2095,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                         wait_flag_ge(m_flag_, ring, cs);           // the CPU's share is in the mapped rows
                 }
                 stamp(l, 23, grp);
-                if (fuse_mw) {
+                if (maxwell_meta_) {
+                    // Meta already supplied complete rows, including zeros for primary-GPU hits.
+                } else if (fuse_mw) {
                     // done: the wait and the copy were one launch above
                 } else if (remote_opt_)   // #578: the helper's rows come back reduced; skip them as well
                     remote_opt_->copy_rows(parts_out, m_ymiss_ + (size_t) tb * K * N, tb, n, p_dst, p_counts + 1, cs);
@@ -2940,7 +2952,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         // E1: publish this step's expected tier-sequence BEFORE the main flag rises - the graph's
         // multi-wait reads it at run time from this step's ring slot.  The tiers' launch counter and
         // this count advance in lockstep (one service per tier per step, kernel-raised or host-raised).
-        if (mw_wait_) h_mwe_[k & 63] = (uint32_t) (++mw_services_);
+        if (mw_wait_) h_mwe_[maxwell_tp::expected_slot(k)] = (uint32_t) (++mw_services_);
         if (!(test_stall && k + 1 == steps)) *flag = want;
         if (h_bal_ != nullptr) bal_p_[(size_t) ((k / G) * 2 + grp)] = ms_since(b);
         ms_wait += std::chrono::duration<double, std::milli>(b - a).count();

@@ -22,6 +22,8 @@
 #include "strata/core/device.hpp"
 #include "strata/core/remote_expert_opt.hpp"
 #include "strata/core/expert_cache.hpp"
+#include "strata/core/maxwell_tp_plan.hpp"
+#include "strata/core/maxwell_meta.hpp"
 #include "strata/core/conversation_snapshot.hpp"
 #include "strata/core/conversation_file.hpp"
 #include "strata/core/session_save_reclaim.hpp"
@@ -2664,6 +2666,54 @@ int main(int argc, char** argv) {
         }
         }
     }
+    // Routed-expert TP currently has one serving verifier and one partial area per rank. Refuse unsupported
+    // consumers BEFORE reading weights: silently loading shards without their reduction wiring corrupts output.
+    if (o.maxwell_split != "expert" && o.maxwell_split != "tensor") {
+        std::fprintf(stderr, "strata generate: --maxwell-split must be expert or tensor\n");
+        return 2;
+    }
+    if (o.maxwell_split == "tensor") {
+        auto refuse_tp = [](const char* why) {
+            std::fprintf(stderr, "strata generate: --maxwell-split tensor: %s\n", why);
+            return 2;
+        };
+        if (!o.serve) return refuse_tp("requires --serve (direct generation has no TP reduction wiring)");
+        if (o.batch > 0) return refuse_tp("--batch is not yet supported by the TP verifier");
+        if (o.pipeline_windows > 0) return refuse_tp("--pipeline-windows is not yet supported");
+        if (!o.layer_split.empty()) return refuse_tp("--layer-split is not yet supported");
+        if (o.spec_split) return refuse_tp("--spec-split is not yet supported (partial buffers are single-group)");
+        if (o.no_capture || o.no_token_graph) return refuse_tp("requires the token-graph serving path");
+        if (o.peer_device >= 0 || std::any_of(o.expert_cache_remote.begin(), o.expert_cache_remote.end(), [](int n) { return n > 0; }))
+            return refuse_tp("peer/remote expert tiers cannot be combined with this TP tier yet");
+        const auto env_int = [](const char* name, int fallback = 0) {
+            const char* v = std::getenv(name); return v ? std::atoi(v) : fallback;
+        };
+        const int e1 = env_int("STRATA_MW_GPUFLAG");
+        if (e1 != 1 && e1 != 2) return refuse_tp("needs STRATA_MW_GPUFLAG=1 or 2");
+        if (const char* v2 = std::getenv("STRATA_S2_V2"); v2 && v2[0] == '0') return refuse_tp("needs STRATA_S2_V2=1");
+        for (const char* name : {"STRATA_MW_ZEROCOPY", "STRATA_MW_LOCAL_DOWN", "STRATA_MW_DOWN_LOCAL_TIMING",
+                                  "STRATA_MW_ROWS_F16", "STRATA_VERIFY_DEVICE_PLAN"})
+            if (env_int(name)) return refuse_tp((std::string(name) + " is not supported with TP").c_str());
+        int split = env_int("STRATA_MW_IQ_SPLIT", 4);
+        if (split != 1 && split != 2 && split != 4) split = 4;   // the launcher's existing normalization
+        const char* t256 = std::getenv("STRATA_MW_IQ_T256");
+        const bool wide = t256 && t256[0] != '\0' && t256[0] != '0' && split >= 2;
+        if (!strata::core::maxwell_tp::iq_slice_valid(0, 192, split, wide) ||
+            !strata::core::maxwell_tp::iq_slice_valid(0, 128, split, wide))
+            return refuse_tp("IQ launch geometry does not divide both 192-row and 128-row shards");
+        std::array<int, 4> devices{};
+        const int primary = env_int("STRATA_PRIMARY_DEVICE");
+        const auto why = strata::core::maxwell_tp::parse_devices(o.maxwell_devices, primary, devices);
+        if (!why.empty()) return refuse_tp(why.c_str());
+        if (o.native_preset.empty() || o.expert_profile.empty()) return refuse_tp("needs --native and --expert-profile");
+        int count = 0;
+        if (cudaGetDeviceCount(&count) != cudaSuccess) return refuse_tp("cannot enumerate CUDA devices");
+        for (int device : devices) {
+            cudaDeviceProp p{};
+            if (device >= count || cudaGetDeviceProperties(&p, device) != cudaSuccess || p.major != 5 || p.minor != 0)
+                return refuse_tp("each selected M10 must be a visible sm_50 device");
+        }
+    }
 #if defined(STRATA_USE_HIP)
     {   // gfx1151 (Strix Halo): the switches that are exact there are on by default (strata/core/arch_defaults.hpp); before
         // any engine code reads its switches (they are read at first use), and the user's own settings are kept
@@ -3554,9 +3604,11 @@ int main(int argc, char** argv) {
         }
         strata::core::set_native_embed(&native_embed);
         std::fprintf(stderr, "strata generate: native pack: %s experts (largest blob %.2f MB), token embedding "
-                             "%s in mapped host memory (%.0f MiB, %.1f s)\n",
-                     o.pack.c_str(), (double) strata::kernels::cpu::expert_layout().max_blob / 1e6,
-                     strata::ggml_type_name((uint32_t) native_embed.type()), (double) native_embed.bytes() / 1048576.0,
+                              "%s in %s (%.0f MiB, %.1f s)\n",
+                      o.pack.c_str(), (double) strata::kernels::cpu::expert_layout().max_blob / 1e6,
+                      strata::ggml_type_name((uint32_t) native_embed.type()),
+                      native_embed.device_resident() ? "VRAM" : "mapped host memory",
+                      (double) native_embed.bytes() / 1048576.0,
                      std::chrono::duration<double>(std::chrono::steady_clock::now() - embed_t0).count());
     }
     // Plan v0.3 P1: tensors served in native form are not also loaded in canonical form (~2.7 GB of VRAM back
@@ -6448,6 +6500,7 @@ int main(int argc, char** argv) {
     // The actual open() calls are further down (after profile/xcache are ready); maxwell_pairs collects
     // every resident pair for pin_cache_complement's additional_gpu_pairs.
     std::array<strata::core::MaxwellExperts, 4> maxwell_experts;
+    strata::core::MaxwellMetaTier maxwell_meta;
     std::vector<std::pair<int32_t, int32_t>> maxwell_pairs;
 
     // Maxwell (sm_50) tiers: each listed device holds a slice of the profile-ranked experts the primary
@@ -6478,10 +6531,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         // SPLIT_MODE_TENSOR: the cards become ONE virtual tier - every card holds a tensor SHARD of every
-        // expert on the list (the shards sum to the whole expert, so the VRAM per card is the same as the
-        // round-robin share), and every routed entry is computed by all of them concurrently.  The shards
-        // rotate by layer so the per-card totals are exactly equal (see MaxwellExperts::open).
+        // expert on the list (the shards together cover the original weights; each rank must fit its actual
+        // byte total), and every routed entry is computed by all of them concurrently. The shards
+        // rotate by layer; exact byte totals still depend on the profile and each layer's format.
         const bool mw_tensor = o.maxwell_split == "tensor";
+        const bool use_meta = mw_tensor && [] {
+            const char* legacy = std::getenv("STRATA_MW_META_LEGACY");
+            return !legacy || std::atoi(legacy) == 0;   // retained only as the same-binary TP reference
+        }();
         if (mw_tensor && maxwell_devs.size() != 4) {
             std::fprintf(stderr, "strata generate: --maxwell-split tensor takes exactly 4 --maxwell-devices "
                                  "(the E1 flags, the partial areas and the assembly kernel are 4-way)\n");
@@ -6507,6 +6564,24 @@ int main(int argc, char** argv) {
             const long long cap = std::atoll(cap_env);
             if (cap > 0 && (long long) maxwell_cand.size() > cap) maxwell_cand.resize((size_t) cap);
         }
+        if (use_meta) {
+            strata::core::MaxwellMetaTier::Config config;
+            std::copy(maxwell_devs.begin(), maxwell_devs.end(), config.devices.begin());
+            config.main_device = primary_device;
+            config.reserve_mib = o.maxwell_reserve_mib;
+            config.layers = g.n_layers; config.experts = g.n_expert;
+            if (const char* v = std::getenv("STRATA_MW_META_DIRECT")) config.direct_output = std::atoi(v) != 0;
+            if (const char* v = std::getenv("STRATA_MW_META_HEAVY_FIRST")) config.heavy_first = std::atoi(v) != 0;
+            auto copy = [](int64_t l, int64_t e, uint8_t* dst, size_t, void* context) {
+                return ((strata::core::ExpertSource*) context)->copy_blob(l, e, dst);
+            };
+            if (!maxwell_meta.open(config, maxwell_cand, copy, srcp, err)) {
+                std::fprintf(stderr, "strata generate: %s\n", err.c_str()); return 1;
+            }
+            drive.d.maxwell_meta = &maxwell_meta;
+            maxwell_pairs = maxwell_meta.held_pairs();
+        } else {
+        // Whole-expert default, plus the explicit legacy TP reference for controlled A/B.
         // split round-robin across devices (or, in tensor mode, the WHOLE list on every card as shards)
         std::vector<std::vector<std::pair<int32_t, int32_t>>> slices(maxwell_devs.size());
         if (mw_tensor) {
@@ -6516,31 +6591,51 @@ int main(int argc, char** argv) {
                 slices[i % maxwell_devs.size()].push_back(maxwell_cand[i]);
         }
         // the blob callback: read from the host arena through the expert source
-        struct MaxwellSrcCtx { strata::core::ExpertSource* src; };
-        MaxwellSrcCtx mctx{srcp};
+        struct MaxwellSrcCtx {
+            strata::core::ExpertSource* src;
+            bool tensor;
+            std::mutex copy_mutex;
+        };
+        MaxwellSrcCtx mctx{srcp, mw_tensor, {}};
         auto maxwell_blob = [](int64_t layer, int64_t expert, void* ctx) -> const uint8_t* {
-            return ((MaxwellSrcCtx*) ctx)->src->blob(layer, expert);
+            auto& c = *(MaxwellSrcCtx*) ctx;
+            if (!c.tensor) return c.src->blob(layer, expert);   // whole-expert load unchanged
+            // ExpertSource::blob may return recyclable staging, not immutable mmap storage. A pointer handed
+            // to one fill thread must survive calls from the other ranks until conversion has consumed it.
+            // Own one full source blob per thread; serialize the source API, not conversion or CUDA uploads.
+            static thread_local std::vector<uint8_t> owned;
+            owned.resize((size_t) strata::kernels::cpu::expert_layout().blob_bytes(layer));
+            std::lock_guard<std::mutex> lock(c.copy_mutex);
+            return c.src->copy_blob(layer, expert, owned.data()) ? owned.data() : nullptr;
         };
         // SPLIT_MODE_TENSOR: the four fills run CONCURRENTLY (one thread per card) - each card converts
         // all 22,702 shards (4x the round-robin per-card work), and the sequential fill measured ~330 s
         // per card (22 min for the tier).  The cards are independent: separate contexts, separate
-        // streams, and the source callback reads the shared mmap arena read-only.
+        // streams, and thread-private snapshots from the shared expert source.
         if (mw_tensor) {
-            std::vector<std::thread> fills;
             std::vector<std::string> fill_err(maxwell_devs.size());
-            std::vector<bool> fill_ok(maxwell_devs.size(), true);
+            std::vector<unsigned char> fill_ok(maxwell_devs.size(), 0);   // independent bytes, never vector<bool> proxies
+            std::vector<std::jthread> fills;   // destroyed/joined BEFORE the result buffers, including on exceptions
             for (size_t m = 0; m < maxwell_devs.size(); ++m)
                 fills.emplace_back([&, m] {
-                    const auto t0 = Clock::now();
-                    fill_ok[m] = maxwell_experts[m].open(maxwell_devs[m], slices[m], maxwell_blob, &mctx,
-                                                         g.n_layers, g.n_expert, o.maxwell_reserve_mib, fill_err[m],
-                                                         (int) m, (int) maxwell_devs.size());
-                    if (fill_ok[m])
-                        std::fprintf(stderr, "strata generate: Maxwell GPU %d (tensor shard): %lld experts, "
-                                             "%.2f GiB (filled in %.1f s, parallel)\n",
-                                     maxwell_devs[m], (long long) maxwell_experts[m].resident(),
-                                     maxwell_experts[m].gib(),
-                                     std::chrono::duration<double>(Clock::now() - t0).count());
+                    try {
+                        const auto t0 = Clock::now();
+                        fill_ok[m] = maxwell_experts[m].open(maxwell_devs[m], slices[m], maxwell_blob, &mctx,
+                                                             g.n_layers, g.n_expert, o.maxwell_reserve_mib, fill_err[m],
+                                                             (int) m, (int) maxwell_devs.size());
+                        if (fill_ok[m])
+                            std::fprintf(stderr, "strata generate: Maxwell GPU %d (tensor shard): %lld experts, "
+                                                  "%.2f GiB (filled in %.1f s, parallel)\n",
+                                          maxwell_devs[m], (long long) maxwell_experts[m].resident(),
+                                          maxwell_experts[m].gib(),
+                                          std::chrono::duration<double>(Clock::now() - t0).count());
+                    } catch (const std::exception& e) {
+                        fill_ok[m] = 0;
+                        fill_err[m] = std::string("Maxwell tensor fill: ") + e.what();
+                    } catch (...) {
+                        fill_ok[m] = 0;
+                        fill_err[m] = "Maxwell tensor fill: unknown exception";
+                    }
                 });
             for (auto& t : fills) t.join();
             for (size_t m = 0; m < maxwell_devs.size(); ++m) {
@@ -6571,6 +6666,7 @@ int main(int argc, char** argv) {
             // Tensor mode: the four cards hold the SAME pairs - collect them once.
             if (!mw_tensor || m == 0)
                 for (const auto& pr : maxwell_experts[m].held_pairs()) maxwell_pairs.push_back(pr);
+        }
         }
         {   // DIAGNOSTIC: how many M10 pairs the 3060's cache also holds (should be ~0)
             size_t ov = 0;
@@ -8527,8 +8623,14 @@ int main(int argc, char** argv) {
         // never read for them.  Once that is armed, RELEASE the arena (every expert the cache or a tier holds):
         // the RAM the duplicate copies occupied goes back to the system.  Only the few experts no tier covers
         // stay resident (a stray CPU miss then reads real bytes, not zeros).
-        if (drive.d.maxwell_count > 0) {
-            if (!sp.set_maxwell(drive.d.maxwell, drive.d.maxwell_count, err)) {
+        if (drive.d.maxwell_meta || drive.d.maxwell_count > 0) {
+            const bool wired = drive.d.maxwell_meta ? sp.set_maxwell_meta(drive.d.maxwell_meta, err)
+                                                    : sp.set_maxwell(drive.d.maxwell, drive.d.maxwell_count, err);
+            if (!wired) {
+                if (drive.d.maxwell_meta) {
+                    std::fprintf(stderr, "strata serve: %s - refusing a Meta tier without its prefill path\n", err.c_str());
+                    return 1;
+                }
                 std::fprintf(stderr, "strata serve: %s - the arena is kept (the prompt path would read it)\n", err.c_str());
                 err.clear();
             } else if (srcp != nullptr) {
@@ -8538,7 +8640,7 @@ int main(int argc, char** argv) {
                 for (int64_t l = 0; l < g.n_layers; ++l)
                     for (int64_t e = 0; e < g.n_expert; ++e) {
                         const int32_t slot = xcache.slot_of(l, e);
-                        bool owned = false;
+                        bool owned = drive.d.maxwell_meta && drive.d.maxwell_meta->owns(l, e);
                         for (int i = 0; i < drive.d.maxwell_count; ++i)
                             owned |= drive.d.maxwell[i]->owns(l, e);
                         if (slot >= 0 || owned) releasable.push_back({(int32_t) l, (int32_t) e});
@@ -8893,13 +8995,18 @@ int main(int argc, char** argv) {
         const strata::core::PoolMultiFn win_pool_fn = n_stages > 1 ? &drive_pool_split : &drive_pool_multi;
         void* const win_pool_user = n_stages > 1 ? (void*) &split_drive : (void*) &drive;
         mem_mark("the verifier and the drafter's binding");
+        if (drive.d.maxwell_meta) ver.set_maxwell_meta(drive.d.maxwell_meta);
         // E1: wire the tiers' GPU-raised completion flags (the verifier allocates four) and arm the
         // graph's multi-wait.  STRATA_MW_GPUFLAG: 1 flags+multi-wait with the host sync kept, 2 no-sync.
         if (drive.d.maxwell_count > 0) {
             static const int e1 = [] { const char* e = std::getenv("STRATA_MW_GPUFLAG"); return e ? std::atoi(e) : 0; }();
             const bool mw_tp = o.maxwell_split == "tensor" && drive.d.maxwell_count > 1 &&
                                maxwell_experts[0].tensor();
-            if (e1 >= 1) {
+            // STRATA_MW_PERSIST implies the E1 flag wiring whatever GPUFLAG says: the resident
+            // kernel raises the tier flags itself, so the graph's multi-wait consumes them (mode 0
+            // then runs like mode 1 - the pool's finish keeps the honest host flag wait).
+            const bool e1_on = e1 >= 1 || maxwell_experts[0].persist_armed();
+            if (e1_on) {
                 for (int m = 0; m < drive.d.maxwell_count; ++m)
                     maxwell_experts[m].set_completion_flag(ver.mw_flags(m));
                 ver.set_mw_wait(ver.mw_flags_ptr());

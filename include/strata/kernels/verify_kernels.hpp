@@ -96,7 +96,19 @@ void wait_flag_ge_stamped(const uint32_t* flag, uint32_t value, unsigned long lo
 void sum_tp_rows_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
                           const uint32_t* const* mw, float* rows_dst, int64_t rows, int64_t width,
                           const float* const* partials, const int32_t* lst_a, const int32_t* lst_b,
-                          void* stream);
+                           void* stream);
+/// Private transport primitive used by MaxwellMetaTier. Maps are entry->compact
+/// job, selected by the expected sequence (not by an external verifier's parity).
+/// All blocks participate in the consumption ticket; cancel releases blocked consumers.
+void maxwell_meta_reduce(const uint32_t* main_flag, uint32_t ring, const uint32_t* expected,
+                          const uint32_t* const* flags, const float* const* partials_a,
+                          const float* const* partials_b, const int32_t* map_a, const int32_t* map_b,
+                          float* dst, const float* fallback,
+                          int64_t rows, int64_t width, const int32_t* hits, const int32_t* hit_count,
+                          bool direct, bool wire16, const uint32_t* cancel, uint32_t* device_counter,
+                          uint32_t* consumed, void* stream);
+/// Reference transport consumption ticket, queued after the final host->GPU copy.
+void maxwell_meta_complete(const uint32_t* expected, uint32_t* consumed, void* stream);
 /// E1: the Maxwell completion wait - the main flag >= ring AND the four tier flags >= the EXPECTED
 /// sequence read at run time from *exp (a per-step ring slot; the capture bakes only pointers).
 void wait_mw(const uint32_t* main, uint32_t ring, const uint32_t* exp, const uint32_t* const* mw,
