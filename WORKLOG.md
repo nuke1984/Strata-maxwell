@@ -110,7 +110,8 @@ reload is in progress.
    in float); `expert_maxwell_parity`.
 8. **PLE direct guard** (`generate.cpp`): on this machine (7.7 GiB RAM) the 0.1.42 mmap probe
    thrashes the page cache (synchronous NVMe faults, 92–121 ms windows, −45%); with a Maxwell
-   tier configured it stays direct. Closing tag: `maxwell-v.0.1.42-Q2_0-IQ2_XS-OK`.
+   tier configured it stays direct. Closing commit: `b3c03f34` ("ple: with a Maxwell tier the
+   probe keeps direct - mmap measured catastrophic on a RAM-thrashed rig").
 9. **`STRATA_SPEC_DEPTH=1`**: enables the MTP acceptance diagnostic report (does not change
    the speculation depth).
 
