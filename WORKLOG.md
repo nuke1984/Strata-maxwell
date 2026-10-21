@@ -9,18 +9,48 @@ No speculation: anything without a measurement behind it does not appear here.
 
 ## 1. Current state (2026-10-21)
 
+**Branch state**: `maxwell-0.2.2` = the full Maxwell layer merged into upstream **v0.2.2**
+(engine 0.1.47), merge commit `e734bd38` (7 conflicts, all documented in the commit message).
+Branch `maxwell-0.1.45` and tag `maxwell-0.1.45-split-production-OK` frozen as the rollback
+anchor; `engine/strata.bak-maxwell-0.1.45` is the seconds-level binary rollback.
+**Production decision on the 0.2.2 port: pending explicit go** (all gates green, below).
+
+**v0.2.2 port gates** (production config `strata-iq2xs-embed-vram-split.json`, `--spec-split`,
+binary `164fa8a1`; details in `bench/results/2026-10-21-022-port/`):
+
+| Gate | Result |
+|---|---|
+| Build (strata + parity + bench targets) | clean; upstream `nv_defaults` (sm_86 table) in |
+| `maxwell_iq_parity` | **0 failures** (fasc 3.09e-07, rel 8.38e-03 — identical values to 0.1.45) |
+| `iq_gup_bench` layer 0 | **294.6 µs/launch** = 21.4 GB/s — identical to 0.1.45 |
+| Maxwell round-trip gate at open | PASSED (worst rel 1.15e-02, 5,675 blobs) |
+| Load time | **231 s** (0.1.45: 424–554 s — the new page-cache file tier reads less) |
+| 3×3 mean tok/s (temp 0) | **53.1** (story 47.5 · fib 59.2 · code 52.7) vs 0.1.45's 52.44 = +1.3% (noise) |
+| TTFT (1,546-tok prompt) | 22.18 s (0.1.45: 22.5 s) |
+| Fixed answers / context recall+negative / 8× concurrent / prefix reuse | 3/3 · 5/5 · 1 output of 8 · 57/62 cached |
+| A/B creative run-to-run | diverges — the **same pre-existing base property** as 0.1.45, not new |
+| 30-min soak (4 threads, temp 0.7) | **559 requests, 0 errors, 73,818 tokens** (0.1.45: 276 req, 0 err) |
+
+**Upstream behavior changes carried by the port** (base properties, not defects): the chat
+template defaults to **thinking** (answer correct with `max_tokens ≥ 96`, or disable via
+`"chat_template_kwargs": {"enable_thinking": false}` — verified 0 reasoning chars, direct
+answer; `serve/server.py` now exposes `reasoning_content`); the Linux file tier defaults to
+page-cached experts (`STRATA_COLD_OVERLAP=4`) with gated IO prefetch.
+
 **Production serving**: port 8088, config `strata-iq2xs-embed-vram-split.json`
-(= standard production + `STRATA_EMBED_VRAM=1` + **`--spec-split`**), binary `d4f80481`
-(`engine/strata` = `build/strata`). Rollback: restart on `strata-iq2xs-embed-vram.json`.
+(= standard production + `STRATA_EMBED_VRAM=1` + **`--spec-split`**), currently running the
+ported 0.2.2 binary `164fa8a1` for the gates; rollback = `engine/strata.bak-maxwell-0.1.45`
+or restart on `strata-iq2xs-embed-vram.json`.
 
 | Measurement (3×3 + TTFT protocol, temp 0) | Value |
 |---|---|
-| Mean tok/s, split enabled | **52.44** (story 45.1–48.6 · fib 54.5–58.7 · code 52.4–53.3) |
-| Sustained tok/s, 30-min soak (276 requests, 0 errors) | **48.7** mean, 56.1 peak |
-| Same-day baseline without split | 43.06 → **+21.8%** |
-| TTFT, 1,546-token prompt | 22.5 s (unchanged vs baseline) |
+| Mean tok/s, split enabled (0.1.45 base, 2026-10-21 morning) | **52.44** (story 45.1–48.6 · fib 54.5–58.7 · code 52.4–53.3) |
+| Mean tok/s, split enabled (0.2.2 port, 2026-10-21 night) | **53.1** (story 47.5 · fib 59.2 · code 52.7) |
+| Sustained tok/s, 30-min soak on 0.1.45 (276 requests, 0 errors) | **48.7** mean, 56.1 peak |
+| Same-day 0.1.45 baseline without split | 43.06 → **+21.8%** |
+| TTFT, 1,546-token prompt | 22.5 s (0.1.45) / 22.18 s (0.2.2) |
 | Utilization under sustained load | 3060 63–92%, M10 29–50% |
-| Soak decay | none (first quarter 48.3 vs last quarter 48.8 tok/s) |
+| Soak decay (0.1.45) | none (first quarter 48.3 vs last quarter 48.8 tok/s) |
 
 Load time: 424–554 s depending on page-cache state (dominated by ~35 GB of blobs from NVMe).
 One model at a time: the GPUs hold a single system.
@@ -148,6 +178,7 @@ reload is in progress.
 | Shared expert on the M10s (FP16 prototype) | loses on isolated compute already (22 vs 60–86 µs/layer) | not integrated (`2026-10-19-maxwell-shared-screen`) |
 | FP32 experts on the M10s | weights = 446 GB (14× VRAM); even if resident, the bandwidth floor alone would be ~1.2 ms/layer (2–3× slower than today's instruction-bound path) | closed by arithmetic |
 | E1m2 alone | parity (26.9 vs 27.0 ms/token): the gain moves into the ring | opt-in (the base of persist) |
+| gup multi-row-per-warp (upstream 0.2.2's Gyro kernel idea: codebook in smem **+ 4 rows per warp**) | hypothesis, no measurement yet: our gup already stages the codebook grids in smem (one job per block, `87b6e8aa`) but re-reads them per element; amortizing consumption across rows per warp attacks the measured DP4A issue-bound bottleneck — may not map (SPLIT=4 shuffle reduction, 95-reg budget on sm_50; their formats are trellis, not IQ2_XS) | parked — a measured campaign after the 0.2.2 port stands |
 
 ## 6. Chronology (one line per session; details in `bench/results/`)
 
@@ -170,6 +201,12 @@ reload is in progress.
 - **2026-10-21**: **spec-split wins: +21.8%** (the historical verdict was stale); compound with
   persist: in-order bug found/fixed, 52.52; **the full production gate** (A/B, battery, soak) —
   promoted and serving — `2026-10-21-split-persist`, `2026-10-21-split-production-gate`.
+- **2026-10-21 (night)**: the v0.2.2 port — merge `e734bd38` on `maxwell-0.2.2` (7 conflicts:
+  union everywhere; pinned.cu takes upstream's `pin_ranges` API since our guard's precondition
+  vanished; pool.cpp reconciles their constructor NUMA-plan with our lazy `start_workers()`).
+  All gates green: parity 0 failures, kernel 294.6 µs identical, 3×3 mean 53.1 (0.1.45: 52.44),
+  load 231 s, recall 5/5, 8× identical, soak 559 req/0 err/73,818 tok. Thinking-default template and the page-cache
+  file tier are the base's new behavior — `2026-10-21-022-port`. **Production switch: pending go.**
 
 ---
 
