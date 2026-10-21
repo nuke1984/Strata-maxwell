@@ -654,7 +654,6 @@ bool MaxwellExperts::open(int device,
                 return false;
             }
             if (!check(cudaMalloc(&d_seq_, 4), "cudaMalloc persist seq", err)) { close(); return false; }
-            if (!check(cudaMemset(d_seq_, 0, 4), "memset persist seq", err)) { close(); return false; }
             if (!check(cudaHostAlloc((void**) &h_halt_, 4,
                                      cudaHostAllocMapped | (::strata::core::maxwell_portable() ? cudaHostAllocPortable : 0)),
                        "cudaHostAlloc persist halt", err)) { close(); return false; }
@@ -669,20 +668,8 @@ bool MaxwellExperts::open(int device,
             *h_halt_ = 0;
             if (!check(cudaMalloc(&d_pctl_, sizeof(*d_pctl_)), "cudaMalloc persist ctl", err)) { close(); return false; }
             if (!check(cudaMalloc(&d_pparams_, sizeof(*d_pparams_)), "cudaMalloc persist params", err)) { close(); return false; }
-            strata::kernels::cuda::PersistParams pp{};
-            pp.blobs = d_blobs_;
-            pp.d_up[0] = d_up_;
-            pp.d_up[1] = d_up2_;
-            pp.faq = d_faq_;
-            pp.fasc = d_fascale_;
-            pp.fahx = d_fahx_;
-            pp.comp_flag = comp_flag_;   // null until set_completion_flag; refreshed at every launch
-            pp.d_seq = d_seq_;
-            pp.halt = d_halt_;
-            if (!check(cudaMemcpy(d_pparams_, &pp, sizeof(pp), cudaMemcpyHostToDevice), "copy persist params", err)) {
-                close();
-                return false;
-            }
+            // the params image and the doorbell word are written by persist_launch() before every
+            // launch (the completion flag is handed over by set_completion_flag only AFTER open)
             persist_armed_ = true;
             std::fprintf(stderr, "strata maxwell (CUDA%d): persistent tier armed (DMA dispatch + device "
                                  "doorbell; STRATA_MW_GPUFLAG=%d, recommended 2)\n",
@@ -836,6 +823,33 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         if (slot < 0) continue;
         jobs.push_back({slot, i / k, (int32_t) i});
     }
+    // One packing routine for BOTH dispatch paths (the persist ring slot and the legacy staging):
+    // [acts: n_tok x ACTS_STRIDE][job table: (slot, tok, dst) x njobs] at `to`; returns the bytes
+    // written.  `tp_compact` writes the COMPACT JOB SLOT as dst (SPLIT_MODE_TENSOR: the partial
+    // block is one contiguous region the copy engine D2Hs whole); non-TP writes the entry index
+    // (the down body's scatter key into the verifier's rows).
+    const auto pack_staging = [&](uint8_t* to, size_t njobs, const Job* jobs_l, bool tp_compact) {
+        const size_t nc4 = (size_t) (H / 32) * 4;
+        if (shared_acts_ != nullptr) {
+            // Meta packed the window once: one bulk copy per rank instead of the per-token loop x4.
+            std::memcpy(to, shared_acts_, (size_t) n_tok * ACTS_STRIDE);
+        } else
+        for (int64_t t = 0; t < n_tok; ++t) {
+            const auto& A = acts[t];
+            uint8_t* at = to + (size_t) t * ACTS_STRIDE;
+            std::memcpy(at, A.q, H);
+            std::memcpy(at + H, A.scale, nc4);
+            std::memcpy(at + H + nc4, A.hx, nc4);
+        }
+        int32_t* hj = (int32_t*) (to + (size_t) n_tok * ACTS_STRIDE);
+        for (size_t j = 0; j < njobs; ++j) {
+            hj[j * 3] = jobs_l[j].slot;
+            hj[j * 3 + 1] = (int32_t) jobs_l[j].tok;
+            hj[j * 3 + 2] = tp_compact ? (int32_t) j : jobs_l[j].row;
+        }
+        return (size_t) n_tok * ACTS_STRIDE + njobs * 3 * sizeof(int32_t);
+    };
+
     // ---- STRATA_MW_PERSIST: the service is [pack pinned][ONE H2D][ONE stream-written doorbell]. ----
     // Both calls are issued while every M10 sits idle at its doorbell (no down window open to
     // poison); the copy engine does the staging (an in-kernel mapped pull measured ~2 ms/layer).
@@ -851,25 +865,8 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         uint8_t* hsel = (nseq & 1u) ? h_up2_ : h_up_;
         uint8_t* dsel = (nseq & 1u) ? d_up2_ : d_up_;
         namespace mk = strata::kernels::cuda;
+        const size_t staged = pack_staging(hsel + mk::PERSIST_HDR_BYTES, jobs.size(), jobs.data(), false);
         {
-            const size_t nc4 = (size_t) (H / 32) * 4;
-            uint8_t* abuf = hsel + mk::PERSIST_HDR_BYTES;
-            if (shared_acts_ != nullptr) {
-                std::memcpy(abuf, shared_acts_, (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE);
-            } else
-            for (int64_t t = 0; t < n_tok; ++t) {
-                const auto& A = acts[t];
-                uint8_t* at = abuf + (size_t) t * mk::expert_maxwell_geo::ACTS_STRIDE;
-                std::memcpy(at, A.q, H);
-                std::memcpy(at + H, A.scale, nc4);
-                std::memcpy(at + H + nc4, A.hx, nc4);
-            }
-            int32_t* hj = (int32_t*) (abuf + (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE);
-            for (size_t j = 0; j < jobs.size(); ++j) {
-                hj[j * 3] = jobs[j].slot;
-                hj[j * 3 + 1] = (int32_t) jobs[j].tok;
-                hj[j * 3 + 2] = jobs[j].row;   // non-TP: the entry index (the down body's scatter key)
-            }
             const LayerGeo& g = geo_of(layer);
             mk::PersistHdr* hd = (mk::PersistHdr*) hsel;
             hd->njobs = (uint32_t) jobs.size();
@@ -891,8 +888,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             hd->d_scale_stride = g.d_scale_stride;
             hd->dst = w_dst_;
         }
-        const size_t bytes = mk::PERSIST_HDR_BYTES + (size_t) n_tok * mk::expert_maxwell_geo::ACTS_STRIDE +
-                             jobs.size() * 3 * sizeof(int32_t);
+        const size_t bytes = mk::PERSIST_HDR_BYTES + staged;
         if (!check(cudaMemcpyAsync(dsel, hsel, bytes, cudaMemcpyHostToDevice, streams_[0]),
                    "persist H2D", err)) return false;
         if (CUDA_SUCCESS != cuStreamWriteValue32((CUstream) streams_[0], (CUdeviceptr) (uintptr_t) d_seq_,
@@ -960,6 +956,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         }
         cudaEventRecord(s0_a_, streams_[0]);
     }
+    size_t staged = 0;
     {
         // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x).
         // E1 mode 2: alternate the two staging sets (layer l+1 stages while layer l's kernels still
@@ -971,35 +968,13 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         d_jobs_ = (int32_t*) (dsel + (size_t) n_tok * ACTS_STRIDE);
         h_acts_ = hsel;
         d_acts_ = dsel;
-        const size_t nc4 = (size_t) (H / 32) * 4;
-        if (shared_acts_ != nullptr) {
-            // Meta packed the window once: one bulk copy per rank instead of the per-token loop x4.
-            std::memcpy(h_acts_, shared_acts_, (size_t) n_tok * ACTS_STRIDE);
-        } else
-        for (int64_t t = 0; t < n_tok; ++t) {
-            const auto& A = acts[t];
-            uint8_t* at = h_acts_ + (size_t) t * ACTS_STRIDE;
-            std::memcpy(at, A.q, H);
-            std::memcpy(at + H, A.scale, nc4);
-            std::memcpy(at + H + nc4, A.hx, nc4);
-        }
-    }
-    // ---- ONE job table + ONE launch per stage: the whole layer's jobs are processed by two batched
-    //      kernels (gup -> quant -> down), so per-job launch overhead disappears and the SMs fill. ----
-    for (size_t j = 0; j < jobs.size(); ++j) {
-        h_jobs_[j * 3] = jobs[j].slot;
-        h_jobs_[j * 3 + 1] = (int32_t) jobs[j].tok;
-        // SPLIT_MODE_TENSOR: the down's destination is the COMPACT JOB SLOT (not the entry index) - the
-        // partial block is then one contiguous jobs.size() x H region the copy engine D2Hs in a single
-        // transfer; the consumer re-expands via the dispatch's entry list.  Non-TP keeps the entry index
-        // (the token path scatters straight into the verifier's rows).
-        h_jobs_[j * 3 + 2] = tp_cards_ > 1 ? (int32_t) j : jobs[j].row;
+        staged = pack_staging(hsel, jobs.size(), jobs.data(), tp_cards_ > 1);
     }
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
     // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
     if (!zerocopy_ &&
-        !check(cudaMemcpyAsync(d_acts_, h_acts_, (size_t) n_tok * ACTS_STRIDE + jobs.size() * 3 * sizeof(int32_t),
-                               cudaMemcpyHostToDevice, streams_[0]), "copy acts+jobs", err)) return false;
+        !check(cudaMemcpyAsync(d_acts_, h_acts_, staged, cudaMemcpyHostToDevice, streams_[0]),
+               "copy acts+jobs", err)) return false;
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
     // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.  A native pack's

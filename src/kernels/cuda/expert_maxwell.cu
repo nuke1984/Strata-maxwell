@@ -904,6 +904,18 @@ template <> struct IqFmt<29> {
 // the persistent kernel (STRATA_MW_PERSIST) grid-strides the SAME code.  `smem` carries the union:
 // [sact (H/32 blocks)][align 16][sx PER_BLOCK floats][align 16][sgrid grid_bytes].  The arithmetic
 // is the inline version's, untouched - bit-identical by construction.
+// The IQ gup body's shared-memory layout, ONE source of truth for the body, the batched wrapper
+// and the persistent kernel's union buffer: [sact (H/32 blocks)][align 16][sx PER_BLOCK floats]
+// [align 16][sgrid: XXS 2 KB, S/IQ1_M 8 KB].
+template <int TY, int SPLIT, int THREADS>
+struct IqV2qSmem {
+    static constexpr int per_block = THREADS / SPLIT;
+    static constexpr int sact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
+    static constexpr int sx = (per_block * 4 + 15) & ~15;
+    static constexpr int grid = (TY == 16 ? 2048 : 8192);   // F::grid_bytes
+    static constexpr int total = sact + sx + grid;
+};
+
 template <int TY, int SPLIT, int THREADS>
 __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
                                                    const uint8_t* __restrict__ blobs, size_t blob_stride,
@@ -914,12 +926,11 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
                                                    float* __restrict__ fahx, float* __restrict__ ff_dbg,
                                                    int row_base, int rows_slice) {
     using F = IqFmt<TY>;
-    constexpr int PER_BLOCK = THREADS / SPLIT;
-    constexpr int kSact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
-    constexpr int kSx = (PER_BLOCK * 4 + 15) & ~15;
+    using L = IqV2qSmem<TY, SPLIT, THREADS>;
+    constexpr int PER_BLOCK = L::per_block;
     block_q8_1* sact = (block_q8_1*) smem;
-    float* sx = (float*) (smem + kSact);
-    uint8_t* sgrid = (uint8_t*) (smem + kSact + kSx);
+    float* sx = (float*) (smem + L::sact);
+    uint8_t* sgrid = (uint8_t*) (smem + L::sact + L::sx);
     // SPLIT is the sweep knob (STRATA_MW_IQ_SPLIT, default 4).  The fused quant epilogue below walks
     // PER_BLOCK/32 chunks, so any SPLIT that divides 32 keeps the chunk tree bit-identical: with 4 it
     // compiles to exactly the one-chunk body this kernel shipped with.
@@ -1025,14 +1036,6 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
     }
 }
 
-template <int TY, int SPLIT, int THREADS>
-__host__ __device__ constexpr int iq_v2q_smem() {
-    constexpr int PER_BLOCK = THREADS / SPLIT;
-    constexpr int kSact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
-    constexpr int kSx = (PER_BLOCK * 4 + 15) & ~15;
-    return kSact + kSx + (TY == 16 ? 2048 : 8192);   // + F::grid_bytes (XXS 2 KB, S/IQ1_M 8 KB)
-}
-
 template <int TY, int SPLIT, int THREADS = 128>
 __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
                                            const MaxJob* __restrict__ jobs, int njobs,
@@ -1041,7 +1044,7 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
                                            int8_t* __restrict__ faq, float* __restrict__ fasc,
                                            float* __restrict__ fahx, float* __restrict__ ff_dbg,
                                            int row_base, int rows_slice) {
-    __shared__ __align__(16) char smem[iq_v2q_smem<TY, SPLIT, THREADS>()];
+    __shared__ __align__(16) char smem[IqV2qSmem<TY, SPLIT, THREADS>::total];
     iq_stage1_v2q_body<TY, SPLIT, THREADS>((int) blockIdx.x, smem, blobs, blob_stride, jobs, njobs,
                                            acts_base, o_gate, o_up, gu_row, faq, fasc, fahx, ff_dbg,
                                            row_base, rows_slice);
@@ -1078,9 +1081,9 @@ __device__ __forceinline__ void persist_grid_barrier(PersistCtl* c) {
 template <int SPLIT, int THREADS>
 __global__ void __launch_bounds__(THREADS) maxwell_persist_kernel(const PersistParams* __restrict__ pp,
                                                                   PersistCtl* c) {
-    constexpr int kGupSmem = iq_v2q_smem<22, SPLIT, THREADS>() > iq_v2q_smem<29, SPLIT, THREADS>()
-                                 ? iq_v2q_smem<22, SPLIT, THREADS>()
-                                 : iq_v2q_smem<29, SPLIT, THREADS>();
+    constexpr int kGupSmem = IqV2qSmem<22, SPLIT, THREADS>::total > IqV2qSmem<29, SPLIT, THREADS>::total
+                                 ? IqV2qSmem<22, SPLIT, THREADS>::total
+                                 : IqV2qSmem<29, SPLIT, THREADS>::total;
     constexpr int kSmem = kGupSmem > kS2DownSmem ? kGupSmem : kS2DownSmem;
     __shared__ __align__(16) char smem[kSmem];
     __shared__ int sh_s;

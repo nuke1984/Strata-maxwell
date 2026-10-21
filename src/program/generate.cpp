@@ -703,7 +703,10 @@ struct Options {
     /// Stop when the model emits an end-of-turn token (<|endoftext|> 248044, <|im_end|> 248046, or --eos-ids).
     bool stop_eos = false;
     std::vector<int64_t> eos_ids = {248044, 248046};
-    bool spec_split = false;   ///< opt-in split verify window (the overlap study: exact, ~7% slower)
+    bool spec_split = false;   ///< opt-in split verify window: the two token groups pipeline, group B's
+                               ///< mixer running while the M10s serve group A's experts (measured
+                               ///< +21.8% on 2026-10-21, bench/results/2026-10-21-split-persist; an
+                               ///< older study's ~-7% predates the gup kernel campaigns - see WORKLOG §5)
     /// --serve, multi-GPU layer split: "K" or "K1,K2,.." (the first layer of each later stage) or "auto" (placed
     /// from each GPU's free VRAM); empty = one GPU
     std::string layer_split;

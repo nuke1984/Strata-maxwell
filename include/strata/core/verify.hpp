@@ -617,7 +617,8 @@ private:
     uint32_t cur_layer_ = 0;
     static void publish_plan(void* ctx);
     void set_plan_slot(int grp);
-    bool split_ = false;   // opt-in (--spec-split): exact but slower, see the overlap study
+    bool split_ = false;   // opt-in (--spec-split): the two-group window pipeline, +21.8% measured
+                           // (bench/results/2026-10-21-split-persist); the per-token arithmetic is exact
     std::function<bool(cudaStream_t, std::string&)> pre_launch_;   // set_pre_launch
     int groups_[9] = {};
     float* h_ymiss_ = nullptr;   float* m_ymiss_ = nullptr;     // T * k * n_embd
