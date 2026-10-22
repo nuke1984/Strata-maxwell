@@ -46,6 +46,7 @@ or restart on `strata-iq2xs-embed-vram.json`.
 |---|---|
 | Mean tok/s, split enabled (0.1.45 base, 2026-10-21 morning) | **52.44** (story 45.1–48.6 · fib 54.5–58.7 · code 52.4–53.3) |
 | Mean tok/s, split enabled (0.2.2 port, 2026-10-21 night) | **53.1** (story 47.5 · fib 59.2 · code 52.7) |
+| Mean tok/s, 0.2.2 + restructured gup (2026-10-22 evening, binary `ba92a4cb`) | **55.07** (story 50.3 · fib 60.3 · code 54.7) |
 | Sustained tok/s, 30-min soak on 0.1.45 (276 requests, 0 errors) | **48.7** mean, 56.1 peak |
 | Same-day 0.1.45 baseline without split | 43.06 → **+21.8%** |
 | TTFT, 1,546-token prompt | 22.5 s (0.1.45) / 22.18 s (0.2.2) |
@@ -188,7 +189,8 @@ reload is in progress.
 | Shared expert on the M10s (FP16 prototype) | loses on isolated compute already (22 vs 60–86 µs/layer) | not integrated (`2026-10-19-maxwell-shared-screen`) |
 | FP32 experts on the M10s | weights = 446 GB (14× VRAM); even if resident, the bandwidth floor alone would be ~1.2 ms/layer (2–3× slower than today's instruction-bound path) | closed by arithmetic |
 | E1m2 alone | parity (26.9 vs 27.0 ms/token): the gain moves into the ring | opt-in (the base of persist) |
-| gup multi-row-per-warp (upstream 0.2.2's Gyro kernel idea: codebook in smem **+ 4 rows per warp**) | hypothesis, no measurement yet: our gup already stages the codebook grids in smem (one job per block, `87b6e8aa`) but re-reads them per element; amortizing consumption across rows per warp attacks the measured DP4A issue-bound bottleneck — may not map (SPLIT=4 shuffle reduction, 95-reg budget on sm_50; their formats are trellis, not IQ2_XS) | parked — a measured campaign after the 0.2.2 port stands |
+| gup multi-row-per-warp (`STRATA_MW_IQ_MR`, upstream 0.2.2's Gyro trick adapted) | parity-perfect (0 failures at MR 1/2/4/5) but **−17/−45/−29%** at MR 2/4/5: the block count is the latency hiding (120→30 blocks starves 5 SMs) and the SASS's 36% per-code unpack never amortises | closed (`2026-10-22-m10-mr-gup`); the knob stays, default 1 |
+| GENTLE_SYNC (sleep-poll finish sync) | **−9.6%** (48.90 vs 54.07): the 30 µs wake quantum × 4 cards × 48 layers ≈ 5.8 ms/window swamps any spin-poison relief; the old "spin poison" verdict does not hold on 0.2.2 | closed (`2026-10-22-m10-mr-gup`) |
 
 ## 6. Chronology (one line per session; details in `bench/results/`)
 
@@ -228,6 +230,14 @@ reload is in progress.
   doorbell + split; bug note in the campaign). Spec-depth stays 4 (user call). The remaining
   levers: M10 serve-chain kernel work (E returns), 3060 per-layer graph work, multi-slot
   amortization.
+
+- **2026-10-22 (evening)**: the M10 gup kernel campaign - SASS first (the hot loop is 11% VMAD,
+  36% per-code unpack: MR's amortisable pool ~10%), then STRATA_MW_IQ_MR built (bit-exact at
+  1/2/4/5) and measured: MR 2/4/5 = -17/-45/-29% - **closed** (block count is the latency
+  hiding). Free byproduct: the restructured body's MR=1 codegen = **kernel 295 to 270 us (-8%)**,
+  engine **55.07 vs 54.07 (+1.85%)**, deployed `ba92a4cb`. GENTLE_SYNC closed at -9.6%.
+  Bench bimodality (cold ~350 / warm ~270-295) documented - warm-only comparisons -
+  `2026-10-22-m10-mr-gup`.
 
 ---
 
