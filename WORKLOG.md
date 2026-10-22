@@ -244,6 +244,13 @@ reload is in progress.
   dense stack ~11, waits ~2.5. **No waste found** - the useless-work hypothesis closed. The
   one new attackable item: the HC stack - `2026-10-22-3060-xray`. 2-slot demo closed 0.80x
   (slots double the per-token M10 jobs; nothing amortizes on this tier).
+- **2026-10-22 (night 2)**: the PLE-in-RAM A/B on the 39 GB VM - **null result, closed**:
+  identical diverse 9,873-token prompt = 75.1 tok/s prefill in BOTH `--ple-io ram` (28.8 GB
+  mlocked) and `direct` - the prompt path is compute-bound on the M10 tier's 64-token prefill
+  windows, not storage (the QD-256 batched reader + 1M-row cache keep SSD ahead of compute).
+  Production stays direct (faster loads, RAM free). The VM disk's random reads also improved
+  19 to 49 MB/s with the host change. New exposure: the ~75 tok/s prefill ceiling is the
+  tier's prefill path - `2026-10-22-ple-ram-ab`.
 
 ---
 
