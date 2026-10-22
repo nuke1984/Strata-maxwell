@@ -251,6 +251,13 @@ reload is in progress.
   Production stays direct (faster loads, RAM free). The VM disk's random reads also improved
   19 to 49 MB/s with the host change. New exposure: the ~75 tok/s prefill ceiling is the
   tier's prefill path - `2026-10-22-ple-ram-ab`.
+- **2026-10-22 (night 3)**: the head-to-head - M10 vs RAM, both arms from scratch, one
+  variable (where the 22,702 non-cached experts compute): **A (M10s) decode 61.30 vs B (CPU
+  pool + page cache) 12.12 tok/s = the M10s are worth 5.1x on decode**; B wins prefill 3.5x
+  (259.9 vs 73.8 tok/s; TTFT 10.6 vs 37.0 s) - the tier's 64-token prefill windows are the
+  documented cost, the concrete target if prompt speed ever matters. A also ran 61.3 vs its
+  historical 53-55 family (the 40 GB RAM lifted the file tier; same-day observation) -
+  `2026-10-22-m10-vs-ram`.
 
 ---
 
