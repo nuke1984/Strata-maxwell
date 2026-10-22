@@ -238,6 +238,12 @@ reload is in progress.
   engine **55.07 vs 54.07 (+1.85%)**, deployed `ba92a4cb`. GENTLE_SYNC closed at -9.6%.
   Bench bimodality (cold ~350 / warm ~270-295) documented - warm-only comparisons -
   `2026-10-22-m10-mr-gup`.
+- **2026-10-22 (night)**: the 3060 x-ray (STRATA_VERIFY_PROFILE, first use) - the graph's
+  31.6 ms/window decomposed: **waitCPU 13.2 (42%, the M10 chain unhidden)**, hyper-connection
+  projections ~5.1 (16%, six ~19 us launches/layer = latency, pair-fusion candidate ~+5%),
+  dense stack ~11, waits ~2.5. **No waste found** - the useless-work hypothesis closed. The
+  one new attackable item: the HC stack - `2026-10-22-3060-xray`. 2-slot demo closed 0.80x
+  (slots double the per-token M10 jobs; nothing amortizes on this tier).
 
 ---
 
