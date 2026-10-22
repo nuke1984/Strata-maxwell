@@ -905,18 +905,27 @@ template <> struct IqFmt<29> {
 // [sact (H/32 blocks)][align 16][sx PER_BLOCK floats][align 16][sgrid grid_bytes].  The arithmetic
 // is the inline version's, untouched - bit-identical by construction.
 // The IQ gup body's shared-memory layout, ONE source of truth for the body, the batched wrapper
-// and the persistent kernel's union buffer: [sact (H/32 blocks)][align 16][sx PER_BLOCK floats]
-// [align 16][sgrid: XXS 2 KB, S/IQ1_M 8 KB].
-template <int TY, int SPLIT, int THREADS>
+// and the persistent kernel's union buffer: [sact (H/32 blocks)][align 16][sx PER_BLOCK*MR floats]
+// [align 16][sgrid: XXS 2 KB, S/IQ1_M 8 KB].  MR (rows per thread-group, STRATA_MW_IQ_MR) widens
+// only the sx region - one slot per row of the block's PER_BLOCK*MR rows.
+template <int TY, int SPLIT, int THREADS, int MR = 1>
 struct IqV2qSmem {
+    static_assert(MR == 1 || MR == 2 || MR == 4 || MR == 5, "STRATA_MW_IQ_MR takes 1, 2, 4 or 5");
     static constexpr int per_block = THREADS / SPLIT;
     static constexpr int sact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
-    static constexpr int sx = (per_block * 4 + 15) & ~15;
+    static constexpr int sx = (per_block * MR * 4 + 15) & ~15;
     static constexpr int grid = (TY == 16 ? 2048 : 8192);   // F::grid_bytes
     static constexpr int total = sact + sx + grid;
 };
 
-template <int TY, int SPLIT, int THREADS>
+// MR (STRATA_MW_IQ_MR, default 1): each SPLIT-lane group interleaves MR row-pairs in registers -
+// the block covers PER_BLOCK*MR rows of one job, so the sact/sgrid staging amortises MR-fold and
+// each act smem read serves 2*MR dots instead of 2.  BIT-EXACT by construction: every row keeps
+// its k-set and order (k = part, part+SPLIT, ...), its dot sequence, its SPLIT shuffle tree and
+// its row-major sx/chunk slot; the r-loop only interleaves independent accumulators.  The weight
+// path (codes load + codebook lookup) is per-row and does NOT amortise - MR's win is bounded to
+// the act/index/staging share (the SASS of the MR=1 loop puts that near 10%).
+template <int TY, int SPLIT, int THREADS, int MR = 1>
 __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
                                                    const uint8_t* __restrict__ blobs, size_t blob_stride,
                                                    const MaxJob* __restrict__ jobs, int njobs,
@@ -926,8 +935,9 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
                                                    float* __restrict__ fahx, float* __restrict__ ff_dbg,
                                                    int row_base, int rows_slice) {
     using F = IqFmt<TY>;
-    using L = IqV2qSmem<TY, SPLIT, THREADS>;
+    using L = IqV2qSmem<TY, SPLIT, THREADS, MR>;
     constexpr int PER_BLOCK = L::per_block;
+    constexpr int ROWS = PER_BLOCK * MR;
     block_q8_1* sact = (block_q8_1*) smem;
     float* sx = (float*) (smem + L::sact);
     uint8_t* sgrid = (uint8_t*) (smem + L::sact + L::sx);
@@ -939,9 +949,9 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
     // PER_BLOCK for every shard the planner emits).  The blob stores exactly those rows, compact, so the
     // mapping is the full kernel's with row -> row_base + local; every per-row value stays bit-identical.
     static_assert(FF % PER_BLOCK == 0, "the IQ kernel stages one job per block, as the S2 one");
-    const int row0 = vb * PER_BLOCK;
+    const int row0 = vb * ROWS;
     if (row0 >= njobs * rows_slice) return;
-    const int j = row0 / rows_slice;         // every row of this block is in job j (rows_slice % PER_BLOCK == 0)
+    const int j = row0 / rows_slice;         // every row of this block is in job j (rows_slice % ROWS == 0)
     const MaxJob jd = jobs[j];
     const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
     const uint8_t* at = acts_base + (size_t) jd.tok * ACTS_STRIDE;
@@ -970,17 +980,28 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
         for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
     }
     __syncthreads();
-    const int idx = row0 + (int) (threadIdx.x / SPLIT);   // never out of range (rows_slice % PER_BLOCK == 0)
-    const int row = idx - j * rows_slice;                  // this card's LOCAL row (the blob is the compact shard)
+    const int idx = row0 + (int) (threadIdx.x / SPLIT) * MR;   // this group's first row (never out of range)
+    const int row = idx - j * rows_slice;                       // the group's LOCAL first row (compact shard)
     const int part = (int) (threadIdx.x % SPLIT);
-    const uint8_t* gr = blob + o_gate + (size_t) row * gu_row;
-    const uint8_t* ur = blob + o_up + (size_t) row * gu_row;
+    const uint8_t* gr[MR];
+    const uint8_t* ur[MR];
+#pragma unroll
+    for (int r = 0; r < MR; ++r) {
+        gr[r] = blob + o_gate + (size_t) (row + r) * gu_row;
+        ur[r] = blob + o_up + (size_t) (row + r) * gu_row;
+    }
     const int nb = H / F::qk;                // 256-value weight blocks per row (10)
-    float accg = 0.f, accu = 0.f;
+    float accg[MR], accu[MR];
+#pragma unroll
+    for (int r = 0; r < MR; ++r) { accg[r] = 0.f; accu[r] = 0.f; }
     for (int k = part; k < nb * F::ipb; k += SPLIT) {
         const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
-        accg += F::dot(gr, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
-        accu += F::dot(ur, sact + kbx * (F::qk / 32), kbx, iqs, sgrid);
+        const block_q8_1* sa = sact + kbx * (F::qk / 32);   // ONE act pointer per k: all 2*MR dots share it
+#pragma unroll
+        for (int r = 0; r < MR; ++r) {
+            accg[r] += F::dot(gr[r], sa, kbx, iqs, sgrid);
+            accu[r] += F::dot(ur[r], sa, kbx, iqs, sgrid);
+        }
     }
     // the SPLIT partial sums meet by warp shuffles, in the SAME sequential order the shared-buffer
     // reduction used (s = 0, 1, ... SPLIT-1), so the image stays bit-identical; a part-group never
@@ -990,25 +1011,28 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
     {
         const int lane = (int) (threadIdx.x & 31);
         const unsigned full = 0xFFFFFFFFu;
-        float ag = accg, au = accu;
 #pragma unroll
-        for (int s = 1; s < SPLIT; ++s) {
-            ag += __shfl_sync(full, accg, (lane + s) & 31);
-            au += __shfl_sync(full, accu, (lane + s) & 31);
-        }
-        if (part == 0) {
-            const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
-            sx[threadIdx.x / SPLIT] = sxv;
-            if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + (size_t) (row_base + row)] = sxv;   // the parity tool reads the pre-quant dots (global row index)
+        for (int r = 0; r < MR; ++r) {
+            float ag = accg[r], au = accu[r];
+#pragma unroll
+            for (int s = 1; s < SPLIT; ++s) {
+                ag += __shfl_sync(full, accg[r], (lane + s) & 31);
+                au += __shfl_sync(full, accu[r], (lane + s) & 31);
+            }
+            if (part == 0) {
+                const float sxv = (ag / (1.f + __expf(-ag))) * au;   // row-group order == chunk lane order
+                sx[(threadIdx.x / SPLIT) * MR + r] = sxv;
+                if (ff_dbg != nullptr) ff_dbg[(size_t) j * FF + (size_t) (row_base + row + r)] = sxv;   // the parity tool reads the pre-quant dots (global row index)
+            }
         }
     }
     __syncthreads();
-    // ONE warp quantises the block's chunks (PER_BLOCK/32 of them; exactly one at SPLIT=4): the exact
-    // body of expert_s2_stage1_batch_v2q's epilogue (same tree, same roundings) per chunk, so
-    // faq/fasc/fahx are bit-identical to the S2 path's whatever SPLIT is.
+    // ONE warp quantises the block's chunks (PER_BLOCK*MR/32 of them; exactly one at SPLIT=4, MR=1):
+    // the exact body of expert_s2_stage1_batch_v2q's epilogue (same tree, same roundings) per chunk,
+    // so faq/fasc/fahx are bit-identical to the S2 path's whatever SPLIT or MR is.
     if (threadIdx.x < 32) {
         const int lane = (int) threadIdx.x;
-        constexpr int CHUNKS = PER_BLOCK / 32;
+        constexpr int CHUNKS = ROWS / 32;
         const int chunk0 = (int) (j * (FF / 32) + (size_t) (row_base + row0 % rows_slice) / 32);   // GLOBAL chunk index (the faq layout is entry-major, full FF)
 #pragma unroll
         for (int c = 0; c < CHUNKS; ++c) {
@@ -1036,7 +1060,7 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
     }
 }
 
-template <int TY, int SPLIT, int THREADS = 128>
+template <int TY, int SPLIT, int THREADS = 128, int MR = 1>
 __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, size_t blob_stride,
                                            const MaxJob* __restrict__ jobs, int njobs,
                                            const uint8_t* __restrict__ acts_base,
@@ -1044,10 +1068,10 @@ __global__ void expert_iq_stage1_batch_v2q(const uint8_t* __restrict__ blobs, si
                                            int8_t* __restrict__ faq, float* __restrict__ fasc,
                                            float* __restrict__ fahx, float* __restrict__ ff_dbg,
                                            int row_base, int rows_slice) {
-    __shared__ __align__(16) char smem[IqV2qSmem<TY, SPLIT, THREADS>::total];
-    iq_stage1_v2q_body<TY, SPLIT, THREADS>((int) blockIdx.x, smem, blobs, blob_stride, jobs, njobs,
-                                           acts_base, o_gate, o_up, gu_row, faq, fasc, fahx, ff_dbg,
-                                           row_base, rows_slice);
+    __shared__ __align__(16) char smem[IqV2qSmem<TY, SPLIT, THREADS, MR>::total];
+    iq_stage1_v2q_body<TY, SPLIT, THREADS, MR>((int) blockIdx.x, smem, blobs, blob_stride, jobs, njobs,
+                                               acts_base, o_gate, o_up, gu_row, faq, fasc, fahx, ff_dbg,
+                                               row_base, rows_slice);
 }
 
 // ---- STRATA_MW_PERSIST: the self-service tier's kernel ---------------------------------------
@@ -1387,6 +1411,29 @@ void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32
         d_blobs, (const MaxJob*) d_jobs, njobs, acts_base, d_faq, d_fasc, d_fahx);
 }
 
+// STRATA_MW_IQ_MR dispatch: one template hop so the launcher's switch stays one-level.  The MR=1
+// instantiation is byte-identical to the pre-MR kernel (same template args, same smem layout).
+template <int TY, int SP, int THR>
+static void launch_iq_mr(int mr, int blocks, cudaStream_t stream, const uint8_t* d_blobs, size_t blob_stride,
+                         const MaxJob* d_jobs, int njobs, const uint8_t* acts_base, size_t o_gate, size_t o_up,
+                         size_t gu_row, int8_t* d_faq, float* d_fasc, float* d_fahx, float* d_ff_dbg,
+                         int row_base, int rows_slice) {
+    switch (mr) {
+        case 5:  expert_iq_stage1_batch_v2q<TY, SP, THR, 5><<<blocks, THR, 0, stream>>>(
+                     d_blobs, blob_stride, d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                     d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice); break;
+        case 4:  expert_iq_stage1_batch_v2q<TY, SP, THR, 4><<<blocks, THR, 0, stream>>>(
+                     d_blobs, blob_stride, d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                     d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice); break;
+        case 2:  expert_iq_stage1_batch_v2q<TY, SP, THR, 2><<<blocks, THR, 0, stream>>>(
+                     d_blobs, blob_stride, d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                     d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice); break;
+        default: expert_iq_stage1_batch_v2q<TY, SP, THR, 1><<<blocks, THR, 0, stream>>>(
+                     d_blobs, blob_stride, d_jobs, njobs, acts_base, o_gate, o_up, gu_row,
+                     d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice); break;
+    }
+}
+
 void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
                                              const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
                                              size_t o_gate, size_t o_up, size_t gu_row,
@@ -1419,18 +1466,31 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
         return on;
     }();
     const bool wide = t256 && split >= 2;
+    // STRATA_MW_IQ_MR (opt-in, default 1 = the shipped geometry): MR row-pairs per thread-group -
+    // the staging amortises MR-fold and the act reads serve 2*MR dots; bit-exact (see the body).
+    // A slice whose rows_slice is not a multiple of PER_BLOCK*MR (a tensor-mode shard, e.g. 160
+    // rows with MR=4) silently falls back to MR=1: correctness never depends on the knob.
+    static const int mr_want = [] {
+        const char* e = std::getenv("STRATA_MW_IQ_MR");
+        const int v = e != nullptr ? std::atoi(e) : 1;
+        const int ok = (v == 1 || v == 2 || v == 4 || v == 5) ? v : 1;
+        if (ok != 1)
+            std::fprintf(stderr, "strata maxwell: IQ gup MR %d rows/group (STRATA_MW_IQ_MR; 1 is the default)\n", ok);
+        return ok;
+    }();
     if (!::strata::core::maxwell_tp::iq_slice_valid(row_base, rows_slice, split, wide)) {
         std::fprintf(stderr, "strata maxwell: IQ slice [%d,%d) is incompatible with SPLIT=%d THREADS=%d\n",
                      row_base, row_base + rows_slice, split, wide ? 256 : 128);
         std::exit(1);
     }
     const int pb = (wide ? 256 : 128) / split;
+    const int mr = (rows_slice % (pb * mr_want) == 0) ? mr_want : 1;
     const int tot_rows = njobs * rows_slice;   // SPLIT_MODE_TENSOR: the card's slice of every job
-    const int blocks = (tot_rows + pb - 1) / pb;
+    const int blocks = (tot_rows + pb * mr - 1) / (pb * mr);
 #define STRATA_LAUNCH_IQ(TY, SP, THR)                                                              \
-    expert_iq_stage1_batch_v2q<TY, SP, THR><<<blocks, THR, 0, stream>>>(                            \
-        d_blobs, blob_stride, (const MaxJob*) d_jobs, njobs, acts_base, o_gate, o_up, gu_row,      \
-        d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
+    launch_iq_mr<TY, SP, THR>(mr, blocks, stream, d_blobs, blob_stride, (const MaxJob*) d_jobs,    \
+                              njobs, acts_base, o_gate, o_up, gu_row, d_faq, d_fasc, d_fahx,        \
+                              d_ff_dbg, row_base, rows_slice)
     switch (gu_type) {
         case 22:   // IQ2_S
             if (wide) { if (split == 4) STRATA_LAUNCH_IQ(22, 4, 256); else STRATA_LAUNCH_IQ(22, 2, 256); }
