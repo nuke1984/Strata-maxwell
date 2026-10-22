@@ -52,3 +52,26 @@ against the wrong server - engagement now verified via /proc/<pid>/environ + ban
 
 The gup bench is BIMODAL today (cold ~350-365, warm ~270-295 us) - single runs are not
 comparable; all numbers above are warm-state or interleaved.
+
+## Same evening: the 2-slot serving demo - NEGATIVE on this rig, closed
+
+Config arm: strata-iq2xs-embed-vram-split-par2-64k.json (parallel 2, context 64k - at 256k two
+slots do NOT fit: the engine shrinks the expert cache 1874 -> 243 slots and the MTP head then
+misses VRAM and the start fails; at 64k the full 1874-slot cache + "batch windows of up to 2
+sequences" both arm cleanly).
+
+Two identical temp-0 384-token requests, wall clock (same script as the no-flag run):
+
+| mode | req times | total | aggregate |
+|---|---|---:|---:|
+| sequential (2 slots armed) | 7.3 s + 6.9 s (52.6 / 55.6 tok/s each) | 14.2 s | ~54 tok/s |
+| concurrent (2 slots) | 17.6 s / 17.7 s | **17.7 s** | **~43 tok/s** |
+| concurrent, NO slot flag (yesterday's probe, 256k 1-slot: queued) | 7.3 / 14.9 | 14.9 s | ~52 tok/s |
+
+**Verdict: 2-slot batching = 0.80x - WORSE than serving one at a time.** The reason is the
+architecture: the per-window cost is dominated by the M10 expert serve, and each slot's token
+activates its OWN ~10 experts per layer - the tier's jobs (and the serial chain) roughly DOUBLE
+per window instead of amortizing. Upstream's slot gains (1.14-1.61x on R9700-class rigs) come
+from sharing the DENSE-weight read across slots; our dense share is small and the expert share
+is per-token. Multi-slot serving on the Maxwell tier: CLOSED (single-slot 256k stays optimal
+for both latency and aggregate).
