@@ -80,3 +80,35 @@ slots (upstream --parallel machinery works on this config).
 ## Files
 - instr.log: the instrumented run's log (MWPROF + decode timing lines)
 - duty.log: nvidia-smi duty samples under steady load
+
+## Follow-up (same day): Option A — the host-protocol attack, CLOSED by measurement
+
+The anatomy's A direction assumed the finish-path host syncs were waste. The tree already
+contains the complete no-wait protocol family (E1 mode 2: GPU-raised tier flags, the graph's
+fused wait-copy, no-sync decode finish, dual staging sets; STRATA_MW_GPUFLAG=2 — which also
+auto-arms the persistent doorbell tier). It was shelved on 0.1.44 "the gain moves into the ring".
+With the ring now gone (59 us/L), the definitive re-test:
+
+| arm (same binary, env-only, same hour) | 3x3 mean | TTFT |
+|---|---:|---:|
+| standard protocol (fresh baseline) | **54.07** (story 49.4 / fib 58.8 / code 54.0) | 21.96 s |
+| E1 mode 2 + persist (STRATA_MW_GPUFLAG=2) | **54.46** (+0.7% = noise) | 21.85 s |
+
+**Verdict: the protocol family pays NOTHING even with the ring gone.** The window is invariant
+when the waits move from the host sync into the graph's multi-wait — the cost is real
+device/chain latency, not host waste: the serial per-layer chain [3060 graph work + the M10
+serve (gup ~240 + down 65-185, cards overlapped, wall = max ~435 us/L)] sums to ~41 ms = the
+window. A protocol can re-position waits; it cannot remove latency. Option A is closed.
+
+**Bug note**: instrumenting the compound (STRATA_MW_LAYERPROF with GPUFLAG=2) DEADLOCKS the
+first request — profiling disarms the fused wait-copy (prof_on_), and the unfused wait path +
+the persist doorbell + the split window miss a wakeup (hang: "verify window: waiting for the
+GPU (flags A/B/M raised) 3", caught by #29, waits released by #267). Never profile that combo;
+the non-instrumented compound is correct (full 3x3 ran clean).
+
+**Menu after A**: the remaining levers are (i) shorten the M10 serve chain = KERNEL work —
+option E returns as the main code-level lever (gup's 240 us/L instruction floor is ~55% of the
+tier wall; the 4-rows/warp amortization idea now has a path to surface IF the down's visit-order
+contention is also cut), (ii) shorten the 3060 per-layer graph work, (iii) amortize the chain
+over more tokens: multi-slot serving (measured working, 2 x ~56 aggregate 112), (iv) fewer M10
+layers per window (static expert table — deliberately left as is).

@@ -222,6 +222,12 @@ reload is in progress.
   59 µs/L and the window is now 81% M10-tier host protocol (finish 64% + begin 17%); the host
   runs 857 µs/L serial vs the cards' overlapped 435 µs/L device wall; M10 kernel work
   deprioritized by the data; decision menu A–E in the campaign dir — `2026-10-22-token-passage-anatomy`.
+  Same day, Option A closed: the E1+persist no-wait protocol family re-tested with the ring gone
+  (54.46 vs 54.07 = +0.7%, nothing) — the wait is real chain latency, not host waste; window
+  invariant when waits move host→graph. Instrumenting that combo deadlocks (unfused wait +
+  doorbell + split; bug note in the campaign). Spec-depth stays 4 (user call). The remaining
+  levers: M10 serve-chain kernel work (E returns), 3060 per-layer graph work, multi-slot
+  amortization.
 
 ---
 
