@@ -69,6 +69,16 @@ KV k8v4, spec 4 (MTP threshold 0.5).
 | baseline (no split) | 415 µs | 688 µs (plan 6 + actq 122 + jobs 14 + run 542) | 14 µs | 54.3 ms @ 2.06 tok |
 | split + persist | 407 µs | 54 µs | 9 µs | **41.1 ms @ 2.20 tok** |
 
+**The 0.2.2 anatomy (2026-10-22, instrumented ~3.7%, `2026-10-22-token-passage-anatomy`)**: the
+ring collapsed to 59 µs/L (GPU-reach wait) — the port's kernels absorbed it. The window is now
+**81% M10-tier host protocol**: finish (down launch + sequential card syncs + scatter) 32.56 ms
+= 64%, begin (pack/staging/H2D/gup) 8.59 ms = 17%, draft 3.47, GPU-reach 2.84. The cards'
+kernels overlap (device wall = max ~435 µs/L; gup ~240 uniform = the instruction floor, down
+65–185 µs/L by visit order) while the host burns 857 µs/L serially ≈ 2× the device wall; duty:
+3060 83–86% near-saturated, M10s 38–58% (2× headroom). 2-slot serving amortizes the protocol
+(each request 52–59 tok/s, aggregate >100). M10 kernel work is deprioritized by this data until
+the host protocol cost falls.
+
 The split window pipelines the two token groups (group B's mixer does not depend on group A's
 experts) and fills the M10 wait with legal 3060 work.
 
@@ -206,7 +216,12 @@ reload is in progress.
   vanished; pool.cpp reconciles their constructor NUMA-plan with our lazy `start_workers()`).
   All gates green: parity 0 failures, kernel 294.6 µs identical, 3×3 mean 53.1 (0.1.45: 52.44),
   load 231 s, recall 5/5, 8× identical, soak 559 req/0 err/73,818 tok. Thinking-default template and the page-cache
-  file tier are the base's new behavior — `2026-10-21-022-port`. **Production switch: pending go.**
+  file tier are the base's new behavior — `2026-10-21-022-port`. Production switched by user go.
+- **2026-10-22**: production GO on 0.2.2 (tag `maxwell-0.2.2-split-production-OK` @ `7e03f289`,
+  pushed to the fork). The token-passage anatomy: **the lock moved** — the ring collapsed to
+  59 µs/L and the window is now 81% M10-tier host protocol (finish 64% + begin 17%); the host
+  runs 857 µs/L serial vs the cards' overlapped 435 µs/L device wall; M10 kernel work
+  deprioritized by the data; decision menu A–E in the campaign dir — `2026-10-22-token-passage-anatomy`.
 
 ---
 
