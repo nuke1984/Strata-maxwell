@@ -28,3 +28,19 @@ change (49 vs 19-20 MB/s random) - but the PLE hypothesis specifically is CLOSED
 **Newly exposed**: the prefill ceiling (~75 tok/s) is the TIER's prefill path - the next
 candidate if TTFT ever matters enough to attack (a real campaign: wider tier prefill
 windows / batched staging).
+
+## Follow-up (same night): the full 3x3 head-to-head, A1 (PLE RAM) vs A2 (PLE direct)
+
+| | A1 (PLE RAM) | A2 (PLE SSD) |
+|---|---:|---:|
+| 3x3 overall | **59.59 tok/s** | **58.87 tok/s** |
+| story / fib / code | 60.2 / 54.1 / 64.4 | 58.5 / 53.9 / 64.2 |
+| TTFT (same 2,726-tok prompt) | 36.87 s | 36.77 s |
+| prompt read rate | 74.0 tok/s | 74.2 tok/s |
+| load | 336 s (incl. 102.1 s lock) | 230 s (SSD probe: 5,567 rows/s = 23 MB/s) |
+
+**Verdict: parity - the +1.2% overall sits inside the story prompt's own run-to-run spread
+(+-5 tok/s; run-1 story was 55.6 vs 50.6).** The single-prompt parity finding holds under the
+full suite: on the M10 rig the PLE mode is invisible; the ~74 tok/s prefill cap is the tier's
+64-token windows. Production stays default (direct): identical speed, 106 s faster load,
+28.8 GB free.
