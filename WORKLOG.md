@@ -351,3 +351,16 @@ arm-against-arm, same day/same binary whenever possible.
 - Campaign final: 152.5 shipped (+101% over 75.8); the 240+ path is the wavefront + the cross-stream
   ordering fix, recorded as the named next work.  Production default-path restored and verified;
   parity 0.
+
+## 2026-10-27 final - mode 7 full-gated (correct, 150.3-152.0) and the CEILING VERDICT
+- mode 7 passes all gates (fixed answers, 10k topics, recall 2/2) at 150.3-152.0: DRED closed three
+  ways (146.8 dead-adds / 155-wrong / 150-152 barrier-priced).  The incumbent 152.5 stands.
+- THE VERDICT: the M10 rig's prefill ceiling within this architecture is 152-155 tok/s; the CPU
+  rig's 259.9 is unreachable without a ground-up pipeline redesign.  The measured case (three
+  legs): (1) the kernels are at their measured optimum (gup instruction-bound at 27x DRAM slack -
+  six levers closed; down 4.4 ms); (2) correctness measurably REQUIRES ~4-6 ms of per-window
+  pipeline latency (five experimental forms) - with it the completes cost 13-18 ms and the unit is
+  47.4 ms = 152.5; (3) the two engines never overlap (measured) and overlapping them requires
+  removing exactly that barrier - the consumer could not be isolated in-engine (all identified
+  readers are m.cs-ordered; only a NULL-stream barrier works - a driver/vGPU-level visibility
+  dependency).  Full argument + every number: bench/results/2026-10-26-prefill-campaign/README.md.

@@ -133,3 +133,36 @@ stack as architected.
   requires eliminating exactly the latency this pipeline secretly depends on (the cross-stream
   ordering bug must be found and fixed first, else any speedup corrupts the KV), and (b) is major
   surgery (double-buffered chunk state) beyond this campaign's completed scope.
+
+## Session 6 (2026-10-27): mode 7 full-gated (correct, 150.3-152.0) - the ceiling verdict
+
+mode 7 (the sparse-barrier form: m.cs sync + 40 NULL-stream readbacks) passes ALL gates - fixed
+answers, 10k topics, recall 2/2 - at 150.3 (10k) / 151.9-152.0 (2.7k): AT OR BELOW the incumbent
+152.5.  DRED is closed three independent ways: mode 5 (146.8, dead adds), mode 6 (155, wrong),
+mode 7 (150-152, correct but barrier-priced).  The incumbent stack stands as the optimum of this
+architecture on this hardware.
+
+## THE CEILING VERDICT (measured, 2026-10-27)
+
+The M10 rig's prefill ceiling on this hardware/stack, within the measured architecture, is
+**152-155 tok/s** (152.5 shippable; 155 exists only in a form that corrupts the KV).  The CPU rig's
+259.9 is not reachable without a ground-up pipeline redesign.  The measured case:
+
+1. KERNELS are at their measured optimum: the MT gup (8 ms, 27x DRAM slack - instruction-bound;
+   every occupancy/geometry/amortisation lever measured: 256x8 +5 then beaten, GACT -4, E=2 -6)
+   and the MT down (4.4 ms).  Kernel work is NOT the wall.
+2. THE BARRIER: pipeline correctness on this stack measurably REQUIRES ~4-6 ms of per-window
+   latency between the M10 completes and downstream reads (five experimental forms: modes 1/3/6
+   without it crash or corrupt; modes 5/7 with it pass; the sparse-barrier form still pays the
+   rate).  The shipped stack carries the same dependency - latency-hidden in its completes.
+   With the barrier, the completes cost 13-18 ms/window; the unit is 47.4 ms (gup 8 + down
+   4.4-8 + completes ~18 + 3060 compute 5.8 + transfers 3.6 + grouping ~4) = 152.5 tok/s.
+3. THE ENGINES NEVER OVERLAP: the 3060's 10 s and the M10 chain's ~44 s are serial (measured,
+   STRATA_PREFILL_TIMING).  Overlapping them (the wavefront, est. 230-250) requires removing
+   exactly the barrier latency that item 2 shows correctness depends on; the racing consumer
+   could not be isolated in-engine (the combine and every identified reader are m.cs-ordered;
+   the NULL-stream-only effectiveness points at a driver/vGPU-level visibility dependency this
+   stack enforces).  That redesign - explicit device-wide ordering plus double-buffered chunk
+   state - is a separate project, feasibility unproven on this stack.
+
+Every number above is measured and cross-referenced in this file and WORKLOG.md.
