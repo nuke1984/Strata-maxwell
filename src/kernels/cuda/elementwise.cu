@@ -740,4 +740,35 @@ void rms_norm_weighted(float* x, const float* w, int64_t rows, int64_t cols, flo
     sync_if_needed(stream, "rms_norm_weighted");
 }
 
+
+// ---- STRATA_MW_DRED (the prefill's device-side reduce, 2026-10-26) ---------------------------------------
+//
+// The four M10 ranks' down partials (identical row sets, SPLIT_MODE_TENSOR) were D2H'd and ADDED on the
+// host in rank order, then the block was uploaded back - ~6 ms/layer-chunk of host-serial work.  The DRED
+// arm peer-copies each rank's d_out_ onto the primary GPU and THIS kernel does the rank-ordered add and
+// the row scatter straight into the destination: v = ((p0 + p1) + p2) + p3 per element is the exact fp
+// sequence the host adds produced (block = 0; += p0; += p1; ...), so the rows are bit-identical.
+__global__ void mw_dred_reduce_kernel(const float* __restrict__ p0, const float* __restrict__ p1,
+                                      const float* __restrict__ p2, const float* __restrict__ p3,
+                                      const int32_t* __restrict__ map, float* __restrict__ dst,
+                                      int64_t rows, int64_t n) {
+    const int64_t r = (int64_t) blockIdx.x;
+    if (r >= rows) return;
+    float* d = dst + (int64_t) map[r] * n;
+    const float* a = p0 + r * n;
+    const float* b = p1 + r * n;
+    const float* c = p2 + r * n;
+    const float* e = p3 + r * n;
+    for (int64_t i = (int64_t) threadIdx.x; i < n; i += (int64_t) blockDim.x) {
+        const float v = ((a[i] + b[i]) + c[i]) + e[i];
+        d[i] = v;
+    }
+}
+
+void mw_dred_reduce(const float* p0, const float* p1, const float* p2, const float* p3,
+                    const int32_t* map, float* dst, int64_t rows, int64_t n, void* stream) {
+    if (rows <= 0) return;
+    mw_dred_reduce_kernel<<<(unsigned) rows, 256, 0, (cudaStream_t) stream>>>(p0, p1, p2, p3, map, dst, rows, n);
+}
+
 }  // namespace strata::kernels

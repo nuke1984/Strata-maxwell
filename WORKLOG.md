@@ -312,3 +312,14 @@ arm-against-arm, same day/same binary whenever possible.
 - Campaign: 75.8 -> 152.5 (+101%).  The honest path to 250: (a) the chunk-wavefront overlap (caps at
   the M10 chain alone: ~200 tok/s), then (b) completes parallelization + (c) the gup packing for the
   last ~20%.
+
+## 2026-10-26 night - DRED quarantined: five forensic cycles, the fault survives all benign isolations
+- STRATA_MW_DRED (device-side rank-ordered reduce of the four ranks' partials into Dm, bit-exact add
+  order, est. ~165): crashes with an illegal memory access on MULTI-WINDOW prompts only (the single-
+  window 13-token request answers correctly).  Isolated through five forms - direct peer copy,
+  cross-device stream waits, host event syncs + foreign-pinned H2D, portable pinned, pure-CPU staged
+  local-pinned H2D - the crash persists; remaining deltas: mid-layer device-0 allocations, the
+  early-return completes, local H2Ds.  compute-sanitizer is blocked (cuBLAS init fails under memcheck).
+- DRED committed DEFAULT OFF (do not enable; needs a standalone repro harness).  The winning stack is
+  unchanged and production runs the default path: MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 = 152.5.
+- Also this session: meta-tier reuse ruled out (MaxwellMetaTier requires a 48-layer model, not ours).

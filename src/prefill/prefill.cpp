@@ -1,5 +1,6 @@
 // src/prefill/prefill.cpp - see include/strata/prefill/prefill.hpp.
 #include "strata/kernels/fused_gr.hpp"
+#include "strata/kernels/elementwise.hpp"
 #include "strata/prefill/prefill.hpp"
 #include "strata/prefill/warm_policy.hpp"
 #include <atomic>
@@ -963,6 +964,17 @@ struct Prefill::Impl {
     std::vector<strata::kernels::cpu::ActQ> mw_acts;   // one per token of the chunk (the M10s' ActQ contract)
     std::vector<float> mw_mixed_h;                     // host staging of m.mixed for the ActQ quantisation
     std::vector<float> mw_block;                       // host block of the tiers' Dm rows (rows_mw * N), one H2D
+    // STRATA_MW_DRED (the prefill's device-side reduce): each rank's down partials peer-copy onto the
+    // primary GPU and mw_dred_reduce adds them (rank order, bit-identical to the host adds) straight
+    // into Dm's tail - the host completes become enqueue-only; no mw_block memset, no adds, no H2D.
+    float* dred_part[4] = {};
+    int32_t* dred_map = nullptr;
+    std::vector<int32_t> dred_map_h;
+    cudaEvent_t dred_cp[4] = {};
+    float* dred_stage[4] = {};   // pinned in THIS context: the M10s' pinned h_out_ is foreign to the
+                                 // primary's copy engine (non-portable AND the portable re-alloc still
+                                 // faulted at 4 MB on this vGPU stack) - the partials cross via pure CPU
+    size_t dred_cap = 0;
     // The grouping tables in mapped pinned memory, [ids | slot | src] of T_max * K each, then the MMQ bounds: kernels
     // read and write them in place.  A cudaMemcpyAsync of them queues behind the expert blobs the copy stream already
     // holds (up to `ring` of them, ~70 us each), and the GPU idles meanwhile - measured 4.2 s of a 128K prompt's
@@ -4160,7 +4172,12 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             // finish in rank order and ADD into the same block (deterministic), so it is
                             // zeroed once per layer here and finish_to takes `accumulate`.
                             const bool mw_tp = m.mw_count > 0 && m.mw[0] != nullptr && m.mw[0]->tensor();
-                            if (mw_tp) std::memset(m.mw_block.data(), 0, (size_t) rows_mw * N * 4);
+                            static const bool dred_on = std::getenv("STRATA_MW_DRED") != nullptr &&
+                                                       std::atoi(std::getenv("STRATA_MW_DRED") ?: "0") != 0;
+                            // DRED's reduce writes every tier row exactly once - no zeroing, no host block
+                            const int dred_mode_l = std::atoi(std::getenv("STRATA_MW_DRED") ?: "0");
+                            if (mw_tp && !(dred_on && dred_mode_l != 2 && mw_tp && m.mw_count == 4))
+                                std::memset(m.mw_block.data(), 0, (size_t) rows_mw * N * 4);
                             // the sub-batch window follows the tier's staging geometry (STRATA_MW_NTM,
                             // default 64): the tier refuses n_tok > n_tok_max_, so MW_SUB must match it.
                             const int64_t MW_SUB = (m.mw_count > 0 && m.mw[0] != nullptr) ? m.mw[0]->n_tok_max() : 64;
@@ -4194,6 +4211,84 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                   if (mw_two_phase)
                                       for (int i = 0; i < m.mw_count; ++i)
                                           if (!m.mw[i]->prefill_launch_down(err)) return false;
+                                  // STRATA_MW_DRED (opt-in, the four-rank TP form): the completes'
+                                  // rank-ordered adds move to THIS GPU - each rank's partials peer-copy
+                                  // over (event-ordered behind its down) and mw_dred_reduce writes Dm's
+                                  // tail directly.  The fp add order is the host adds' exact sequence,
+                                  // so the rows are bit-identical; the finish_to calls below then cost
+                                  // nothing on the host.
+                                  static const bool mw_dred = [] {
+                                      const char* e = std::getenv("STRATA_MW_DRED");
+                                      const bool on = e != nullptr && std::atoi(e) != 0;
+                                      if (on)
+                                          std::fprintf(stderr, "strata maxwell: device-side prefill reduce "
+                                                               "(STRATA_MW_DRED)\n");
+                                      return on;
+                                  }();
+                                  if (mw_dred && mw_tp && m.mw_count == 4) {
+                                      const auto& own = m.mw[0]->owned_rows();
+                                      if (!own.empty()) {
+                                          const size_t rows = own.size();
+                                          if (m.dred_cap < rows) {
+                                              if (m.dred_cap > 0) {
+                                                  for (int i = 0; i < 4; ++i) { cudaFree(m.dred_part[i]); cudaFreeHost(m.dred_stage[i]); m.dred_stage[i] = nullptr; }
+                                                  cudaFree(m.dred_map);
+                                              }
+                                              const size_t cap = rows * 2;   // grow room, reallocated rarely
+                                              for (int i = 0; i < 4; ++i) {
+                                                  if (cudaMalloc(&m.dred_part[i], cap * (size_t) N * 4) != cudaSuccess) {
+                                                      err = "prefill: the DRED partial buffers failed"; return false;
+                                                  }
+                                                  if (cudaHostAlloc(&m.dred_stage[i], cap * (size_t) N * 4, cudaHostAllocDefault) != cudaSuccess) {
+                                                      err = "prefill: the DRED staging buffers failed"; return false;
+                                                  }
+                                              }
+                                              if (cudaMalloc(&m.dred_map, cap * 4) != cudaSuccess) {
+                                                  err = "prefill: the DRED row map failed"; return false;
+                                              }
+                                              m.dred_map_h.assign(cap, 0);
+                                              m.dred_cap = cap;
+                                          }
+                                          // the two-hop: each rank's AD2H D2H already landed its
+                                          // partials in its CURRENT h_out_ (same-stream, event-gated
+                                          // behind its down).  The host waits each copy's event (the
+                                          // proven completes pattern), then ONE H2D per rank to this
+                                          // GPU.  NO cross-device stream waits anywhere: this stack's
+                                          // vGPU layer faults on them (measured, the DRED bisect -
+                                          // both the direct peer copy AND plain cross-device waits).
+                                          for (int i = 0; i < 4; ++i) {
+                                              if (cudaEventSynchronize(m.mw[i]->copy_event()) != cudaSuccess) {
+                                                  err = "prefill: the DRED partial wait failed"; return false;
+                                              }
+                                              // pure-CPU crossing: the M10's pinned h_out_ is foreign
+                                              // to this GPU's copy engine on this stack (measured); the
+                                              // staging below is pinned in THIS context.
+                                              std::memcpy(m.dred_stage[i], m.mw[i]->host_partial(),
+                                                          rows * (size_t) N * 4);
+                                              if (cudaMemcpyAsync(m.dred_part[i], m.dred_stage[i],
+                                                                  rows * (size_t) N * 4,
+                                                                  cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
+                                                  err = "prefill: the DRED partial upload failed"; return false;
+                                              }
+                                          }
+                                          // DRED=2: the bisect arm - waits + H2D only (no map, no
+                                          // reduce): if this passes multi-window, the fault is the
+                                          // reduce/map path; if not, the waits/H2D.
+                                          static const int dred_mode = std::atoi(std::getenv("STRATA_MW_DRED") ?: "0");
+                                          if (dred_mode != 2) {
+                                              for (size_t si = 0; si < rows; ++si)
+                                                  m.dred_map_h[si] = slot_h[t0 * K + (size_t) own[si]] - (int32_t) rows_local;
+                                              if (cudaMemcpyAsync(m.dred_map, m.dred_map_h.data(), rows * 4,
+                                                                  cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
+                                                  err = "prefill: the DRED map upload failed"; return false;
+                                              }
+                                              strata::kernels::mw_dred_reduce(m.dred_part[0], m.dred_part[1],
+                                                                              m.dred_part[2], m.dred_part[3],
+                                                                              m.dred_map, m.Dm + (size_t) rows_local * N,
+                                                                              (int64_t) rows, N, m.cs);
+                                          }
+                                      }
+                                  }
                                   // STRATA_MW_PFPIPE (opt-in): window s+1's begin (its acts upload
                                   // rides the copy engine under window s's downs) runs BEFORE window
                                   // s's completes - the completes then sync only the down EVENT, so
@@ -4227,8 +4322,10 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                  if (pp.on) { pp.sbeg += ppMs(sb0, sb1); pp.sfin += ppMs(sb1, sb2); }
                             }
                             const auto ph3 = std::chrono::steady_clock::now();
-                            // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw)
-                            if (cudaMemcpyAsync(m.Dm + (size_t) rows_local * N, m.mw_block.data(),
+                            // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw).
+                            // DRED already wrote Dm's tail on the device - no upload.
+                            if (!(dred_on && dred_mode_l != 2 && mw_tp && m.mw_count == 4) &&
+                                cudaMemcpyAsync(m.Dm + (size_t) rows_local * N, m.mw_block.data(),
                                                 (size_t) rows_mw * N * 4, cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
                                 err = "prefill: the Maxwell rows' upload failed";
                                 return false;

@@ -165,4 +165,9 @@ struct MappedCopy {
 };
 void copy_from_mapped_multi(const MappedCopy* copies, int n, void* stream);
 
+/// STRATA_MW_DRED (the prefill's device-side reduce): dst[map[r]][0,n) = ((p0+p1)+p2)+p3 for row r -
+/// the exact fp sequence of the host's rank-ordered adds, so the rows are bit-identical.  One block/row.
+void mw_dred_reduce(const float* p0, const float* p1, const float* p2, const float* p3,
+                    const int32_t* map, float* dst, int64_t rows, int64_t n, void* stream);
+
 }  // namespace strata::kernels

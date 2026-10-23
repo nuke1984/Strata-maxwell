@@ -113,6 +113,16 @@ public:
     /// so the accumulated block - is bit-identical to the single-phase form.  The four cards' downs
     /// overlap like their gups instead of serialising behind each other's finishes.
     bool prefill_launch_down(std::string& err);
+    /// STRATA_MW_DRED (the prefill's device-side reduce): the caller peer-copies this card's down
+    /// partials on the primary GPU and reduces them there, so the completes become enqueue-only.
+    /// These expose what that arm needs: the partial rows' owner ids, the device buffer, the
+    /// down-complete event, and the registration of the caller's copy-done event (the next window's
+    /// down waits it - d_out_ is single-buffered).
+    const std::vector<int32_t>& owned_rows() const { return owned_row_; }
+    const float* out_ptr() const { return d_out_; }
+    cudaEvent_t down_event() const { return ev_pf_down_; }
+    const float* host_partial() const { return h_out_; }      // the AD2H copy's destination
+    cudaEvent_t copy_event() const { return ev_pf_ad2h_; }    // ... and its completion event
 
     int64_t resident() const { return resident_; }
     int64_t computed() const { return computed_.load(std::memory_order_relaxed); }
@@ -275,6 +285,9 @@ private:
     cudaEvent_t ev_pf_down_ = nullptr;                 // this window's down complete (streams_[0])
     cudaEvent_t ev_pf_ad2h_ = nullptr;                 // STRATA_MW_AD2H: the completes' pre-enqueued D2H
     bool ad2h_armed_ = false;                          // this window's D2H was armed at launch_down
+    float* h_out2_ = nullptr;                          // STRATA_MW_DRED: the partials' second host
+                                                      // buffer - window s+1's D2H lands here while the
+                                                      // H2D of s still reads the first (no back-edge)
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);
 

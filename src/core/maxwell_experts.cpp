@@ -72,6 +72,14 @@ static bool ad2h_env() {
     return on;
 }
 
+// STRATA_MW_DRED: the completes' rank-ordered adds move to the primary GPU (peer-copied partials +
+// mw_dred_reduce into the destination) - the host completes become enqueue-only.  Needs the four-rank
+// TP form; the adds' fp order is preserved exactly, so the rows are bit-identical.
+static bool dred_env() {
+    static const bool on = std::getenv("STRATA_MW_DRED") != nullptr && std::atoi(std::getenv("STRATA_MW_DRED")) != 0;
+    return on;
+}
+
 // STRATA_MW_PFPIPE: the prefill upload pipeline (see the members in the header).  Read once.
 static bool pf_pipe_env() {
     static const bool on = std::getenv("STRATA_MW_PFPIPE") != nullptr && std::atoi(std::getenv("STRATA_MW_PFPIPE")) != 0;
@@ -505,8 +513,9 @@ bool MaxwellExperts::open(int device,
     // STRATA_MW_PFPIPE: the second faq image (the gup(s+1) writes it while down(s) still reads set 0;
     // ~0.5 MB/card).  The events: upload-done (per staging set, on the copy stream), staging-set-free
     // (after the set's down, on the compute stream) and this-window's down-complete.
-    if (ad2h_env()) {
-        std::fprintf(stderr, "strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)\n");
+    if (ad2h_env() || dred_env()) {   // DRED consumes the AD2H copy (the two-hop's first leg)
+        if (ad2h_env())
+            std::fprintf(stderr, "strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)\n");
         if (!check(cudaEventCreateWithFlags(&ev_pf_ad2h_, cudaEventDisableTiming), "ad2h event", err)) { close(); return false; }
     }
     const bool pf_pipe = pf_pipe_env();
@@ -524,9 +533,22 @@ bool MaxwellExperts::open(int device,
         // prime the free events (set 0/1 both "free" before the first window)
         for (int i = 0; i < 2; ++i) cudaEventRecord(ev_pf_free_[i], streams_[0]);
     }
+    if (dred_env() && ev_pf_down_ == nullptr) {   // DRED needs the down event; PFPIPE already made one
+        if (!check(cudaEventCreateWithFlags(&ev_pf_down_, cudaEventDisableTiming), "pfdown event", err)) { close(); return false; }
+    }
     if (!check(cudaMalloc(&d_ff_, ce * FF * sizeof(float)), "cudaMalloc ff", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_out_, ce * H * sizeof(float)), "cudaMalloc out", err)) { close(); return false; }
     if (!check(cudaMallocHost((void**) &h_out_, ce * H * sizeof(float)), "cudaMallocHost out", err)) { close(); return false; }
+    // DRED: both partials buffers are read by the PRIMARY GPU's copy engine (the H2D leg of the
+    // two-hop) - they must be PORTABLE pinned, or a foreign-context DMA on them is an illegal access
+    // (measured: the small single window passed, the 4 MB multi-window ones faulted).
+    if (dred_env()) {
+        cudaFreeHost(h_out_); h_out_ = nullptr;
+        if (!check(cudaHostAlloc((void**) &h_out_, ce * H * sizeof(float), cudaHostAllocPortable),
+                   "cudaHostAlloc out (portable)", err)) { close(); return false; }
+        if (!check(cudaHostAlloc((void**) &h_out2_, ce * H * sizeof(float), cudaHostAllocPortable),
+                   "cudaHostAlloc out2 (portable)", err)) { close(); return false; }
+    }
 
     // P3.3: per-device streams and events for the overlap DAG
     for (int s = 0; s < 4; ++s) {
@@ -755,6 +777,7 @@ void MaxwellExperts::close() {
     if (h_up_) { cudaFreeHost(h_up_); h_up_ = nullptr; }
     d_acts_ = nullptr; h_acts_ = nullptr; d_jobs_ = nullptr; h_jobs_ = nullptr;
     d_aq_ = nullptr; d_ascale_ = nullptr; d_ahx_ = nullptr;
+    if (h_out2_) { cudaFreeHost(h_out2_); h_out2_ = nullptr; }
     if (d_faq_) { cudaFree(d_faq_); d_faq_ = nullptr; }
     if (d_faq2_) { cudaFree(d_faq2_); d_faq2_ = nullptr; }
     if (d_fascale2_) { cudaFree(d_fascale2_); d_fascale2_ = nullptr; }
@@ -1349,6 +1372,12 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
     if (!zerocopy_ &&
         !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
+    // STRATA_MW_DRED: alternate the partials' host buffer per window - window s+1's D2H lands in the
+    // other buffer while window s's H2D still reads this one (no cross-device back-edge: this stack's
+    // vGPU layer faults on cross-device stream waits - measured, STRATA_MW_DRED bisect 2026-10-26).
+    if (dred_env() && h_out2_ != nullptr) {
+        float* t = h_out_; h_out_ = h_out2_; h_out2_ = t;
+    }
     const LayerGeo& g = geo_of(w_layer_);
     if (mt_nruns_ > 0) {
         // STRATA_MW_MT: the run table drives the down too (same runs the gup consumed; the tables
@@ -1365,17 +1394,20 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
     }
     down_launched_ = true;
     // STRATA_MW_AD2H: the D2H rides behind the down on this card's stream - the completes then only
-    // wait the event and run the rank-ordered adds (the copy already happened, overlapped).
-    if (ad2h_env()) {
+    // wait the event and run the rank-ordered adds (the copy already happened, overlapped).  DRED's
+    // arm consumes the same copy: the H2D to the primary GPU reads h_out_ (the direct cross-device
+    // peer copy measured an illegal memory access on this stack - the two-hop is the safe form).
+    if (ad2h_env() || dred_env()) {
         if (!check(cudaMemcpyAsync(h_out_, d_out_, owned_row_.size() * (size_t) H * sizeof(float),
                                    cudaMemcpyDeviceToHost, streams_[0]), "ad2h copy", err)) return false;
         cudaEventRecord(ev_pf_ad2h_, streams_[0]);
         ad2h_armed_ = true;
     }
-    // PFPIPE: this window's down-complete event (the completes sync on it, not the stream - gup(s+1)
-    // is already queued behind it) and the staging-set-free event (the upload of s+2 waits it).
+    // The down-complete event: PFPIPE's completes sync on it, and DRED's caller waits it to order the
+    // peer copy of this card's partials.
+    if (dred_env() && ev_pf_down_ != nullptr) cudaEventRecord(ev_pf_down_, streams_[0]);
+    // PFPIPE: the staging-set-free event (the upload of s+2 waits it).
     if (pf_pipe_env() && d_faq2_ != nullptr) {
-        cudaEventRecord(ev_pf_down_, streams_[0]);
         cudaEventRecord(ev_pf_free_[pf_seq_ & 1u], streams_[0]);
         pf_seq_ += 1;   // the window is fully launched; the next prefill begin takes the other set
     }
@@ -1404,6 +1436,10 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         }
         return true;
     }
+    // STRATA_MW_DRED: the completes are enqueue-only - the caller peer-copies this card's partials
+    // to the primary GPU and the rank-ordered add runs THERE (mw_dred_reduce, bit-identical).  Nothing
+    // to wait, copy or add on the host; the rows land in the destination via the caller's stream order.
+    if (dred_env() && ev_pf_down_ != nullptr && w_n_tok_ >= 4 && down_launched_) return true;
     // PFPIPE (the pipelined prefill's completes): everything downstream of here reads state the next
     // window's begin has already reloaded (owned_row_, the staging, the faq set), so this arm works
     // purely from the snapshot + the down event: sync THIS window's down (gup(s+1) sits behind it on

@@ -55,3 +55,25 @@ STRATA_MW_MT, STRATA_MW_MT_T (128x4 default | 256x4 KEEPER | 256x8 | 256x4g), ST
   layers overlap chunk c's expert layers - the 3060 side is only 10s, so perfect overlap caps at the
   M10 chain ~44s = 200 tok/s for the current chain), (b) parallel completes (the event-waits overlap,
   the adds stay rank-ordered), (c) the gup smem packing (5 blocks/SM).
+
+## Session 3 (2026-10-26 night): STRATA_MW_DRED - quarantined WIP (broken on this stack), full forensics
+
+The idea (sound, unproven here): move the completes' rank-ordered adds to the 3060 - each rank's
+AD2H partials H2D to the primary GPU (dred_part[4]) and mw_dred_reduce writes Dm's tail directly
+(the exact fp add order of the host adds; one block/row kernel in elementwise.cu).  Would remove
+the 4 serial host adds (~2.4 ms) + the block memset (~1.6) + the block H2D (~2.2) per layer-chunk,
+costing one 16 MB partials H2D on m.cs and a ~0.05 ms kernel - est. 152.5 -> ~165.
+
+THE CRASH: an illegal memory access on MULTI-WINDOW prompts (the 13-token single-window request
+passes and answers correctly; the 2.7k faults at window 1's begin).  Five isolation cycles:
+1. the direct cross-device peer copy (d_out_ M10 -> d_part 3060, D2D): crash.
+2. cross-device stream waits (m.cs waiting M10 events) + plain H2D (DRED=2 bisect, no reduce/map): crash.
+3. host cudaEventSynchronize per rank (the proven completes pattern) + H2D from the M10's pinned h_out_: crash.
+4. h_out_/h_out2_ re-alloc'd PORTABLE (cudaHostAllocPortable): crash at the same point.
+5. pure-CPU staging into prefill-owned pinned buffers (no GPU ever touches foreign pinned): STILL crash.
+Remaining deltas vs the 152.5 stack at the crash point: mid-layer cudaMalloc/cudaHostAlloc on device 0,
+the early-return completes, and the local-pinned H2Ds.  compute-sanitizer cannot run the engine
+(cuBLAS fails to init under memcheck on this stack) - the repro needs a standalone harness.  DRED stays
+in the tree, DEFAULT OFF, and must not be enabled until that harness localises the fault.
+
+The winning stack is unchanged: MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 = 152.5 tok/s.
