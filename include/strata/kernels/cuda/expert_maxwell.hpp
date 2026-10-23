@@ -99,6 +99,18 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
                                              int8_t* d_faq, float* d_fasc, float* d_fahx,
                                              float* d_ff_dbg = nullptr, cudaStream_t stream = 0,
                                              int row_base = 0, int rows = expert_maxwell_geo::FF);
+/// STRATA_MW_MT (the prefill arm, 2026-10-23): the multi-token gup - one RUN (an expert, up to 8
+/// adjacent entries) per block pass; each (row,k) weight element is hoisted once (load + codebook +
+/// sign work) and applied to every entry's act, the dp4a order and float tail verbatim the per-entry
+/// vecdots, so every (expert, token) result is bit-identical.  `d_runs` = [nruns x 4] (slot, count,
+/// entries_off, unused), `d_entries` = [total x 2] (tok, entry); the down still consumes the standard
+/// job table, unchanged.
+void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
+                                          const int32_t* d_runs, const int32_t* d_entries, int nruns,
+                                          const uint8_t* acts_base, size_t o_gate, size_t o_up, size_t gu_row,
+                                          int8_t* d_faq, float* d_fasc, float* d_fahx,
+                                          float* d_ff_dbg = nullptr, cudaStream_t stream = 0,
+                                          int row_base = 0, int rows = expert_maxwell_geo::FF);
 /// SPLIT_MODE_TENSOR (the Meta tier): the same fused gup+quant kernel restricted to this card's SLICE of
 /// the gate/up rows - `row_base`/`rows` select the slice (the blob stores exactly those rows, compact).
 /// The dots, the SwiGLU and the quant tree run the same code per row, so each row's value is bit-identical

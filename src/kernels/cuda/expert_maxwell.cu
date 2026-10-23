@@ -1519,6 +1519,300 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
 #undef STRATA_LAUNCH_IQ
 }
 
+// ---- STRATA_MW_MT: the multi-token gup (the prefill arm, 2026-10-23) ---------------------------
+//
+// The measured problem (2026-10-23 prefill anatomy): the per-entry kernel loads and unpacks each
+// weight element once per (expert, TOKEN) - at prompt chunks the same expert serves several tokens,
+// so the weight-side instruction stream (the SASS: ~36% unpack, ~11% math) repeats per token.  This
+// kernel serves a RUN (one expert, up to E_MAX adjacent entries) per block pass: each (row, k)
+// weight element is loaded, codebook-looked-up and sign-expanded ONCE into 8 int payloads, then
+// dotted against EVERY entry's act - the dp4a order and the float tail per entry are verbatim the
+// per-entry vecdots above, so every (expert, token) result is bit-identical.  Acts live in shared
+// memory per run ([E_MAX][H/32] blocks, the same q8_1 rebuild), so the amortised weight stream is
+// the only change.
+namespace {
+
+template <int TY> struct IqMt;
+
+template <> struct IqMt<16> {   // IQ2_XXS
+    struct Pack { int p[8]; int ls; float d; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq2_xxs* bq2 = (const block_iq2_xxs*) v + kbx;
+        const int q2 = get_int_b2(bq2->qs, iqs);
+        const uint8_t* aux8 = (const uint8_t*) &q2;
+        const uint32_t aux32 = get_int_b2(bq2->qs, iqs + 1);
+        const uint2* grid_sh = (const uint2*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int k0 = 0; k0 < 8; k0 += 2) {
+            const uint2 grid_pos = grid_sh[aux8[k0 / 2]];
+            const uint32_t signs = unpack_ksigns(aux32 >> (7 * k0 / 2));
+            const int signs0 = __vcmpne4(signs & 0x08040201, 0);
+            w.p[k0 + 0] = __vsub4(grid_pos.x ^ signs0, signs0);
+            const int signs1 = __vcmpne4(signs & 0x80402010, 0);
+            w.p[k0 + 1] = __vsub4(grid_pos.y ^ signs1, signs1);
+        }
+        w.ls = aux32 >> 27 | 1;
+        w.d = h2f_dev(bq2->d);
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+        int sumi = 0;
+#pragma unroll
+        for (int k0 = 0; k0 < 8; k0 += 2) {
+            const int u0 = get_int_b4(y[iqs / 2].qs, k0 + 0);
+            sumi = dp4a_s32(w.p[k0 + 0], u0, sumi);
+            const int u1 = get_int_b4(y[iqs / 2].qs, k0 + 1);
+            sumi = dp4a_s32(w.p[k0 + 1], u1, sumi);
+        }
+        sumi = sumi * w.ls / 8;
+        const float d = w.d * low2f_dev(y[iqs / 2].ds);
+        return d * sumi;
+    }
+};
+
+template <> struct IqMt<22> {   // IQ2_S
+    struct Pack { int p[8]; int ls0, ls1; float d; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq2_s* bq2 = (const block_iq2_s*) v + kbx;
+        const int qs_packed = get_int_b2(bq2->qs, iqs / 2);
+        const uint8_t* qs = (const uint8_t*) &qs_packed;
+        const int qh = bq2->qh[iqs / 2];
+        const int signs_packed_32 = get_int_b2(bq2->qs, QK_K / 32 + iqs / 2);
+        const uint8_t* signs_packed_8 = (const uint8_t*) &signs_packed_32;
+        const uint64_t* grid_sh = (const uint64_t*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int* grid_pos = (const int*) (grid_sh + (qs[l0 / 2] | ((qh << (8 - l0)) & 0x300)));
+            const int signs0 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x03) << 7) | ((signs_packed_8[l0 / 2] & 0x0C) << 21), 0x00000000);
+            const int signs1 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x30) << 3) | ((signs_packed_8[l0 / 2] & 0xC0) << 17), 0x00000000);
+            w.p[l0 + 0] = __vsub4(grid_pos[0] ^ signs0, signs0);
+            w.p[l0 + 1] = __vsub4(grid_pos[1] ^ signs1, signs1);
+        }
+        w.ls0 = bq2->scales[iqs / 2] & 0x0F;
+        w.ls1 = bq2->scales[iqs / 2] >> 4;
+        w.d = h2f_dev(bq2->d);
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+        int sumi0 = 0, sumi1 = 0;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int u0 = get_int_b4(y[iqs / 2].qs, l0 + 0);
+            const int u1 = get_int_b4(y[iqs / 2].qs, l0 + 1);
+            if (l0 < 4) {
+                sumi0 = dp4a_s32(w.p[l0 + 0], u0, sumi0);
+                sumi0 = dp4a_s32(w.p[l0 + 1], u1, sumi0);
+            } else {
+                sumi1 = dp4a_s32(w.p[l0 + 0], u0, sumi1);
+                sumi1 = dp4a_s32(w.p[l0 + 1], u1, sumi1);
+            }
+        }
+        const int sumi = (sumi0 * w.ls0 + sumi1 * w.ls1 + (sumi0 + sumi1) / 2) / 4;
+        const float d = w.d * low2f_dev(y[iqs / 2].ds);
+        return d * sumi;
+    }
+};
+
+template <> struct IqMt<29> {   // IQ1_M
+    struct Pack { int p[8]; float delta[2], d; int sc0, sc1; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq1_m* bq1 = (const block_iq1_m*) v + kbx;
+        const int qs_packed = get_int_b4(bq1->qs, iqs);
+        const uint8_t* qs = (const uint8_t*) &qs_packed;
+        const uint32_t* grid_sh = (const uint32_t*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int qhl = bq1->qh[2 * iqs + l0 / 4] >> (4 * ((l0 / 2) % 2));
+            const int grid = grid_sh[qs[l0 / 2] | ((qhl & 0x07) << 8)];
+            w.p[l0 + 0] = (grid >> 0) & 0x0F0F0F0F;
+            w.p[l0 + 1] = (grid >> 4) & 0x0F0F0F0F;
+            w.delta[l0 / 4] = -1.0f + IQ1M_DELTA - (qhl & 0x08) * (2.0f * IQ1M_DELTA / 0x08);
+        }
+        const uint16_t* sc = (const uint16_t*) bq1->scales;
+        iq1m_scale_t scale;
+        scale.u16 = (sc[0] >> 12) | ((sc[1] >> 8) & 0x00F0) | ((sc[2] >> 4) & 0x0F00) | (sc[3] & 0xF000);
+        w.d = h2f_dev(scale.f16);
+        const int tmp = sc[iqs / 2] >> (6 * (iqs % 2));
+        w.sc0 = 2 * ((tmp >> 0) & 0x07) + 1;
+        w.sc1 = 2 * ((tmp >> 3) & 0x07) + 1;
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+        int sumi[2] = {0, 0};
+        float sumf[2] = {0.0f, 0.0f};
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int u0 = get_int_b4(y[iqs].qs, l0 + 0);
+            const int u1 = get_int_b4(y[iqs].qs, l0 + 1);
+            sumi[l0 / 4] = dp4a_s32(w.p[l0 + 0], u0, sumi[l0 / 4]);
+            sumi[l0 / 4] = dp4a_s32(w.p[l0 + 1], u1, sumi[l0 / 4]);
+            int sumy = 0;
+            sumy = dp4a_s32(u0, 0x01010101, sumy);
+            sumy = dp4a_s32(u1, 0x01010101, sumy);
+            sumf[l0 / 4] += w.delta[l0 / 4] * sumy;
+        }
+        const float d = w.d * low2f_dev(y[iqs].ds);
+        return d * ((sumi[0] + sumf[0]) * w.sc0 + (sumi[1] + sumf[1]) * w.sc1);
+    }
+};
+
+// The MT kernel's geometry: one run (one expert, E <= E_MAX adjacent entries) x PER_BLOCK rows per
+// block; the standard job table is NOT consumed here (the down still uses it downstream).
+template <int TY, int SPLIT = 4, int THREADS = 128, int E_MAX = 8>
+__global__ void expert_iq_stage1_mt_batch(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                          const int32_t* __restrict__ runs,      // [nruns x 4]: slot, count, entries_off, unused
+                                          const int32_t* __restrict__ entries,   // [total x 2]: tok, entry (the global entry index)
+                                          const uint8_t* __restrict__ acts_base,
+                                          size_t o_gate, size_t o_up, size_t gu_row,
+                                          int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                          float* __restrict__ fahx, float* __restrict__ ff_dbg,
+                                          int row_base, int rows_slice) {
+    using F = IqFmt<TY>;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    constexpr int ACTS_B = H / 32;
+    static_assert(FF % PER_BLOCK == 0, "the MT gup stages one run's rows per block, as the S2 one");
+    __shared__ __align__(16) block_q8_1 sact[E_MAX * ACTS_B];
+    __shared__ __align__(16) float sx[E_MAX * PER_BLOCK];
+    __shared__ __align__(16) uint8_t sgrid[F::grid_bytes];
+    const int rpb = FF / PER_BLOCK;                     // row-blocks per run
+    const int run = (int) (blockIdx.x / rpb);
+    const int vb = (int) (blockIdx.x % rpb);
+    const int slot = runs[run * 4 + 0];
+    const int E = runs[run * 4 + 1];
+    const int ent0 = runs[run * 4 + 2];
+    if (E <= 0 || E > E_MAX || vb * PER_BLOCK >= rows_slice) return;
+    const uint8_t* blob = blobs + (size_t) slot * blob_stride;
+    {
+        const int4* g = (const int4*) F::grid_dev();
+        int4* d = (int4*) sgrid;
+#pragma unroll
+        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
+        const int total = E * ACTS_B;
+        for (int i = (int) threadIdx.x; i < total; i += THREADS) {
+            const int e = i / ACTS_B, k = i % ACTS_B;
+            const int32_t tok = entries[(ent0 + e) * 2 + 0];
+            const uint8_t* at = acts_base + (size_t) tok * ACTS_STRIDE;
+            const int* src = (const int*) at;
+            const float* sc = (const float*) (at + H);
+            int* dst = (int*) &sact[e * ACTS_B + k].qs[0];
+#pragma unroll
+            for (int w = 0; w < 8; ++w) dst[w] = src[k * 8 + w];
+            float dd = sc[k];
+            dd = fabsf(dd) > 65504.f ? copysignf(65504.f, dd) : dd;
+            uint16_t* ds = (uint16_t*) &sact[e * ACTS_B + k].ds;
+            ds[0] = f2h_rn(dd);
+            ds[1] = 0;
+        }
+    }
+    __syncthreads();
+    const int row0 = vb * PER_BLOCK;
+    const int row_l = row0 + (int) (threadIdx.x / SPLIT);   // this card's LOCAL row (the blob is the compact shard)
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* gr = blob + o_gate + (size_t) row_l * gu_row;
+    const uint8_t* ur = blob + o_up + (size_t) row_l * gu_row;
+    const int nb = H / F::qk;
+    float accg[E_MAX], accu[E_MAX];
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) { accg[e] = 0.f; accu[e] = 0.f; }
+    for (int k = part; k < nb * F::ipb; k += SPLIT) {
+        const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+        // ONE hoist per side per k: the weight codes load + codebook + sign work, amortised over E
+        const auto wg = IqMt<TY>::hoist(gr, kbx, iqs, sgrid);
+        const auto wu = IqMt<TY>::hoist(ur, kbx, iqs, sgrid);
+        const block_q8_1* sab = sact + kbx * (F::qk / 32);
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            const block_q8_1* sa = sab + e * ACTS_B;
+            accg[e] += IqMt<TY>::apply(wg, sa, iqs);
+            accu[e] += IqMt<TY>::apply(wu, sa, iqs);
+        }
+    }
+    {
+        const int lane = (int) (threadIdx.x & 31);
+        const unsigned full = 0xFFFFFFFFu;
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            float ag = accg[e], au = accu[e];
+#pragma unroll
+            for (int s = 1; s < SPLIT; ++s) {
+                ag += __shfl_sync(full, accg[e], (lane + s) & 31);
+                au += __shfl_sync(full, accu[e], (lane + s) & 31);
+            }
+            if (part == 0) {
+                const float sxv = (ag / (1.f + __expf(-ag))) * au;
+                sx[e * PER_BLOCK + threadIdx.x / SPLIT] = sxv;
+                if (ff_dbg != nullptr) {
+                    const int entry = entries[(ent0 + e) * 2 + 1];
+                    ff_dbg[(size_t) entry * FF + (size_t) (row_base + row_l)] = sxv;
+                }
+            }
+        }
+    }
+    __syncthreads();
+    if (threadIdx.x < 32) {
+        const int lane = (int) threadIdx.x;
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            const int entry = entries[(ent0 + e) * 2 + 1];
+            const int chunk0 = (int) ((size_t) entry * (FF / 32) + (size_t) (row_base + row0 % rows_slice) / 32);
+            const float v = sx[e * PER_BLOCK + lane];
+            float av = fabsf(v);
+#pragma unroll
+            for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
+            const float amax = __shfl(av, 0);
+            const float scc = amax > 0.f ? amax / 127.f : 0.f;
+            const float inv = scc > 0.f ? 1.f / scc : 0.f;
+            const float t = __fmul_rn(v, inv);
+            const float r = __fadd_rn(t, (t >= 0.f) ? 0.5f : -0.5f);
+            int qi = __float2int_rz(r);
+            qi = qi < -127 ? -127 : (qi > 127 ? 127 : qi);
+            faq[(size_t) chunk0 * 32 + lane] = (int8_t) qi;
+            int ssum = qi;
+#pragma unroll
+            for (int s = 16; s > 0; s >>= 1) ssum += __shfl_down(ssum, s);
+            if (lane == 0) {
+                fasc[chunk0] = scc;
+                fahx[chunk0] = __fmul_rn(scc, (float) ssum);
+            }
+        }
+    }
+}
+
+}  // namespace
+
+// The MT launcher: one launch per layer for the whole run table (the down still consumes the
+// standard job table, unchanged).
+void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
+                                          const int32_t* d_runs, const int32_t* d_entries, int nruns,
+                                          const uint8_t* acts_base, size_t o_gate, size_t o_up, size_t gu_row,
+                                          int8_t* d_faq, float* d_fasc, float* d_fahx, float* d_ff_dbg,
+                                          cudaStream_t stream, int row_base, int rows_slice) {
+    if (nruns <= 0) return;
+    constexpr int SPLIT = 4, THREADS = 128, E_MAX = 4;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    const int blocks = nruns * (FF / PER_BLOCK);
+#define STRATA_LAUNCH_MT(TY)                                                                       \
+    expert_iq_stage1_mt_batch<TY, SPLIT, THREADS, E_MAX><<<blocks, THREADS, 0, stream>>>(           \
+        d_blobs, blob_stride, d_runs, d_entries, acts_base, o_gate, o_up, gu_row,                  \
+        d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
+    switch (gu_type) {
+        case 22: STRATA_LAUNCH_MT(22); break;   // IQ2_S
+        case 16: STRATA_LAUNCH_MT(16); break;   // IQ2_XXS
+        case 29: STRATA_LAUNCH_MT(29); break;   // IQ1_M
+        default:
+            std::fprintf(stderr, "iq_expert_maxwell_gup_quant_mt_async: ggml type %d is not an "
+                                 "i-quant this tier's kernels take\n", gu_type);
+            std::exit(1);
+    }
+#undef STRATA_LAUNCH_MT
+}
+
 // STRATA_MW_PERSIST: launch the resident kernel.  The grid is the kernel's OWN occupancy x SMs -
 // never more - so the in-kernel generation barrier is deadlock-free by construction.  The ctl is
 // zeroed in-stream first (service 0, barrier 0/0).  Returns the block count, or 0 with err set.

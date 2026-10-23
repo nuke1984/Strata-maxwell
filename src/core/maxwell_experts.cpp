@@ -43,6 +43,7 @@ using strata::kernels::cuda::s2_expert_maxwell_down_batch_f16_async;
 using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_batch_async;
+using strata::kernels::cuda::iq_expert_maxwell_gup_quant_mt_async;
 
 namespace {
 // E1: STRATA_MW_GPUFLAG - 0 off; 1 the GPU-raised tier flags + the graph's multi-wait (host sync kept);
@@ -438,7 +439,10 @@ bool MaxwellExperts::open(int device,
     // full 205 KB copy cost 0.073 ms per device per layer on the M10's slow host link).
     acts_bytes_ = (size_t) n_tok_max_ * (size_t) ACTS_STRIDE;
     const size_t ce = (size_t) cap_entries_;
-    const size_t jobs_bytes = ce * 3 * sizeof(int32_t);
+    // STRATA_MW_MT appends [runs][entries] after the job table: worst case every job its own run,
+    // 16 B of run header + 8 B of entry per job - 24 B/job when the arm is on.
+    static const bool mt_on = std::getenv("STRATA_MW_MT") != nullptr && std::atoi(std::getenv("STRATA_MW_MT")) != 0;
+    const size_t jobs_bytes = ce * 3 * sizeof(int32_t) + (mt_on ? ce * 24 : 0);
     // P6.x (measured): ONE contiguous staging region [packed acts][job table] so a layer costs ONE async
     // upload instead of two.  A CUDA call is ~4 us in this VM; 2 calls -> 1 per device per layer.
     up_bytes_ = acts_bytes_ + jobs_bytes;
@@ -981,6 +985,9 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         cudaEventRecord(s0_a_, streams_[0]);
     }
     size_t staged = 0;
+    int mt_nruns = 0;
+    const int32_t* d_runs_mt = nullptr;
+    const int32_t* d_ent_mt = nullptr;
     {
         // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x).
         // E1 mode 2: alternate the two staging sets (layer l+1 stages while layer l's kernels still
@@ -992,7 +999,54 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         d_jobs_ = (int32_t*) (dsel + (size_t) n_tok * ACTS_STRIDE);
         h_acts_ = hsel;
         d_acts_ = dsel;
+        // STRATA_MW_MT (opt-in, the 2026-10-23 prefill arm): with several tokens in the window the
+        // jobs are stable-sorted by expert and compressed into RUNS of at most 8 adjacent entries;
+        // the run table [nruns x 4: slot,count,entries_off,unused] + entries [tot x 2: tok,entry]
+        // append to the staging after the standard job table (which the down still consumes,
+        // order-agnostic), and the MT kernel launches instead of the per-entry one - each (row,k)
+        // weight element hoisted once and applied to the whole run's tokens (bit-identical per
+        // (expert, token); see the kernel).  Decode windows (2-3 tokens) never take this path.
+        static const bool mt_on = [] {
+            const char* e = std::getenv("STRATA_MW_MT");
+            const bool on = e != nullptr && std::atoi(e) != 0;
+            if (on)
+                std::fprintf(stderr, "strata maxwell: multi-token prefill gup (STRATA_MW_MT)\n");
+            return on;
+        }();
+        const bool mt_this = mt_on && n_tok >= 4 && jobs.size() >= 4 &&
+                             geo_of(layer).gu_type != 42 && !w_rows_f16_;
+        if (mt_this)
+            std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.slot < b.slot; });
         staged = pack_staging(hsel, jobs.size(), jobs.data(), tp_cards_ > 1);
+        if (mt_this) {
+            int nruns = 0, tot = 0;
+            for (size_t i = 0; i < jobs.size(); ) {
+                size_t j2 = i;
+                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < 4) ++j2;
+                ++nruns; tot += (int) (j2 - i); i = j2;
+            }
+            int32_t* hruns = (int32_t*) (hsel + staged);
+            int32_t* hent = hruns + (size_t) nruns * 4;
+            int r = 0, eo = 0;
+            for (size_t i = 0; i < jobs.size(); ) {
+                size_t j2 = i;
+                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < 4) ++j2;
+                hruns[r * 4 + 0] = jobs[i].slot;
+                hruns[r * 4 + 1] = (int32_t) (j2 - i);
+                hruns[r * 4 + 2] = eo;
+                hruns[r * 4 + 3] = 0;
+                for (size_t q = i; q < j2; ++q) {
+                    hent[eo * 2 + 0] = (int32_t) jobs[q].tok;
+                    hent[eo * 2 + 1] = (int32_t) q;   // the SORTED TABLE POSITION: the down's faq/dst indexing (jobs[q].row is the pre-sort entry id - NOT what the down reads)
+                    ++eo;
+                }
+                ++r; i = j2;
+            }
+            d_runs_mt = (const int32_t*) (dsel + staged);
+            d_ent_mt = (const int32_t*) ((const uint8_t*) d_runs_mt + (size_t) nruns * 16);
+            staged += (size_t) nruns * 16 + (size_t) tot * 8;
+            mt_nruns = nruns;
+        }
     }
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
     // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
@@ -1015,6 +1069,12 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
                                              (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
         }
+    } else if (mt_nruns > 0) {
+        // STRATA_MW_MT: the run table drives the gup; the standard job table stays for the down
+        iq_expert_maxwell_gup_quant_mt_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_runs_mt, d_ent_mt,
+                                             mt_nruns, d_acts_, g.o_gate, g.o_up, g.gu_row,
+                                             d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0],
+                                             g.tp_row_base, g.tp_rows);
     } else {
         iq_expert_maxwell_gup_quant_batch_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_jobs_,
                                                 (int) jobs.size(), d_acts_, g.o_gate, g.o_up, g.gu_row,
