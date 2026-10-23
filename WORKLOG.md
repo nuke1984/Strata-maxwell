@@ -261,6 +261,19 @@ reload is in progress.
   historical 53-55 family (the 40 GB RAM lifted the file tier; same-day observation) -
   `2026-10-22-m10-vs-ram`.
 
+- **2026-10-23**: the M10 prefill anatomy (STRATA_MW_PREFILLPROF, env-gated): per layer, the
+  **serve is 94% of the prefill block and 86% of the whole prompt time** (d2h 577 + quant 796
+  + serve 59,669 + h2d 2,210 us/L; begin 0.18 + finish 15.02 ms per 64-token sub-batch - the
+  sync absorbs real kernel walls). The kernels are instruction-throughput-bound (~4.7x off
+  the byte floor, same physics as decode). Same day, the fix campaign: **#2 wider windows
+  (NTM=256) NULL** (76.3 vs 75.8 tok/s - round trips cost ~nothing), **job-sort probe NULL**
+  (not locality-bound), **#4 CPU-share hybrid NEGATIVE 3x in both forms** (27.5 tok/s: the
+  pool drafts the host thread; 26.4 with --no-host-worker: the pool's page-cache reads
+  saturate the host memory path - d2h alone 0.58 -> 2.9 ms/layer). Two crash bugs fixed
+  (rodata const_cast, pool MAXT overflow); a latent tier-expert double-mark closed. Remaining:
+  **#1 multi-token jobs** (+25-40% expected with NTM=256), #3 overlap bounded ~7% —
+  `2026-10-23-prefill-anatomy`.
+
 ---
 
 **Conventions**: `engine/strata` = `build/strata`, backups as `engine/strata.bak-<name>-<date>`;
