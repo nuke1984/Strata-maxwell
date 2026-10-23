@@ -4086,13 +4086,28 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                         // Maxwell (sm_50): compute this layer's tier-owned entries on the M10s and write their
                         // rows into Dm (the tail reserved above).  T <= 64: one window; larger chunks run one
                         // sub-batch at a time (the tier buffers are shared across sub-batches).
+                        // STRATA_MW_PREFILLPROF: the four phases of this block timed separately - d2h (the
+                        // acts' D2H + the SYNC, the pipeline stall), quant (the host act_quant_any loop),
+                        // serve (the MW_SUB round trips: begin staging/H2D/gup + finish down/sync/D2H/scatter),
+                        // h2d (the rows' upload back).  Printed cumulatively every 240 layers.
+                        static struct MwPfProf {
+                            double d2h = 0, quant = 0, serve = 0, h2d = 0, sbeg = 0, sfin = 0;
+                            int64_t layers = 0, tokens = 0, subs = 0;
+                            bool on = std::getenv("STRATA_MW_PREFILLPROF") != nullptr;
+                        } pp;
+                        const auto ppMs = [](auto a, auto b) {
+                            return std::chrono::duration<double, std::milli>(b - a).count();
+                        };
                         if (!on_mw_l.empty() && rows_mw > 0) {
+                            const auto ph0 = std::chrono::steady_clock::now();
                             cudaMemcpyAsync(m.mw_mixed_h.data(), m.mixed, (size_t) T * N * 4,
                                             cudaMemcpyDeviceToHost, m.cs);
                             cudaStreamSynchronize(m.cs);
+                            const auto ph1 = std::chrono::steady_clock::now();
                             for (int64_t t = 0; t < T; ++t)
                                 strata::kernels::cpu::act_quant_any(m.mw_mixed_h.data() + (size_t) t * N, (int) N,
                                                                     m.mw_acts[(size_t) t]);
+                            const auto ph2 = std::chrono::steady_clock::now();
                             // SPLIT_MODE_TENSOR: every card computes every entry as a PARTIAL; the cards
                             // finish in rank order and ADD into the same block (deterministic), so it is
                             // zeroed once per layer here and finish_to takes `accumulate`.
@@ -4106,15 +4121,20 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                           m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local, rows_mw, err)) return false;
                                      continue;
                                  }
+                                 const auto sb0 = std::chrono::steady_clock::now();
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->begin(l, m.mw_acts.data() + t0, ids_h + t0 * K, nt, K, nullptr,
                                                         nullptr, false, err))
                                         return false;
+                                 const auto sb1 = std::chrono::steady_clock::now();
                                 for (int i = 0; i < m.mw_count; ++i)
                                     if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
                                                             N, err, mw_tp))
                                         return false;
+                                 const auto sb2 = std::chrono::steady_clock::now();
+                                 if (pp.on) { pp.sbeg += ppMs(sb0, sb1); pp.sfin += ppMs(sb1, sb2); }
                             }
+                            const auto ph3 = std::chrono::steady_clock::now();
                             // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw)
                             if (cudaMemcpyAsync(m.Dm + (size_t) rows_local * N, m.mw_block.data(),
                                                 (size_t) rows_mw * N * 4, cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
@@ -4122,6 +4142,22 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                 return false;
                             }
                             stats_.experts_maxwell += rows_mw;
+                            const auto ph4 = std::chrono::steady_clock::now();
+                            if (pp.on) {
+                                pp.d2h += ppMs(ph0, ph1); pp.quant += ppMs(ph1, ph2);
+                                pp.serve += ppMs(ph2, ph3); pp.h2d += ppMs(ph3, ph4);
+                                ++pp.layers; pp.tokens += T; pp.subs += (T + MW_SUB - 1) / MW_SUB;
+                                if (pp.layers % 240 == 0) {
+                                    std::fprintf(stderr, "MWPROF prefill %lld layers: d2h %.1f quant %.1f serve %.1f "
+                                                         "h2d %.1f us/layer | begin %.2f + finish %.2f ms/sub-batch | %lld tokens, %lld subbatches (avg T %.0f)\n",
+                                                 (long long) pp.layers, pp.d2h / pp.layers * 1000.0,
+                                                 pp.quant / pp.layers * 1000.0, pp.serve / pp.layers * 1000.0,
+                                                 pp.h2d / pp.layers * 1000.0, (long long) pp.tokens,
+                                                 pp.sbeg / (double) (pp.subs ? pp.subs : 1), pp.sfin / (double) (pp.subs ? pp.subs : 1),
+                                                 (long long) pp.tokens, (long long) pp.subs, (double) pp.tokens / (double) pp.layers);
+                                    std::fflush(stderr);
+                                }
+                            }
                         }
                         // pf_wmma: this layer's groups on the FP16 tensor-core tiles (single GPU, native pack, Q2_0 / IQ4_NL down)
                         const bool wmma_l = use_mmq && pf_wmma() && !fused_l && on_peer.empty() && lay.native &&
