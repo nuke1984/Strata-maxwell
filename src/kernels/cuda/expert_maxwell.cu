@@ -1685,19 +1685,23 @@ template <> struct IqMt<16> {   // IQ2_XXS
         w.d = h2f_dev(bq2->d);
         return w;
     }
-    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+    // apply takes the act as (qs pointer, ds-derived float): the staged form passes the smem block's
+    // bytes and low2f(ds); the GACT form passes the raw act bytes and the SAME f2h_rn->low2f round trip
+    // computed from the float scale - identical values, so both paths share one arithmetic body.
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
         int sumi = 0;
 #pragma unroll
         for (int k0 = 0; k0 < 8; k0 += 2) {
-            const int u0 = get_int_b4(y[iqs / 2].qs, k0 + 0);
+            const int u0 = get_int_b4(qs, k0 + 0);
             sumi = dp4a_s32(w.p[k0 + 0], u0, sumi);
-            const int u1 = get_int_b4(y[iqs / 2].qs, k0 + 1);
+            const int u1 = get_int_b4(qs, k0 + 1);
             sumi = dp4a_s32(w.p[k0 + 1], u1, sumi);
         }
         sumi = sumi * w.ls / 8;
-        const float d = w.d * low2f_dev(y[iqs / 2].ds);
+        const float d = w.d * dys;
         return d * sumi;
     }
+    __device__ static int blk(int iqs) { return iqs / 2; }   // the q8_1 block index within the k-block
 };
 
 template <> struct IqMt<22> {   // IQ2_S
@@ -1724,12 +1728,12 @@ template <> struct IqMt<22> {   // IQ2_S
         w.d = h2f_dev(bq2->d);
         return w;
     }
-    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
         int sumi0 = 0, sumi1 = 0;
 #pragma unroll
         for (int l0 = 0; l0 < 8; l0 += 2) {
-            const int u0 = get_int_b4(y[iqs / 2].qs, l0 + 0);
-            const int u1 = get_int_b4(y[iqs / 2].qs, l0 + 1);
+            const int u0 = get_int_b4(qs, l0 + 0);
+            const int u1 = get_int_b4(qs, l0 + 1);
             if (l0 < 4) {
                 sumi0 = dp4a_s32(w.p[l0 + 0], u0, sumi0);
                 sumi0 = dp4a_s32(w.p[l0 + 1], u1, sumi0);
@@ -1739,9 +1743,10 @@ template <> struct IqMt<22> {   // IQ2_S
             }
         }
         const int sumi = (sumi0 * w.ls0 + sumi1 * w.ls1 + (sumi0 + sumi1) / 2) / 4;
-        const float d = w.d * low2f_dev(y[iqs / 2].ds);
+        const float d = w.d * dys;
         return d * sumi;
     }
+    __device__ static int blk(int iqs) { return iqs / 2; }
 };
 
 template <> struct IqMt<29> {   // IQ1_M
@@ -1769,13 +1774,13 @@ template <> struct IqMt<29> {   // IQ1_M
         w.sc1 = 2 * ((tmp >> 3) & 0x07) + 1;
         return w;
     }
-    __device__ static float apply(const Pack& w, const block_q8_1* y, int iqs) {
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
         int sumi[2] = {0, 0};
         float sumf[2] = {0.0f, 0.0f};
 #pragma unroll
         for (int l0 = 0; l0 < 8; l0 += 2) {
-            const int u0 = get_int_b4(y[iqs].qs, l0 + 0);
-            const int u1 = get_int_b4(y[iqs].qs, l0 + 1);
+            const int u0 = get_int_b4(qs, l0 + 0);
+            const int u1 = get_int_b4(qs, l0 + 1);
             sumi[l0 / 4] = dp4a_s32(w.p[l0 + 0], u0, sumi[l0 / 4]);
             sumi[l0 / 4] = dp4a_s32(w.p[l0 + 1], u1, sumi[l0 / 4]);
             int sumy = 0;
@@ -1783,9 +1788,10 @@ template <> struct IqMt<29> {   // IQ1_M
             sumy = dp4a_s32(u1, 0x01010101, sumy);
             sumf[l0 / 4] += w.delta[l0 / 4] * sumy;
         }
-        const float d = w.d * low2f_dev(y[iqs].ds);
+        const float d = w.d * dys;
         return d * ((sumi[0] + sumf[0]) * w.sc0 + (sumi[1] + sumf[1]) * w.sc1);
     }
+    __device__ static int blk(int iqs) { return iqs; }
 };
 
 // The MT kernel's geometry: one run (one expert, E <= E_MAX adjacent entries) x PER_BLOCK rows per
@@ -1855,9 +1861,10 @@ __global__ void expert_iq_stage1_mt_batch(const uint8_t* __restrict__ blobs, siz
 #pragma unroll
         for (int e = 0; e < E_MAX; ++e) {
             if (e >= E) break;
-            const block_q8_1* sa = sab + e * ACTS_B;
-            accg[e] += IqMt<TY>::apply(wg, sa, iqs);
-            accu[e] += IqMt<TY>::apply(wu, sa, iqs);
+            const block_q8_1* sa = sab + e * ACTS_B + IqMt<TY>::blk(iqs);
+            const float dys = low2f_dev(sa->ds);
+            accg[e] += IqMt<TY>::apply(wg, (const uint8_t*) sa->qs, dys);
+            accu[e] += IqMt<TY>::apply(wu, (const uint8_t*) sa->qs, dys);
         }
     }
     {
@@ -1883,14 +1890,19 @@ __global__ void expert_iq_stage1_mt_batch(const uint8_t* __restrict__ blobs, siz
         }
     }
     __syncthreads();
-    if (threadIdx.x < 32) {
-        const int lane = (int) threadIdx.x;
+    // the quant epilogue: one warp per 32-value chunk of the block's rows (PER_BLOCK/32 chunks - one
+    // at the 128x4/256x8 geometries, two at 256x4).  The shuffle tree and rounding are verbatim the
+    // S2 quant kernel's, so faq/fasc/fahx stay bit-identical whichever geometry launched.
+    static_assert(PER_BLOCK % 32 == 0, "the MT gup quant epilogue covers whole 32-value chunks");
+    if (threadIdx.x < 32 * (PER_BLOCK / 32)) {
+        const int cw = (int) (threadIdx.x / 32);   // this warp's chunk within the block
+        const int lane = (int) (threadIdx.x % 32);
 #pragma unroll
         for (int e = 0; e < E_MAX; ++e) {
             if (e >= E) break;
             const int entry = entries[(ent0 + e) * 2 + 1];
-            const int chunk0 = (int) ((size_t) entry * (FF / 32) + (size_t) (row_base + row0 % rows_slice) / 32);
-            const float v = sx[e * PER_BLOCK + lane];
+            const int chunk0 = (int) ((size_t) entry * (FF / 32) + (size_t) (row_base + (row0 + cw * 32) % rows_slice) / 32);
+            const float v = sx[e * PER_BLOCK + cw * 32 + lane];
             float av = fabsf(v);
 #pragma unroll
             for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
@@ -1915,6 +1927,127 @@ __global__ void expert_iq_stage1_mt_batch(const uint8_t* __restrict__ blobs, siz
 
 }  // namespace
 
+// The GACT variant (acts-in-global, the 2026-10-26 occupancy lever): the smem form stages E x H acts
+// per block, but a run's FF/PER_BLOCK row-blocks EACH stage the SAME acts - 10x redundant staging at the
+// 256x4 geometry, and 20 KB of smem that caps residency at 4 blocks/SM (32 warps).  This variant keeps
+// only the codebook (8 KB) + sx + the run's token ids in smem (~9.3 KB total -> 8 blocks x 8 warps = the
+// SM's full 64 warps); the acts are read straight from the staging buffer (L2 serves the ~1 MB working
+// set).  Bit-exact with the smem form: the qs bytes come from the same raw act block, and dys is the
+// SAME f2h_rn(clamped scale) -> low2f round trip the staged ds pair took.
+template <int TY, int SPLIT = 4, int THREADS = 256, int E_MAX = 4>
+__global__ void expert_iq_stage1_mt_batch_gact(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                               const int32_t* __restrict__ runs,
+                                               const int32_t* __restrict__ entries,
+                                               const uint8_t* __restrict__ acts_base,
+                                               size_t o_gate, size_t o_up, size_t gu_row,
+                                               int8_t* __restrict__ faq, float* __restrict__ fasc,
+                                               float* __restrict__ fahx, float* __restrict__ ff_dbg,
+                                               int row_base, int rows_slice) {
+    using F = IqFmt<TY>;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    static_assert(FF % PER_BLOCK == 0, "the MT gup stages one run's rows per block, as the S2 one");
+    __shared__ __align__(16) float sx[E_MAX * PER_BLOCK];
+    __shared__ __align__(16) uint8_t sgrid[F::grid_bytes];
+    __shared__ int32_t stok[E_MAX];
+    const int rpb = FF / PER_BLOCK;
+    const int run = (int) (blockIdx.x / rpb);
+    const int vb = (int) (blockIdx.x % rpb);
+    const int slot = runs[run * 4 + 0];
+    const int E = runs[run * 4 + 1];
+    const int ent0 = runs[run * 4 + 2];
+    if (E <= 0 || E > E_MAX || vb * PER_BLOCK >= rows_slice) return;
+    const uint8_t* blob = blobs + (size_t) slot * blob_stride;
+    {
+        const int4* g = (const int4*) F::grid_dev();
+        int4* d = (int4*) sgrid;
+#pragma unroll
+        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
+        for (int e = 0; e < E; ++e)
+            if (threadIdx.x == 0) stok[e] = entries[(ent0 + e) * 2 + 0];
+    }
+    __syncthreads();
+    const int row0 = vb * PER_BLOCK;
+    const int row_l = row0 + (int) (threadIdx.x / SPLIT);
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* gr = blob + o_gate + (size_t) row_l * gu_row;
+    const uint8_t* ur = blob + o_up + (size_t) row_l * gu_row;
+    const int nb = H / F::qk;
+    const int bpb = F::qk / 32;                    // q8_1 blocks per weight k-block
+    float accg[E_MAX], accu[E_MAX];
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) { accg[e] = 0.f; accu[e] = 0.f; }
+    for (int k = part; k < nb * F::ipb; k += SPLIT) {
+        const int kbx = k / F::ipb, iqs = F::step * (k % F::ipb);
+        const auto wg = IqMt<TY>::hoist(gr, kbx, iqs, sgrid);
+        const auto wu = IqMt<TY>::hoist(ur, kbx, iqs, sgrid);
+        const int bi = kbx * bpb + IqMt<TY>::blk(iqs);
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            const uint8_t* at = acts_base + (size_t) stok[e] * ACTS_STRIDE;
+            const float sraw = *(const float*) (at + H + (size_t) bi * 4);
+            const float dd = fabsf(sraw) > 65504.f ? copysignf(65504.f, sraw) : sraw;
+            const uint16_t dbits = f2h_rn(dd);          // the same bits the staged ds pair holds
+            const float dys = h2f_dev(*reinterpret_cast<const half*>(&dbits));
+            accg[e] += IqMt<TY>::apply(wg, at + (size_t) bi * 32, dys);
+            accu[e] += IqMt<TY>::apply(wu, at + (size_t) bi * 32, dys);
+        }
+    }
+    {
+        const int lane = (int) (threadIdx.x & 31);
+        const unsigned full = 0xFFFFFFFFu;
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            float ag = accg[e], au = accu[e];
+#pragma unroll
+            for (int s = 1; s < SPLIT; ++s) {
+                ag += __shfl_sync(full, accg[e], (lane + s) & 31);
+                au += __shfl_sync(full, accu[e], (lane + s) & 31);
+            }
+            if (part == 0) {
+                const float sxv = (ag / (1.f + __expf(-ag))) * au;
+                sx[e * PER_BLOCK + threadIdx.x / SPLIT] = sxv;
+                if (ff_dbg != nullptr) {
+                    const int entry = entries[(ent0 + e) * 2 + 1];
+                    ff_dbg[(size_t) entry * FF + (size_t) (row_base + row_l)] = sxv;
+                }
+            }
+        }
+    }
+    __syncthreads();
+    static_assert(PER_BLOCK % 32 == 0, "the MT gup quant epilogue covers whole 32-value chunks");
+    if (threadIdx.x < 32 * (PER_BLOCK / 32)) {
+        const int cw = (int) (threadIdx.x / 32);
+        const int lane = (int) (threadIdx.x % 32);
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            const int entry = entries[(ent0 + e) * 2 + 1];
+            const int chunk0 = (int) ((size_t) entry * (FF / 32) + (size_t) (row_base + (row0 + cw * 32) % rows_slice) / 32);
+            const float v = sx[e * PER_BLOCK + cw * 32 + lane];
+            float av = fabsf(v);
+#pragma unroll
+            for (int s = 16; s > 0; s >>= 1) av = fmaxf(av, __shfl_down(av, s));
+            const float amax = __shfl(av, 0);
+            const float scc = amax > 0.f ? amax / 127.f : 0.f;
+            const float inv = scc > 0.f ? 1.f / scc : 0.f;
+            const float t = __fmul_rn(v, inv);
+            const float r = __fadd_rn(t, (t >= 0.f) ? 0.5f : -0.5f);
+            int qi = __float2int_rz(r);
+            qi = qi < -127 ? -127 : (qi > 127 ? 127 : qi);
+            faq[(size_t) chunk0 * 32 + lane] = (int8_t) qi;
+            int ssum = qi;
+#pragma unroll
+            for (int s = 16; s > 0; s >>= 1) ssum += __shfl_down(ssum, s);
+            if (lane == 0) {
+                fasc[chunk0] = scc;
+                fahx[chunk0] = __fmul_rn(scc, (float) ssum);
+            }
+        }
+    }
+}
+
 // The MT launcher: one launch per layer for the whole run table (the down still consumes the
 // standard job table, unchanged).
 void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
@@ -1923,23 +2056,72 @@ void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, s
                                           int8_t* d_faq, float* d_fasc, float* d_fahx, float* d_ff_dbg,
                                           cudaStream_t stream, int row_base, int rows_slice) {
     if (nruns <= 0) return;
-    constexpr int SPLIT = 4, THREADS = 128, E_MAX = 4;
-    constexpr int PER_BLOCK = THREADS / SPLIT;
-    const int blocks = nruns * (FF / PER_BLOCK);
-#define STRATA_LAUNCH_MT(TY)                                                                       \
-    expert_iq_stage1_mt_batch<TY, SPLIT, THREADS, E_MAX><<<blocks, THREADS, 0, stream>>>(           \
+    // STRATA_MW_MT_T (geometry A/B, 2026-10-26 occupancy campaign): "128x4" (the shipped form - four
+    // warps, 32 rows/block, the per-entry arithmetic bit-identical), "256x8" (eight warps at the same
+    // smem -> ~2x resident warps/SM; the SPLIT=8 k-partition reassociates the float part-sum order, so
+    // per-entry results drift within fp reassociation - the answers/recall gates decide), "256x4"
+    // (eight warps, 64 rows/block, arithmetic unchanged; needs the multi-chunk quant epilogue).
+    static const int geom = [] {
+        const char* e = std::getenv("STRATA_MW_MT_T");
+        if (e != nullptr && strncmp(e, "256x8", 5) == 0) return 8;
+        if (e != nullptr && strncmp(e, "256x4g", 6) == 0) return 5;
+        if (e != nullptr && strncmp(e, "256x4", 5) == 0) return 4;
+        return 0;
+    }();
+    if (geom == 5) {   // acts-in-global: the GACT kernel, always 256x4 today
+        const int blocks = nruns * (FF / 64);
+#define STRATA_LAUNCH_GACT(TY)                                                                     \
+        expert_iq_stage1_mt_batch_gact<TY, 4, 256, 4><<<blocks, 256, 0, stream>>>(                 \
+            d_blobs, blob_stride, d_runs, d_entries, acts_base, o_gate, o_up, gu_row,              \
+            d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
+        switch (gu_type) {
+            case 22: STRATA_LAUNCH_GACT(22); break;
+            case 16: STRATA_LAUNCH_GACT(16); break;
+            case 29: STRATA_LAUNCH_GACT(29); break;
+            default: std::exit(1);
+        }
+#undef STRATA_LAUNCH_GACT
+        return;
+    }
+    // STRATA_MW_MT_E (the occupancy lever, 2026-10-26): E_MAX=2 halves the act staging (13.7 KB ->
+    // ~7 blocks x 8 warps = 56 warps/SM at the 256x4 geometry) at half the weight amortisation.  The
+    // run-width cap reads the SAME env on the host side, so the tables always fit the instantiation.
+    static const int emax = [] {
+        const char* e = std::getenv("STRATA_MW_MT_E");
+        return (e != nullptr && std::atoi(e) == 2) ? 2 : 4;
+    }();
+    const int thr = geom != 0 ? 256 : 128;
+    const int per_block = geom == 4 ? 64 : 32;
+    const int blocks = nruns * (FF / per_block);
+#define STRATA_LAUNCH_MT_G(TY, SP, THR, EM)                                                        \
+    expert_iq_stage1_mt_batch<TY, SP, THR, EM><<<blocks, THR, 0, stream>>>(                         \
         d_blobs, blob_stride, d_runs, d_entries, acts_base, o_gate, o_up, gu_row,                  \
         d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
     switch (gu_type) {
-        case 22: STRATA_LAUNCH_MT(22); break;   // IQ2_S
-        case 16: STRATA_LAUNCH_MT(16); break;   // IQ2_XXS
-        case 29: STRATA_LAUNCH_MT(29); break;   // IQ1_M
+        case 22:   // IQ2_S
+            if (geom == 8) STRATA_LAUNCH_MT_G(22, 8, 256, 4);
+            else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(22, 4, 256, 2);
+            else if (geom == 4) STRATA_LAUNCH_MT_G(22, 4, 256, 4);
+            else STRATA_LAUNCH_MT_G(22, 4, 128, 4);
+            break;
+        case 16:   // IQ2_XXS
+            if (geom == 8) STRATA_LAUNCH_MT_G(16, 8, 256, 4);
+            else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(16, 4, 256, 2);
+            else if (geom == 4) STRATA_LAUNCH_MT_G(16, 4, 256, 4);
+            else STRATA_LAUNCH_MT_G(16, 4, 128, 4);
+            break;
+        case 29:   // IQ1_M
+            if (geom == 8) STRATA_LAUNCH_MT_G(29, 8, 256, 4);
+            else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(29, 4, 256, 2);
+            else if (geom == 4) STRATA_LAUNCH_MT_G(29, 4, 256, 4);
+            else STRATA_LAUNCH_MT_G(29, 4, 128, 4);
+            break;
         default:
             std::fprintf(stderr, "iq_expert_maxwell_gup_quant_mt_async: ggml type %d is not an "
                                  "i-quant this tier's kernels take\n", gu_type);
             std::exit(1);
     }
-#undef STRATA_LAUNCH_MT
+#undef STRATA_LAUNCH_MT_G
 }
 
 // STRATA_MW_PERSIST: launch the resident kernel.  The grid is the kernel's OWN occupancy x SMs -

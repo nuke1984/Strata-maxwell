@@ -1016,6 +1016,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         }();
         const bool mt_this = mt_on && n_tok >= 4 && jobs.size() >= 4 &&
                              geo_of(layer).gu_type != 42 && !w_rows_f16_;
+        static const int mt_cap = [] {
+            const char* e = std::getenv("STRATA_MW_MT_E");
+            return (e != nullptr && std::atoi(e) == 2) ? 2 : 4;   // MUST match the launcher's E_MAX
+        }();
         if (mt_this)
             std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.slot < b.slot; });
         staged = pack_staging(hsel, jobs.size(), jobs.data(), tp_cards_ > 1);
@@ -1023,7 +1027,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             int nruns = 0, tot = 0;
             for (size_t i = 0; i < jobs.size(); ) {
                 size_t j2 = i;
-                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < 4) ++j2;
+                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < mt_cap) ++j2;
                 ++nruns; tot += (int) (j2 - i); i = j2;
             }
             int32_t* hruns = (int32_t*) (hsel + staged);
@@ -1031,7 +1035,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             int r = 0, eo = 0;
             for (size_t i = 0; i < jobs.size(); ) {
                 size_t j2 = i;
-                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < 4) ++j2;
+                while (j2 < jobs.size() && jobs[j2].slot == jobs[i].slot && j2 - i < mt_cap) ++j2;
                 hruns[r * 4 + 0] = jobs[i].slot;
                 hruns[r * 4 + 1] = (int32_t) (j2 - i);
                 hruns[r * 4 + 2] = eo;
