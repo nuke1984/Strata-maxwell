@@ -127,6 +127,19 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
                                         int blk_base = 0, int blks = expert_maxwell_geo::SC_D,
                                         size_t d_row_stride = expert_maxwell_geo::ROW_D,
                                         size_t d_scale_stride = (size_t) expert_maxwell_geo::SC_D * 2);
+/// STRATA_MW_MT (the prefill down arm, 2026-10-23): the multi-token S2 down - one RUN (an expert, up
+/// to 4 adjacent entries, the run table the gup arm built and left in the staging) per block-group;
+/// each (row, block)'s code bytes are loaded and LUT-expanded ONCE and dotted against every entry's
+/// staged faq row - bit-identical rows by construction (exact integer dots, verbatim float tail and
+/// reduction order).  `d_runs`/`d_entries` as the gup MT launcher takes them; `d_jobs` supplies dst.
+void s2_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride, size_t d_codes_off,
+                                     size_t d_scales_off, const int32_t* d_runs, const int32_t* d_entries,
+                                     int nruns, const int32_t* d_jobs,
+                                     const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
+                                     float* d_out, cudaStream_t stream = 0,
+                                     int blk_base = 0, int blks = expert_maxwell_geo::SC_D,
+                                     size_t d_row_stride = expert_maxwell_geo::ROW_D,
+                                     size_t d_scale_stride = (size_t) expert_maxwell_geo::SC_D * 2);
 /// v2 ONLY: the down stage with fp16 rows (half the uplink bytes when the destination is mapped host
 /// memory; the verifier converts them back during its row copy).  `d_out16` holds H halves per entry.
 void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,

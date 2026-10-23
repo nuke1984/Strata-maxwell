@@ -44,6 +44,7 @@ using strata::kernels::cuda::s2_expert_maxwell_quant_ff_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_mt_async;
+using strata::kernels::cuda::s2_expert_maxwell_down_mt_async;
 
 namespace {
 // E1: STRATA_MW_GPUFLAG - 0 off; 1 the GPU-raised tier flags + the graph's multi-wait (host sync kept);
@@ -985,9 +986,9 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         cudaEventRecord(s0_a_, streams_[0]);
     }
     size_t staged = 0;
-    int mt_nruns = 0;
-    const int32_t* d_runs_mt = nullptr;
-    const int32_t* d_ent_mt = nullptr;
+    mt_nruns_ = 0;          // each chain reflects its own build (decode chains never set it)
+    d_runs_mt_ = nullptr;
+    d_ent_mt_ = nullptr;
     {
         // re-base the job table right after the packed acts so ONE async memcpy covers both (P6.x).
         // E1 mode 2: alternate the two staging sets (layer l+1 stages while layer l's kernels still
@@ -1042,10 +1043,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
                 }
                 ++r; i = j2;
             }
-            d_runs_mt = (const int32_t*) (dsel + staged);
-            d_ent_mt = (const int32_t*) ((const uint8_t*) d_runs_mt + (size_t) nruns * 16);
+            d_runs_mt_ = (const int32_t*) (dsel + staged);
+            d_ent_mt_ = (const int32_t*) ((const uint8_t*) d_runs_mt_ + (size_t) nruns * 16);
             staged += (size_t) nruns * 16 + (size_t) tot * 8;
-            mt_nruns = nruns;
+            mt_nruns_ = nruns;
         }
     }
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
@@ -1069,10 +1070,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             s2_expert_maxwell_quant_ff_async(d_ff_, d_faq_, d_fascale_, d_fahx_,
                                              (int) (jobs.size() * (size_t) (FF / 32)), streams_[0]);
         }
-    } else if (mt_nruns > 0) {
+    } else if (mt_nruns_ > 0) {
         // STRATA_MW_MT: the run table drives the gup; the standard job table stays for the down
-        iq_expert_maxwell_gup_quant_mt_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_runs_mt, d_ent_mt,
-                                             mt_nruns, d_acts_, g.o_gate, g.o_up, g.gu_row,
+        iq_expert_maxwell_gup_quant_mt_async(g.gu_type, d_blobs_ + g.base, g.blob_bytes, d_runs_mt_, d_ent_mt_,
+                                             mt_nruns_, d_acts_, g.o_gate, g.o_up, g.gu_row,
                                              d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0],
                                              g.tp_row_base, g.tp_rows);
     } else {
@@ -1252,6 +1253,40 @@ bool MaxwellExperts::finish(float* out, std::string& err) {
     return finish_chain(err);
 }
 
+// The two-phase prefill (2026-10-23): the caller launches every card's down FIRST (this method), then
+// completes them in rank order (finish_to).  The four downs then overlap exactly like the gups do - the
+// sequential finish_to loop measured each later card's down starting only after the earlier cards' FULL
+// finish (down + D2H + scatter-add, ~6.6 ms per rank: the S0 staircase 4.2/10.9/16.8/24.3 ms/L, while
+// the gups sit uniform at 16.5).  The rank-ordered completes keep the deterministic add order, so the
+// accumulated block is bit-identical to the sequential form.  finish_to's own launch block stays as the
+// fallback (single-phase callers, or a card that skipped this call).
+bool MaxwellExperts::prefill_launch_down(std::string& err) {
+    if (device_ < 0 || down_launched_ || owned_row_.empty() || w_dst_mapped_) return true;
+    persist_halt();   // Maxwell has no preemption: the prefill's launches need the whole card
+    DeviceScope scope(device_);
+    if (!scope.ok) { err = scope.err; return false; }
+    for (size_t j = 0; j < owned_row_.size(); ++j) h_jobs_[j * 3 + 2] = (int32_t) j;
+    if (!zerocopy_ &&
+        !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
+                               cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
+    const LayerGeo& g = geo_of(w_layer_);
+    if (mt_nruns_ > 0) {
+        // STRATA_MW_MT: the run table drives the down too (same runs the gup consumed; the tables
+        // are still in the device staging - the dst-fixup memcpy above rewrote the jobs region only)
+        s2_expert_maxwell_down_mt_async(d_blobs_ + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
+                                        d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_,
+                                        d_faq_, d_fascale_, d_fahx_, d_out_, streams_[0],
+                                        g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+    } else {
+        s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
+                                           d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
+                                           g.d_scales_off, streams_[0], nullptr, 0, nullptr,
+                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+    }
+    down_launched_ = true;
+    return true;
+}
+
 bool MaxwellExperts::finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd,
                                std::string& err, bool accumulate) {
     if (device_ < 0) return true;
@@ -1291,16 +1326,27 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     const auto ft1 = std::chrono::steady_clock::now();
     // The down stage: launched at begin() for the token path (see there).  For the prefill it launches NOW,
     // into the staging block, and the host copies the rows out below.  One wait per device per layer.
+    // prefill_launch_down() may already have launched it (the two-phase prefill: all four cards' downs
+    // launch first, THEN the rank-ordered completes - the downs overlap like the gups already do).
     if (!down_launched_) {
         for (size_t j = 0; j < owned_row_.size(); ++j) h_jobs_[j * 3 + 2] = (int32_t) j;
         if (!zerocopy_ &&
             !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                    cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
         const LayerGeo& g = geo_of(w_layer_);
-        s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
-                                           d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
-                                           g.d_scales_off, streams_[0], nullptr, 0, nullptr,
-                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+        if (mt_nruns_ > 0) {
+            // STRATA_MW_MT: the run table drives the down too (same runs the gup consumed; the tables
+            // are still in the device staging - the dst-fixup memcpy above rewrote the jobs region only)
+            s2_expert_maxwell_down_mt_async(d_blobs_ + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
+                                            d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_,
+                                            d_faq_, d_fascale_, d_fahx_, d_out_, streams_[0],
+                                            g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+        } else {
+            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
+                                               d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
+                                               g.d_scales_off, streams_[0], nullptr, 0, nullptr,
+                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+        }
         down_launched_ = true;
     }
     // S0 (STRATA_MW_LAYERPROF): the span ends after the down launch, whichever path launched it; the

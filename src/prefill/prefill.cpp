@@ -4177,10 +4177,27 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                         nullptr, false, err))
                                         return false;
                                  const auto sb1 = std::chrono::steady_clock::now();
-                                for (int i = 0; i < m.mw_count; ++i)
-                                    if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
-                                                            N, err, mw_tp))
-                                        return false;
+                                  // STRATA_MW_TWOPHASE (opt-in, default off = the sequential form):
+                                  // every card's down LAUNCHES first, then the rank-ordered completes
+                                  // (sync/D2H/scatter-add) run - the downs overlap like the gups instead
+                                  // of each waiting for the earlier cards' full finish (the measured S0
+                                  // staircase: 4.2/10.9/16.8/24.3 ms/L by rank).  The add order is
+                                  // unchanged, so the accumulated block stays bit-identical.
+                                  static const bool mw_two_phase = [] {
+                                      const char* e = std::getenv("STRATA_MW_TWOPHASE");
+                                      const bool on = e != nullptr && std::atoi(e) != 0;
+                                      if (on)
+                                          std::fprintf(stderr, "strata maxwell: two-phase prefill finish "
+                                                               "(STRATA_MW_TWOPHASE)\n");
+                                      return on;
+                                  }();
+                                  if (mw_two_phase)
+                                      for (int i = 0; i < m.mw_count; ++i)
+                                          if (!m.mw[i]->prefill_launch_down(err)) return false;
+                                  for (int i = 0; i < m.mw_count; ++i)
+                                      if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
+                                                              N, err, mw_tp))
+                                          return false;
                                  const auto sb2 = std::chrono::steady_clock::now();
                                  if (pp.on) { pp.sbeg += ppMs(sb0, sb1); pp.sfin += ppMs(sb1, sb2); }
                             }

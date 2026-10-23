@@ -592,6 +592,116 @@ __global__ void expert_s2_stage2_batch_v2(const uint8_t* __restrict__ blobs, siz
     }
 }
 
+// ---- STRATA_MW_MT (down): the multi-token S2 down, the same run treatment the gup got ------------------
+//
+// The measured waste (2026-10-23 prefill anatomy): the v2 down re-reads and re-expands the expert's
+// down code rows once per (expert, TOKEN) - the same multiplicity tax the gup had.  This kernel serves
+// a RUN (one expert, up to E_MAX adjacent entries, the table the gup arm already built and left in the
+// staging) per block-group: each (row, block)'s 16 code bytes are loaded and LUT-expanded ONCE into
+// payloads, then dotted against EVERY entry's staged faq row.  The integer dots are exact (integer
+// adds), the per-entry float tail and the SPLIT reduction order are verbatim s2_stage2_v2_body's, so
+// every (expert, token) row is bit-identical.  dst comes from the standard job table at the entry's
+// SORTED POSITION (the prefill fixup sets dst = position; the table is order-agnostic either way).
+template <int SPLIT = 2, int THREADS = 128, int E_MAX = 4>
+__global__ void expert_s2_stage2_mt_batch(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                          size_t d_codes_off, size_t d_scales_off,
+                                          const int32_t* __restrict__ runs,      // [nruns x 4]: slot, count, entries_off, unused
+                                          const int32_t* __restrict__ entries,   // [total x 2]: tok, sorted position
+                                          const MaxJob* __restrict__ jobs,
+                                          const int8_t* __restrict__ faq, const float* __restrict__ fasc,
+                                          const float* __restrict__ fahx, float* __restrict__ out,
+                                          int blk_base, int blks,
+                                          size_t d_row_stride, size_t d_scale_stride) {
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    static_assert(H % PER_BLOCK == 0, "the MT down stages one run's rows per block, as the v2 one");
+    __shared__ __align__(16) int8_t sq[E_MAX][FF];
+    __shared__ __align__(16) float ssc[E_MAX][FF / 32];
+    __shared__ __align__(16) float shx[E_MAX][FF / 32];
+    __shared__ __align__(16) uint32_t slut[256];
+    __shared__ __align__(16) float2 sh[E_MAX][THREADS];
+    const int rpb = H / PER_BLOCK;                     // row-blocks per run
+    const int run = (int) (blockIdx.x / rpb);
+    const int vb = (int) (blockIdx.x % rpb);
+    const int slot = runs[run * 4 + 0];
+    const int E = runs[run * 4 + 1];
+    const int ent0 = runs[run * 4 + 2];
+    if (E <= 0 || E > E_MAX) return;
+    const uint8_t* blob = blobs + (size_t) slot * blob_stride;
+    {
+        for (int i = (int) threadIdx.x; i < 256; i += THREADS) slut[i] = (uint32_t) expand4_s2(i);
+        for (int e = 0; e < E; ++e) {
+            const int pos = entries[(ent0 + e) * 2 + 1];
+            const int4* srcq = (const int4*) (faq + (size_t) pos * FF);
+            int4* dstq = (int4*) sq[e];
+            for (int i = (int) threadIdx.x; i < FF / 16; i += THREADS) dstq[i] = srcq[i];
+            const float* sc = fasc + (size_t) pos * (FF / 32);
+            const float* hx = fahx + (size_t) pos * (FF / 32);
+            for (int i = (int) threadIdx.x; i < FF / 32; i += THREADS) {
+                ssc[e][i] = sc[i];
+                shx[e][i] = hx[i];
+            }
+        }
+    }
+    __syncthreads();
+    const int row = vb * PER_BLOCK + (int) (threadIdx.x / SPLIT);
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * d_scale_stride;
+    float acc[E_MAX], corr[E_MAX];
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) { acc[e] = 0.f; corr[e] = 0.f; }
+    for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
+        const int lb = b - blk_base;                    // the block's place in this card's compact shard
+        // ONE hoist per (row, block): the 16 code bytes load + LUT-expand once, amortised over E
+        const int4 c4 = *(const int4*) (dc + lb * 16);
+        const float d = read_scale(ds, lb);
+        int p[16];
+        p[0]  = (int) slut[(c4.x >> 0) & 0xFF];   p[1]  = (int) slut[(c4.x >> 8) & 0xFF];
+        p[2]  = (int) slut[(c4.x >> 16) & 0xFF];  p[3]  = (int) slut[(c4.x >> 24) & 0xFF];
+        p[4]  = (int) slut[(c4.y >> 0) & 0xFF];   p[5]  = (int) slut[(c4.y >> 8) & 0xFF];
+        p[6]  = (int) slut[(c4.y >> 16) & 0xFF];  p[7]  = (int) slut[(c4.y >> 24) & 0xFF];
+        p[8]  = (int) slut[(c4.z >> 0) & 0xFF];   p[9]  = (int) slut[(c4.z >> 8) & 0xFF];
+        p[10] = (int) slut[(c4.z >> 16) & 0xFF];  p[11] = (int) slut[(c4.z >> 24) & 0xFF];
+        p[12] = (int) slut[(c4.w >> 0) & 0xFF];   p[13] = (int) slut[(c4.w >> 8) & 0xFF];
+        p[14] = (int) slut[(c4.w >> 16) & 0xFF];  p[15] = (int) slut[(c4.w >> 24) & 0xFF];
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            const int8_t* qe = sq[e] + (2 * b) * 32;
+            const int4 q0 = *(const int4*) (qe);
+            const int4 q1 = *(const int4*) (qe + 16);
+            const int4 q2 = *(const int4*) (qe + 32);
+            const int4 q3 = *(const int4*) (qe + 48);
+            int d0 = (dp4a_s32(q0.x, p[0], 0) + dp4a_s32(q0.y, p[1], 0)) + (dp4a_s32(q0.z, p[2], 0) + dp4a_s32(q0.w, p[3], 0));
+            d0 += (dp4a_s32(q1.x, p[4], 0) + dp4a_s32(q1.y, p[5], 0)) + (dp4a_s32(q1.z, p[6], 0) + dp4a_s32(q1.w, p[7], 0));
+            int d1 = (dp4a_s32(q2.x, p[8], 0) + dp4a_s32(q2.y, p[9], 0)) + (dp4a_s32(q2.z, p[10], 0) + dp4a_s32(q2.w, p[11], 0));
+            d1 += (dp4a_s32(q3.x, p[12], 0) + dp4a_s32(q3.y, p[13], 0)) + (dp4a_s32(q3.z, p[14], 0) + dp4a_s32(q3.w, p[15], 0));
+            acc[e] += d * ssc[e][2 * b] * (float) d0;
+            acc[e] += d * ssc[e][2 * b + 1] * (float) d1;
+            corr[e] += d * (shx[e][2 * b] + shx[e][2 * b + 1]);
+        }
+    }
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) {
+        if (e >= E) break;
+        sh[e][threadIdx.x] = make_float2(acc[e], corr[e]);
+    }
+    __syncthreads();
+    if (part == 0) {
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            float a0 = 0.f, c0 = 0.f;
+            for (int s = 0; s < SPLIT; ++s) {
+                const float2 v = sh[e][threadIdx.x + s];
+                a0 += v.x; c0 += v.y;
+            }
+            const int pos = entries[(ent0 + e) * 2 + 1];
+            out[(size_t) jobs[pos].dst * H + row] = a0 - c0;
+        }
+    }
+}
+
 // v2 + FUSED quantisation: identical to expert_s2_stage1_batch_v2 except that the SwiGLU output is
 // quantised in the epilogue instead of being written to ff.  With SPLIT=4 the block covers exactly one
 // 32-value quant chunk of its job (PER_BLOCK=32, FF/32=20 chunks per job), and the epilogue runs the SAME
@@ -1380,6 +1490,25 @@ void s2_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d
     expert_s2_stage2_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
         d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
         d_faq, d_fasc, d_fahx, d_out);
+}
+
+// STRATA_MW_MT down launcher (the prefill arm): one launch for the whole run table the gup arm built
+// and left in the staging.  Same geometry contract as s2_expert_maxwell_down_batch_async (per-layer
+// offsets, the card's block range).  E_MAX MUST match the gup MT launcher's and the host's run-width
+// cap (all three are 4 today).
+void s2_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride, size_t d_codes_off,
+                                     size_t d_scales_off, const int32_t* d_runs, const int32_t* d_entries,
+                                     int nruns, const int32_t* d_jobs,
+                                     const int8_t* d_faq, const float* d_fasc, const float* d_fahx,
+                                     float* d_out, cudaStream_t stream,
+                                     int blk_base, int blks, size_t d_row_stride, size_t d_scale_stride) {
+    if (nruns <= 0) return;
+    constexpr int SPLIT = 2, THREADS = 128, E_MAX = 4;
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    const int blocks = nruns * (H / PER_BLOCK);
+    expert_s2_stage2_mt_batch<SPLIT, THREADS, E_MAX><<<blocks, THREADS, 0, stream>>>(
+        d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
+        d_faq, d_fasc, d_fahx, d_out, blk_base, blks, d_row_stride, d_scale_stride);
 }
 
 // v2 ONLY: the down stage with fp16 rows - half the uplink bytes when the destination is mapped host

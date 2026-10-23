@@ -108,6 +108,11 @@ public:
     /// accumulated sum is deterministic; the caller zeroes the block first.
     bool finish_to(float* dst_rows, const int32_t* row_of_entry, int32_t row_base, int64_t n_embd,
                    std::string& err, bool accumulate = false);
+    /// The two-phase prefill's launch half (2026-10-23): launch THIS card's down now (cheap, async);
+    /// the caller then finish_to()s the cards in rank order, whose sync/D2H/scatter-add order - and
+    /// so the accumulated block - is bit-identical to the single-phase form.  The four cards' downs
+    /// overlap like their gups instead of serialising behind each other's finishes.
+    bool prefill_launch_down(std::string& err);
 
     int64_t resident() const { return resident_; }
     int64_t computed() const { return computed_.load(std::memory_order_relaxed); }
@@ -247,6 +252,11 @@ private:
     bool w_rows_f16_ = false;     // the down writes fp16 rows packed into the fp32 row slots, see begin()
     bool w_accumulate_ = false;   // SPLIT_MODE_TENSOR (prefill): ADD the rows into w_dst_ instead of copying
     bool down_launched_ = false;  // the down stage of this layer already ran at begin() time
+    // STRATA_MW_MT: the run/entry tables the begin arm built in the staging (device pointers, valid
+    // until the next begin overwrites the staging).  The prefill's down (finish_chain) consumes them.
+    const int32_t* d_runs_mt_ = nullptr;
+    const int32_t* d_ent_mt_ = nullptr;
+    int mt_nruns_ = 0;
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);
 
