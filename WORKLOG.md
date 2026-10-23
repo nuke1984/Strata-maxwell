@@ -323,3 +323,17 @@ arm-against-arm, same day/same binary whenever possible.
 - DRED committed DEFAULT OFF (do not enable; needs a standalone repro harness).  The winning stack is
   unchanged and production runs the default path: MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 = 152.5.
 - Also this session: meta-tier reuse ruled out (MaxwellMetaTier requires a 48-layer model, not ours).
+
+## 2026-10-27 early - DRED: the crash cracked open (the completes' timing gates it), still quarantined
+- The standalone harness (tools/mw_dred_repro.cu) passes the arm's exact op sequence fault-free - the
+  fault is an engine interaction, not the ops.
+- The engine mode map (README above): mode 4 (no arm, standard completes) passes; mode 5 (arm +
+  standard completes) passes CORRECTLY; mode 1/3 (arm + early-return) crash; mode 6 (arm + waits only,
+  no scatter) runs 154-155 tok/s but answers WRONG - a latency race.  The completes' ~6 ms of host
+  time gates both the fault and the correctness; the arm's own syncs provably cover the staging/D2H
+  ordering, so the racing consumer sits elsewhere (next: audit Dm's tail consumers for a non-m.cs
+  stream; probe with cudaStreamSynchronize(m.cs) in the arm).
+- Found on the way: PFPIPE's staging alternation never ran (d_up2_ is E1-gated) - the null stands but
+  only for the upload form.
+- No working DRED form beats 152.5 (mode 5 = 146.8; mode 6 = 155 but wrong).  DRED remains DEFAULT
+  OFF; production restored and verified; parity 0.

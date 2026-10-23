@@ -4176,7 +4176,9 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                        std::atoi(std::getenv("STRATA_MW_DRED") ?: "0") != 0;
                             // DRED's reduce writes every tier row exactly once - no zeroing, no host block
                             const int dred_mode_l = std::atoi(std::getenv("STRATA_MW_DRED") ?: "0");
-                            if (mw_tp && !(dred_on && dred_mode_l != 2 && mw_tp && m.mw_count == 4))
+                            const bool dred_owns = dred_on && dred_mode_l != 2 && dred_mode_l != 4 &&
+                                                   mw_tp && m.mw_count == 4;
+                            if (mw_tp && !dred_owns)
                                 std::memset(m.mw_block.data(), 0, (size_t) rows_mw * N * 4);
                             // the sub-batch window follows the tier's staging geometry (STRATA_MW_NTM,
                             // default 64): the tier refuses n_tok > n_tok_max_, so MW_SUB must match it.
@@ -4225,7 +4227,8 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                                "(STRATA_MW_DRED)\n");
                                       return on;
                                   }();
-                                  if (mw_dred && mw_tp && m.mw_count == 4) {
+                                  static const int dred_m4 = std::atoi(std::getenv("STRATA_MW_DRED") ?: "0");
+                                  if (mw_dred && dred_m4 != 2 && dred_m4 != 4 && mw_tp && m.mw_count == 4) {
                                       const auto& own = m.mw[0]->owned_rows();
                                       if (!own.empty()) {
                                           const size_t rows = own.size();
@@ -4275,16 +4278,37 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                           // reduce): if this passes multi-window, the fault is the
                                           // reduce/map path; if not, the waits/H2D.
                                           static const int dred_mode = std::atoi(std::getenv("STRATA_MW_DRED") ?: "0");
+                                          // the forensic checks (the standalone harness passes the same
+                                          // op sequence fault-free - the fault is engine-side): the four
+                                          // ranks must own IDENTICAL row sets, and every map value must
+                                          // land inside Dm's tail block or the reduce writes out of bounds.
+                                          for (int i = 1; i < 4; ++i) {
+                                              const auto& oi = m.mw[i]->owned_rows();
+                                              if (oi.size() != rows) {
+                                                  std::fprintf(stderr, "DRED-ForenSIC: rank %d owns %zu rows, rank 0 %zu\n",
+                                                               i, oi.size(), rows);
+                                              }
+                                          }
                                           if (dred_mode != 2) {
-                                              for (size_t si = 0; si < rows; ++si)
+                                              for (size_t si = 0; si < rows; ++si) {
                                                   m.dred_map_h[si] = slot_h[t0 * K + (size_t) own[si]] - (int32_t) rows_local;
+                                                  if (m.dred_map_h[si] < 0 || m.dred_map_h[si] >= (int32_t) rows_mw) {
+                                                      std::fprintf(stderr, "DRED-ForenSIC: map[%zu]=%d (rows_mw=%d, own=%d, slot=%d) OUT OF RANGE\n",
+                                                                   si, m.dred_map_h[si], (int32_t) rows_mw,
+                                                                   (int32_t) own[si], slot_h[t0 * K + (size_t) own[si]]);
+                                                      err = "prefill: the DRED row map is out of range";
+                                                      return false;
+                                                  }
+                                              }
                                               if (cudaMemcpyAsync(m.dred_map, m.dred_map_h.data(), rows * 4,
                                                                   cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
                                                   err = "prefill: the DRED map upload failed"; return false;
                                               }
                                               strata::kernels::mw_dred_reduce(m.dred_part[0], m.dred_part[1],
                                                                               m.dred_part[2], m.dred_part[3],
-                                                                              m.dred_map, m.Dm + (size_t) rows_local * N,
+                                                                              m.dred_map,
+                                                                              dred_mode == 3 ? m.dred_part[0]
+                                                                                             : m.Dm + (size_t) rows_local * N,
                                                                               (int64_t) rows, N, m.cs);
                                           }
                                       }
@@ -4324,7 +4348,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                             const auto ph3 = std::chrono::steady_clock::now();
                             // ONE H2D: the tier rows are contiguous in Dm's tail block [rows_local, rows_local+rows_mw).
                             // DRED already wrote Dm's tail on the device - no upload.
-                            if (!(dred_on && dred_mode_l != 2 && mw_tp && m.mw_count == 4) &&
+                            if (!dred_owns &&
                                 cudaMemcpyAsync(m.Dm + (size_t) rows_local * N, m.mw_block.data(),
                                                 (size_t) rows_mw * N * 4, cudaMemcpyHostToDevice, m.cs) != cudaSuccess) {
                                 err = "prefill: the Maxwell rows' upload failed";

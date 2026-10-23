@@ -77,3 +77,31 @@ the early-return completes, and the local-pinned H2Ds.  compute-sanitizer cannot
 in the tree, DEFAULT OFF, and must not be enabled until that harness localises the fault.
 
 The winning stack is unchanged: MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 = 152.5 tok/s.
+
+## Session 4 (2026-10-27 early): the DRED crack cracked open - the mode map
+
+The standalone harness (tools/mw_dred_repro.cu - 4 M10 contexts, the arm's exact op sequence, dummy
+kernels) PASSES 11 windows fault-free: the op sequence is clean; the fault is an engine interaction.
+Engine bisect modes (each a run of the real 2.7k):
+
+| mode | arm | completes | result |
+|---|---|---|---|
+| 1 | full (waits+stage+H2D+map+reduce->Dm) | early return | CRASH (illegal access, multi-window only) |
+| 3 | reduce->scratch, map VALIDATED in-range | early return | CRASH |
+| 4 | none | standard (152.5 path) | PASS, correct (146.8 tok/s class) |
+| 5 | full | standard (+dead scatter) | PASS, CORRECT answers - but 146.8 tok/s (dead adds cost) |
+| 6 | full | ad2h-waits only, no scatter | NO CRASH, 154.4-155.4 - but WRONG answers (a latency race: correct only when the completes' ~6 ms of scatter time is present) |
+| harness | full, dummy kernels | - | PASS |
+
+Conclusions (measured): (a) the arm's every CUDA op is individually clean; (b) the COMPLETES' waits/
+scatter timing gates BOTH the crash (mode 1/3) and the correctness (mode 6) - remove ~6 ms of host
+time from the completes and the chain both faults (early return) and mis-orders (fast form); with it,
+everything passes. The arm's own event syncs provably cover the staging/upload/D2H ordering, so the
+racing pair is elsewhere - most likely a consumer of Dm's tail that is NOT m.cs-ordered and was
+latency-hidden by the completes' host time (audit + a cudaStreamSynchronize(m.cs) probe in the arm
+are the named next steps). (c) PFPIPE's staging alternation never ran in ANY test: d_up2_/h_up2_ are
+allocated only under gpuflag>=2, so pf_on was always false (the PFPIPE null measurement stands but
+measured only the streams_[1] upload form).
+
+Economics: no working DRED form beats the incumbent (mode 5 = 146.8 < 152.5; mode 6 = 155 but wrong).
+DRED stays quarantined DEFAULT OFF.  The winning stack is unchanged: 152.5 tok/s.

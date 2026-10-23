@@ -542,12 +542,15 @@ bool MaxwellExperts::open(int device,
     // DRED: both partials buffers are read by the PRIMARY GPU's copy engine (the H2D leg of the
     // two-hop) - they must be PORTABLE pinned, or a foreign-context DMA on them is an illegal access
     // (measured: the small single window passed, the 4 MB multi-window ones faulted).
-    if (dred_env()) {
+    static const int dred_om = dred_env() ? std::atoi(std::getenv("STRATA_MW_DRED")) : 0;
+    if (dred_om != 0 && dred_om != 4) {
         cudaFreeHost(h_out_); h_out_ = nullptr;
         if (!check(cudaHostAlloc((void**) &h_out_, ce * H * sizeof(float), cudaHostAllocPortable),
                    "cudaHostAlloc out (portable)", err)) { close(); return false; }
         if (!check(cudaHostAlloc((void**) &h_out2_, ce * H * sizeof(float), cudaHostAllocPortable),
                    "cudaHostAlloc out2 (portable)", err)) { close(); return false; }
+    } else if (dred_om == 4) {
+        if (!check(cudaMallocHost((void**) &h_out2_, ce * H * sizeof(float)), "cudaMallocHost out2", err)) { close(); return false; }
     }
 
     // P3.3: per-device streams and events for the overlap DAG
@@ -1375,7 +1378,8 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
     // STRATA_MW_DRED: alternate the partials' host buffer per window - window s+1's D2H lands in the
     // other buffer while window s's H2D still reads this one (no cross-device back-edge: this stack's
     // vGPU layer faults on cross-device stream waits - measured, STRATA_MW_DRED bisect 2026-10-26).
-    if (dred_env() && h_out2_ != nullptr) {
+    static const int dred_sm = dred_env() ? std::atoi(std::getenv("STRATA_MW_DRED")) : 0;
+    if (dred_sm != 4 && dred_env() && h_out2_ != nullptr) {
         float* t = h_out_; h_out_ = h_out2_; h_out2_ = t;
     }
     const LayerGeo& g = geo_of(w_layer_);
@@ -1439,7 +1443,8 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     // STRATA_MW_DRED: the completes are enqueue-only - the caller peer-copies this card's partials
     // to the primary GPU and the rank-ordered add runs THERE (mw_dred_reduce, bit-identical).  Nothing
     // to wait, copy or add on the host; the rows land in the destination via the caller's stream order.
-    if (dred_env() && ev_pf_down_ != nullptr && w_n_tok_ >= 4 && down_launched_) return true;
+    static const int dred_fm = dred_env() ? std::atoi(std::getenv("STRATA_MW_DRED")) : 0;
+    if ((dred_fm == 1 || dred_fm == 3) && ev_pf_down_ != nullptr && w_n_tok_ >= 4 && down_launched_) return true;
     // PFPIPE (the pipelined prefill's completes): everything downstream of here reads state the next
     // window's begin has already reloaded (owned_row_, the staging, the faq set), so this arm works
     // purely from the snapshot + the down event: sync THIS window's down (gup(s+1) sits behind it on
@@ -1595,6 +1600,11 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         ad2h_armed_ = false;
     } else if (!check(cudaMemcpy(h_out_, d_out_, owned_row_.size() * (size_t) w_n_embd_ * sizeof(float),
                                  cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
+    // STRATA_MW_DRED mode 6 (the working form, 2026-10-26): the rank-ordered EVENT WAITS stay (the
+    // empirically necessary part - without them, i.e. with the bare early return, the chain faults
+    // with an illegal access on multi-window prompts; with them, every arm form passes), but the
+    // host scatter-add is DRED's dead work - the reduce already wrote Dm - so skip it.
+    if (dred_fm == 6) return true;
     for (size_t s = 0; s < owned_row_.size(); ++s) {
         const int32_t i = owned_row_[s];
         const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;
