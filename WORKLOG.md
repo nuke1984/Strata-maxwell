@@ -337,3 +337,17 @@ arm-against-arm, same day/same binary whenever possible.
   only for the upload form.
 - No working DRED form beats 152.5 (mode 5 = 146.8; mode 6 = 155 but wrong).  DRED remains DEFAULT
   OFF; production restored and verified; parity 0.
+
+## 2026-10-27 - the barrier named: the completes' host time is a load-bearing pipeline dependency
+- mode 6 + m.cs-only sync: still wrong answers at 152.5 (the sync ate the speed too).  mode 7 (+ a
+  NULL-stream readback barrier): CORRECT, zero checksum mismatches - the reduce's data is right
+  whenever a device-wide barrier separates it from the consumer.
+- THE FINDING: a Dm-tail consumer runs off m.cs (combine marks cs; the MMQ/peer paths use pp->s/s_cp/
+  s_out) and the prefill's correctness has depended on the completes' ~4-6 ms/window latency ALL
+  ALONG - including the shipped 152.5 stack (latency-hidden, not ordered).  Any future speedup (the
+  wavefront) must first make that ordering explicit.
+- DRED closed: every correct form re-imports a per-window barrier costing what the completes cost;
+  it cannot beat the incumbent on this stack.  Quarantined (default off) with the complete mode map.
+- Campaign final: 152.5 shipped (+101% over 75.8); the 240+ path is the wavefront + the cross-stream
+  ordering fix, recorded as the named next work.  Production default-path restored and verified;
+  parity 0.

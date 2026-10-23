@@ -105,3 +105,31 @@ measured only the streams_[1] upload form).
 
 Economics: no working DRED form beats the incumbent (mode 5 = 146.8 < 152.5; mode 6 = 155 but wrong).
 DRED stays quarantined DEFAULT OFF.  The winning stack is unchanged: 152.5 tok/s.
+
+## Session 5 (2026-10-27): the barrier named - the completes' host time is load-bearing; DRED closed
+
+The decisive probes (same binary, env-switched):
+- mode 6 + cudaStreamSynchronize(m.cs) after the reduce: STILL WRONG (152.5 tok/s) - an m.cs-only
+  barrier neither fixes correctness nor keeps the speed (the sync ate mode 6's +2).
+- mode 7 (= mode 6 + a blocking NULL-stream readback memcpy): CORRECT - the NULL-stream barrier
+  serializes the racing consumer; zero checksum mismatches (the reduce's Dm data is RIGHT whenever
+  a full barrier stands between it and the consumer).
+
+THE FINDING: the completes' ~4-6 ms/window of host time (or any equivalent device-wide barrier) is a
+DE FACTO pipeline dependency - a Dm-tail consumer runs off m.cs (the combine marks cs, but the MMQ/peer
+machinery uses pp->s / s_cp / s_out), and the pipeline's correctness has depended on that latency all
+along.  The standard 152.5 stack carries the SAME latent exposure (its block H2D is m.cs-ordered too);
+it is latency-hidden, not properly ordered.  Every correct DRED form re-imports a per-window barrier
+costing what the completes cost: the economics are closed, DRED can never beat the incumbent on this
+stack as architected.
+
+## The campaign's final measured position
+
+- Shipped: 152.5 tok/s (baseline 75.8, +101%): MT gup (E=4) + MT down + TWOPHASE + AD2H + MT_T=256x4.
+- Ceiling of THIS orchestration: 155 (mode 6, barrier-less) - not shippable (wrong answers).
+- The per-unit budget (47.4 ms per 256-tok chunk-layer): gup 8 + down 4.4-8 + completes ~18 (the
+  load-bearing barrier) + 3060 compute 5.8 + transfers 3.6 + grouping ~4.
+- The only >= 240 path: the chunk-wavefront overlap (est. 245-265 with the micro-levers) - which (a)
+  requires eliminating exactly the latency this pipeline secretly depends on (the cross-stream
+  ordering bug must be found and fixed first, else any speedup corrupts the KV), and (b) is major
+  surgery (double-buffered chunk state) beyond this campaign's completed scope.

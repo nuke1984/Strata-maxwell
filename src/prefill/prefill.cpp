@@ -4310,6 +4310,38 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                                               dred_mode == 3 ? m.dred_part[0]
                                                                                              : m.Dm + (size_t) rows_local * N,
                                                                               (int64_t) rows, N, m.cs);
+                                              // mode 6's probe (2026-10-27): the fast form mis-answers
+                                              // unless the completes' ~6 ms of scatter time is present;
+                                              // the m.cs sync did NOT fix it, so the DATA is wrong at
+                                              // speed.  This checksum reads one row of Dm's tail back
+                                              // and diffs it against the host-side sum of the four
+                                              // partials - naming the window/row/side of the first
+                                              // mismatch (mode 7).
+                                              if (dred_mode == 6 || dred_mode == 7) cudaStreamSynchronize(m.cs);
+                                              if (dred_mode == 7) {
+                                                  static int dred_checks = 0;
+                                                  if (dred_checks < 40) {
+                                                      ++dred_checks;
+                                                      float back[N];
+                                                      const int probe_row = 0;
+                                                      const int32_t dst_row = m.dred_map_h[probe_row];
+                                                      if (cudaMemcpy(back, m.Dm + (size_t) (rows_local + dst_row) * N,
+                                                                     (size_t) N * 4, cudaMemcpyDeviceToHost) == cudaSuccess) {
+                                                          double host_sum = 0, dev_sum = 0;
+                                                          for (int e = 0; e < N; ++e) {
+                                                              double v = 0;
+                                                              for (int i = 0; i < 4; ++i)
+                                                                  v += (double) m.mw[i]->host_partial()[(size_t) probe_row * N + e];
+                                                              host_sum += v;
+                                                              dev_sum += (double) back[e];
+                                                          }
+                                                          const double scale = host_sum != 0 ? host_sum : 1.0;
+                                                          if (std::fabs(dev_sum - host_sum) > 1e-3 * std::fabs(scale))
+                                                              std::fprintf(stderr, "DRED-DATA check %d: row %d host %.4f vs Dm %.4f (MISMATCH)\n",
+                                                                           dred_checks, probe_row, host_sum, dev_sum);
+                                                      }
+                                                  }
+                                              }
                                           }
                                       }
                                   }
