@@ -61,6 +61,12 @@ using strata::kernels::cuda::mw_tp_raise_flag_async;
 constexpr int H = 2560;
 constexpr int FF = 640;
 
+// STRATA_MW_PFPIPE: the prefill upload pipeline (see the members in the header).  Read once.
+static bool pf_pipe_env() {
+    static const bool on = std::getenv("STRATA_MW_PFPIPE") != nullptr && std::atoi(std::getenv("STRATA_MW_PFPIPE")) != 0;
+    return on;
+}
+
 // S0: whether the M10 tier's own counters run (STRATA_MW_LAYERPROF - the same flag the host-side layer
 // print uses, so one env arms the whole per-layer truth).  Read once.
 static bool s0_env() {
@@ -485,6 +491,24 @@ bool MaxwellExperts::open(int device,
     if (!check(cudaMalloc(&d_faq_, ce * FF), "cudaMalloc faq", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_fascale_, ce * (FF/32) * sizeof(float)), "cudaMalloc fascale", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_fahx_, ce * (FF/32) * sizeof(float)), "cudaMalloc fahx", err)) { close(); return false; }
+    // STRATA_MW_PFPIPE: the second faq image (the gup(s+1) writes it while down(s) still reads set 0;
+    // ~0.5 MB/card).  The events: upload-done (per staging set, on the copy stream), staging-set-free
+    // (after the set's down, on the compute stream) and this-window's down-complete.
+    const bool pf_pipe = pf_pipe_env();
+    if (pf_pipe)
+        std::fprintf(stderr, "strata maxwell: prefill upload pipeline (STRATA_MW_PFPIPE)\n");
+    if (pf_pipe) {
+        if (!check(cudaMalloc(&d_faq2_, ce * FF), "cudaMalloc faq2", err)) { close(); return false; }
+        if (!check(cudaMalloc(&d_fascale2_, ce * (FF/32) * sizeof(float)), "cudaMalloc fascale2", err)) { close(); return false; }
+        if (!check(cudaMalloc(&d_fahx2_, ce * (FF/32) * sizeof(float)), "cudaMalloc fahx2", err)) { close(); return false; }
+        for (int i = 0; i < 2; ++i) {
+            if (!check(cudaEventCreateWithFlags(&ev_pf_up_[i], cudaEventDisableTiming), "pfup event", err)) { close(); return false; }
+            if (!check(cudaEventCreateWithFlags(&ev_pf_free_[i], cudaEventDisableTiming), "pffree event", err)) { close(); return false; }
+        }
+        if (!check(cudaEventCreateWithFlags(&ev_pf_down_, cudaEventDisableTiming), "pfdown event", err)) { close(); return false; }
+        // prime the free events (set 0/1 both "free" before the first window)
+        for (int i = 0; i < 2; ++i) cudaEventRecord(ev_pf_free_[i], streams_[0]);
+    }
     if (!check(cudaMalloc(&d_ff_, ce * FF * sizeof(float)), "cudaMalloc ff", err)) { close(); return false; }
     if (!check(cudaMalloc(&d_out_, ce * H * sizeof(float)), "cudaMalloc out", err)) { close(); return false; }
     if (!check(cudaMallocHost((void**) &h_out_, ce * H * sizeof(float)), "cudaMallocHost out", err)) { close(); return false; }
@@ -717,6 +741,14 @@ void MaxwellExperts::close() {
     d_acts_ = nullptr; h_acts_ = nullptr; d_jobs_ = nullptr; h_jobs_ = nullptr;
     d_aq_ = nullptr; d_ascale_ = nullptr; d_ahx_ = nullptr;
     if (d_faq_) { cudaFree(d_faq_); d_faq_ = nullptr; }
+    if (d_faq2_) { cudaFree(d_faq2_); d_faq2_ = nullptr; }
+    if (d_fascale2_) { cudaFree(d_fascale2_); d_fascale2_ = nullptr; }
+    if (d_fahx2_) { cudaFree(d_fahx2_); d_fahx2_ = nullptr; }
+    for (int i = 0; i < 2; ++i) {
+        if (ev_pf_up_[i] != nullptr) { cudaEventDestroy(ev_pf_up_[i]); ev_pf_up_[i] = nullptr; }
+        if (ev_pf_free_[i] != nullptr) { cudaEventDestroy(ev_pf_free_[i]); ev_pf_free_[i] = nullptr; }
+    }
+    if (ev_pf_down_ != nullptr) { cudaEventDestroy(ev_pf_down_); ev_pf_down_ = nullptr; }
     if (d_fascale_) { cudaFree(d_fascale_); d_fascale_ = nullptr; }
     if (d_fahx_) { cudaFree(d_fahx_); d_fahx_ = nullptr; }
     if (d_ff_) { cudaFree(d_ff_); d_ff_ = nullptr; }
@@ -986,6 +1018,7 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         cudaEventRecord(s0_a_, streams_[0]);
     }
     size_t staged = 0;
+    const int pf_par = (int) (pf_seq_ & 1u);   // PFPIPE: this window's staging/faq set
     mt_nruns_ = 0;          // each chain reflects its own build (decode chains never set it)
     d_runs_mt_ = nullptr;
     d_ent_mt_ = nullptr;
@@ -996,6 +1029,19 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         uint8_t* hsel = h_up_;
         uint8_t* dsel = d_up_;
         if (gpuflag_mode() >= 2 && d_up2_ != nullptr && (comp_seq_ & 1u)) { hsel = h_up2_; dsel = d_up2_; }
+        // PFPIPE: the prefill windows alternate the sets by their own parity (the decode E1 selection
+        // above never fires during a prefill - gpuflag is off there).  The host order guarantees the
+        // set's previous upload retired: it precedes the previous-previous window's down, whose event
+        // the host synced two finishes ago.  The faq image alternates with the same parity.
+        const bool pf_on = pf_pipe_env() && d_up2_ != nullptr && n_tok >= 4;
+        if (pf_on && pf_par == 1) { hsel = h_up2_; dsel = d_up2_; }
+        if (pf_on && d_faq2_ != nullptr) {
+            if (pf_par == 1) {
+                int8_t* tf = d_faq_; d_faq_ = d_faq2_; d_faq2_ = tf;
+                float* t1 = d_fascale_; d_fascale_ = d_fascale2_; d_fascale2_ = t1;
+                float* t2 = d_fahx_; d_fahx_ = d_fahx2_; d_fahx2_ = t2;
+            }
+        }
         h_jobs_ = (int32_t*) (hsel + (size_t) n_tok * ACTS_STRIDE);
         d_jobs_ = (int32_t*) (dsel + (size_t) n_tok * ACTS_STRIDE);
         h_acts_ = hsel;
@@ -1055,9 +1101,19 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     }
     // ONE async upload for the acts + the job table (contiguous staging); finish() is the only wait.
     // Zero-copy: the mapped staging needs no upload at all - the kernel reads it over PCIe.
-    if (!zerocopy_ &&
-        !check(cudaMemcpyAsync(d_acts_, h_acts_, staged, cudaMemcpyHostToDevice, streams_[0]),
-               "copy acts+jobs", err)) return false;
+    // PFPIPE: the upload rides the COPY ENGINE (streams_[1]) under the previous window's kernels -
+    // streams_[0] waits its event before the gup below; the staging-set wait (ev_pf_free_) keeps the
+    // upload off a set whose jobs/run tables the still-running down of two windows ago reads.
+    if (!zerocopy_) {
+        if (pf_pipe_env() && n_tok >= 4 && d_faq2_ != nullptr) {
+            if (!check(cudaStreamWaitEvent(streams_[1], ev_pf_free_[pf_par], 0), "pf pipe free wait", err)) return false;
+            if (!check(cudaMemcpyAsync(d_acts_, h_acts_, staged, cudaMemcpyHostToDevice, streams_[1]),
+                       "copy acts+jobs", err)) return false;
+            if (!check(cudaEventRecord(ev_pf_up_[pf_par], streams_[1]), "pf up record", err)) return false;
+            if (!check(cudaStreamWaitEvent(streams_[0], ev_pf_up_[pf_par], 0), "pf up wait", err)) return false;
+        } else if (!check(cudaMemcpyAsync(d_acts_, h_acts_, staged, cudaMemcpyHostToDevice, streams_[0]),
+                          "copy acts+jobs", err)) return false;
+    }
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
     // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.  A native pack's
@@ -1177,6 +1233,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         owned_row_.push_back(jobs[j].row);
         computed_.fetch_add(1, std::memory_order_relaxed);
     }
+    // PFPIPE: the completes consume THIS snapshot - by the time they run, the next window's begin has
+    // already reloaded owned_row_/staging/faq (the pipelined loop calls it before finish_to).
+    if (pf_pipe_env() && d_faq2_ != nullptr && n_tok >= 4)
+        pf_owned_ = owned_row_;
     if (std::getenv("STRATA_MAXWELL_TIMING") != nullptr) {
         const auto bt2 = std::chrono::steady_clock::now();
         static thread_local double a_set = 0, a_all = 0;
@@ -1288,6 +1348,13 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
                                            g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
     }
     down_launched_ = true;
+    // PFPIPE: this window's down-complete event (the completes sync on it, not the stream - gup(s+1)
+    // is already queued behind it) and the staging-set-free event (the upload of s+2 waits it).
+    if (pf_pipe_env() && d_faq2_ != nullptr) {
+        cudaEventRecord(ev_pf_down_, streams_[0]);
+        cudaEventRecord(ev_pf_free_[pf_seq_ & 1u], streams_[0]);
+        pf_seq_ += 1;   // the window is fully launched; the next prefill begin takes the other set
+    }
     return true;
 }
 
@@ -1313,6 +1380,32 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         }
         return true;
     }
+    // PFPIPE (the pipelined prefill's completes): everything downstream of here reads state the next
+    // window's begin has already reloaded (owned_row_, the staging, the faq set), so this arm works
+    // purely from the snapshot + the down event: sync THIS window's down (gup(s+1) sits behind it on
+    // the stream - a stream sync would wait it too), copy the partial rows, scatter-add in rank order.
+    // The launch block below is skipped entirely (the down launched at prefill_launch_down).
+    if (pf_pipe_env() && d_faq2_ != nullptr && w_n_tok_ >= 4) {
+        if (!pf_owned_.empty()) {
+            DeviceScope scope(device_);
+            if (!scope.ok) { err = scope.err; return false; }
+            if (!check(cudaEventSynchronize(ev_pf_down_), "pf down sync", err)) return false;
+            if (!check(cudaMemcpy(h_out_, d_out_, pf_owned_.size() * (size_t) w_n_embd_ * sizeof(float),
+                                  cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
+            for (size_t si = 0; si < pf_owned_.size(); ++si) {
+                const int32_t i = pf_owned_[si];
+                const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;
+                float* dst = w_dst_ + (size_t) row * (size_t) w_n_embd_;
+                const float* src = h_out_ + si * (size_t) w_n_embd_;
+                if (w_accumulate_)
+                    for (int64_t e = 0; e < w_n_embd_; ++e) dst[e] += src[e];
+                else
+                    for (int64_t e = 0; e < w_n_embd_; ++e) dst[e] = src[e];
+            }
+        }
+        pf_owned_.clear();
+        return true;
+    }
     // E1: a decode service this tier sat out still advances the completion sequence - the verifier's
     // expected value counts every service, so the flag must rise here (a mapped write, one fence).
     if (owned_row_.empty()) {
@@ -1332,7 +1425,7 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     // into the staging block, and the host copies the rows out below.  One wait per device per layer.
     // prefill_launch_down() may already have launched it (the two-phase prefill: all four cards' downs
     // launch first, THEN the rank-ordered completes - the downs overlap like the gups already do).
-    if (!down_launched_) {
+    if (!down_launched_ && !(pf_pipe_env() && d_faq2_ != nullptr && w_n_tok_ >= 4)) {
         for (size_t j = 0; j < owned_row_.size(); ++j) h_jobs_[j * 3 + 2] = (int32_t) j;
         if (!zerocopy_ &&
             !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
@@ -1352,6 +1445,11 @@ bool MaxwellExperts::finish_chain(std::string& err) {
                                                g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
         }
         down_launched_ = true;
+        if (pf_pipe_env() && d_faq2_ != nullptr) {
+            cudaEventRecord(ev_pf_down_, streams_[0]);
+            cudaEventRecord(ev_pf_free_[pf_seq_ & 1u], streams_[0]);
+            pf_seq_ += 1;
+        }
     }
     // S0 (STRATA_MW_LAYERPROF): the span ends after the down launch, whichever path launched it; the
     // elapsed is harvested past the sync, where the events have settled.  s0_sync_ accumulates how long

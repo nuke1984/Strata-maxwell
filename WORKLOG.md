@@ -279,3 +279,19 @@ reload is in progress.
 **Conventions**: `engine/strata` = `build/strata`, backups as `engine/strata.bak-<name>-<date>`;
 local configs with credentials are gitignored; no commits/pushes by agents; comparisons always
 arm-against-arm, same day/same binary whenever possible.
+
+## 2026-10-26 - prefill campaign day 2: 75.8 -> 137.4 tok/s (+81%), the wall map after
+- MT down (S2 runs): 83.4 -> 96.6 (+15.8%), serve 53.7 -> 45.1 ms/L.  REG 55, 8.3KB smem, zero spills.
+- S0 split exposed the rank staircase (down 4.2/10.9/16.8/24.3 by card): prefill.cpp's finish loop
+  ran each card's FULL finish before the next card's down launched.  TWOPHASE (launch all downs,
+  rank-ordered completes, add order kept): 96.6 -> 126.2 (+31%).  Bit-identical block by construction.
+- Geometry A/B on the MT gup (one deploy, env-switched): 256x4 KEEPER 137.4 (+9%); 256x8 131.8-133.0,
+  256x4g (acts-in-global, full 64 warps/SM) 132.2, E=2 128.8-129.4 - all closed negative.
+- GENTLE_SYNC retested twice on the new stack (95.8, 136.2): NULL both times - the spin is not the
+  residual bottleneck.  PFPIPE (upload pipeline, double-buffered staging+faq, event completes):
+  136.5-137.0 = NULL - the uploads are 155us/window (the 2.2ms h2d figure was the per-LAYER
+  aggregate, a misread); nothing to hide.  Kept opt-in, documented null.
+- Correctness at every step: fixed 2.7k answer, 10k topics, Marguerite recall 2/2; parity 0 failures.
+- The wall map at 137.4 (51ms window): M10 serve ~32ms (gup 11.5 instruction-bound + down 4.1 with a
+  cross-card stretch to 12.6 + completes ~2ms/card) + ~19ms of untouched 3060-side prefill.
+  Next: measure/attack the 3060 share; the completion-channel serialization; the gup smem packing.

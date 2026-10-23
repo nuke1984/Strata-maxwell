@@ -4194,6 +4194,21 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                   if (mw_two_phase)
                                       for (int i = 0; i < m.mw_count; ++i)
                                           if (!m.mw[i]->prefill_launch_down(err)) return false;
+                                  // STRATA_MW_PFPIPE (opt-in): window s+1's begin (its acts upload
+                                  // rides the copy engine under window s's downs) runs BEFORE window
+                                  // s's completes - the completes then sync only the down EVENT, so
+                                  // the gup(s+1) already queued behind down(s) is not waited on.
+                                  static const bool pf_pipe = [] {
+                                      const char* e = std::getenv("STRATA_MW_PFPIPE");
+                                      return e != nullptr && std::atoi(e) != 0;
+                                  }();
+                                  const int64_t t_next = t0 + MW_SUB;
+                                  if (pf_pipe && mw_tp && t_next < T)
+                                      for (int i = 0; i < m.mw_count; ++i)
+                                          if (!m.mw[i]->begin(l, m.mw_acts.data() + t_next, ids_h + t_next * K,
+                                                              std::min(MW_SUB, T - t_next), K, nullptr,
+                                                              nullptr, false, err))
+                                              return false;
                                   for (int i = 0; i < m.mw_count; ++i)
                                       if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
                                                               N, err, mw_tp))

@@ -257,6 +257,22 @@ private:
     const int32_t* d_runs_mt_ = nullptr;
     const int32_t* d_ent_mt_ = nullptr;
     int mt_nruns_ = 0;
+    // STRATA_MW_PFPIPE (the prefill upload pipeline, 2026-10-26): the measured critical path had the
+    // four cards' acts H2D uploads (2.2 ms each at the VM's ~290 MB/s write path) serialized ahead of
+    // the gups - 8.8 ms/layer of pure PCIe wait.  With the pipe on, window s+1's upload rides the COPY
+    // ENGINE (streams_[1]) while window s's gup/down still run on streams_[0], the staging acts and the
+    // faq image alternate per window (parity of pf_seq_), and the completes sync on the down EVENT (a
+    // stream sync would also wait the already-enqueued gup(s+1)).  The faq/fasc/fahx pointers below
+    // name the CURRENT window's set; the seconds are d_faq2_/d_fascale2_/d_fahx2_.
+    int64_t pf_seq_ = 0;
+    std::vector<int32_t> pf_owned_;   // this window's owned rows, snapshotted at begin (the completes
+                                      // run after the next begin has reloaded owned_row_)
+    int8_t* d_faq2_ = nullptr;
+    float* d_fascale2_ = nullptr;
+    float* d_fahx2_ = nullptr;
+    cudaEvent_t ev_pf_up_[2] = {nullptr, nullptr};     // upload done (streams_[1]), per staging set
+    cudaEvent_t ev_pf_free_[2] = {nullptr, nullptr};   // staging set free (after its down, streams_[0])
+    cudaEvent_t ev_pf_down_ = nullptr;                 // this window's down complete (streams_[0])
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);
 
