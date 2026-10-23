@@ -273,6 +273,8 @@ private:
     cudaEvent_t ev_pf_up_[2] = {nullptr, nullptr};     // upload done (streams_[1]), per staging set
     cudaEvent_t ev_pf_free_[2] = {nullptr, nullptr};   // staging set free (after its down, streams_[0])
     cudaEvent_t ev_pf_down_ = nullptr;                 // this window's down complete (streams_[0])
+    cudaEvent_t ev_pf_ad2h_ = nullptr;                 // STRATA_MW_AD2H: the completes' pre-enqueued D2H
+    bool ad2h_armed_ = false;                          // this window's D2H was armed at launch_down
     bool begin_chain(std::string& err);
     bool finish_chain(std::string& err);
 

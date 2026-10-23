@@ -4209,10 +4209,20 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                               std::min(MW_SUB, T - t_next), K, nullptr,
                                                               nullptr, false, err))
                                               return false;
-                                  for (int i = 0; i < m.mw_count; ++i)
+                                  // STRATA_MW_REV (measurement only): complete the cards in REVERSE
+                                  // rank - the adds' order changes (float reassociation; the answers/
+                                  // recall gates judge), but the S0 down staircase flips with it iff the
+                                  // stretch is ORDER-driven, not device-driven.
+                                  static const bool rev = [] {
+                                      const char* e = std::getenv("STRATA_MW_REV");
+                                      return e != nullptr && std::atoi(e) != 0;
+                                  }();
+                                  for (int ii = 0; ii < m.mw_count; ++ii) {
+                                      const int i = rev ? (m.mw_count - 1 - ii) : ii;
                                       if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
                                                               N, err, mw_tp))
                                           return false;
+                                  }
                                  const auto sb2 = std::chrono::steady_clock::now();
                                  if (pp.on) { pp.sbeg += ppMs(sb0, sb1); pp.sfin += ppMs(sb1, sb2); }
                             }

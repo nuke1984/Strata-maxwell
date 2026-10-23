@@ -295,3 +295,20 @@ arm-against-arm, same day/same binary whenever possible.
 - The wall map at 137.4 (51ms window): M10 serve ~32ms (gup 11.5 instruction-bound + down 4.1 with a
   cross-card stretch to 12.6 + completes ~2ms/card) + ~19ms of untouched 3060-side prefill.
   Next: measure/attack the 3060 share; the completion-channel serialization; the gup smem packing.
+
+## 2026-10-26 evening - AD2H +11% (152.5 tok/s), the completes mapped, the no-overlap finding
+- STRATA_PREFILL_TIMING (existed, unused by this campaign): the 10k's GPU timeline 63.7s = host grouping
+  84.3%; the 3060's own compute just 15.7% - and it NEVER overlaps the M10 chain (the chunk loop is
+  strictly sequential per layer).  The wall is the sum of the two engines.
+- STRATA_MAXWELL_TIMING: finish sync 3.0-3.4 ms/card vs begin 0.17 - the completes carry the tail.
+- STRATA_MW_AD2H: the completes' D2H pre-enqueued behind each down at launch (copy-engine overlap),
+  rank-ordered adds kept: 137.4 -> 152.5-152.6 tok/s (+11%).  Recall 2/2, parity 0.
+- STRATA_MW_REV flip test: the down staircase follows the COMPLETION ORDER (reversed completes ->
+  reversed staircase) - order-driven, and with AD2H partly an attribution artifact (the S0 b_ record
+  is enqueued by the rank-ordered host loop).  Budget at 152.5 (per 256-tok chunk-layer, 47 ms):
+  gup 8 + down 4.4-8 + completes ~18 + 3060 5.8 + transfers 3.6 + grouping ~4.
+- GENTLE_SYNC on the event syncs: NULL (148.5) - third and final GENTLE null; the spin hypothesis is
+  dead on every path it could live.
+- Campaign: 75.8 -> 152.5 (+101%).  The honest path to 250: (a) the chunk-wavefront overlap (caps at
+  the M10 chain alone: ~200 tok/s), then (b) completes parallelization + (c) the gup packing for the
+  last ~20%.

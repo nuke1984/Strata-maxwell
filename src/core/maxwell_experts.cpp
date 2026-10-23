@@ -61,6 +61,17 @@ using strata::kernels::cuda::mw_tp_raise_flag_async;
 constexpr int H = 2560;
 constexpr int FF = 640;
 
+// STRATA_MW_AD2H: the prefill completes' D2H rides the copy engine, enqueued right behind the down
+// at launch time (the four cards' copies then overlap the downs instead of running one-per-rank inside
+// the rank-ordered tail; the ADDS stay rank-ordered, so the accumulated block is unchanged).  The
+// measured completes: sync ~3.0-3.4 ms + D2H 0.55 ms per card, ~18 ms serialized per window - and the
+// down staircase's ~2 ms steps match the per-card complete cost, so shrinking the tail should also
+// unstretch the downs.
+static bool ad2h_env() {
+    static const bool on = std::getenv("STRATA_MW_AD2H") != nullptr && std::atoi(std::getenv("STRATA_MW_AD2H")) != 0;
+    return on;
+}
+
 // STRATA_MW_PFPIPE: the prefill upload pipeline (see the members in the header).  Read once.
 static bool pf_pipe_env() {
     static const bool on = std::getenv("STRATA_MW_PFPIPE") != nullptr && std::atoi(std::getenv("STRATA_MW_PFPIPE")) != 0;
@@ -494,6 +505,10 @@ bool MaxwellExperts::open(int device,
     // STRATA_MW_PFPIPE: the second faq image (the gup(s+1) writes it while down(s) still reads set 0;
     // ~0.5 MB/card).  The events: upload-done (per staging set, on the copy stream), staging-set-free
     // (after the set's down, on the compute stream) and this-window's down-complete.
+    if (ad2h_env()) {
+        std::fprintf(stderr, "strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)\n");
+        if (!check(cudaEventCreateWithFlags(&ev_pf_ad2h_, cudaEventDisableTiming), "ad2h event", err)) { close(); return false; }
+    }
     const bool pf_pipe = pf_pipe_env();
     if (pf_pipe)
         std::fprintf(stderr, "strata maxwell: prefill upload pipeline (STRATA_MW_PFPIPE)\n");
@@ -749,6 +764,7 @@ void MaxwellExperts::close() {
         if (ev_pf_free_[i] != nullptr) { cudaEventDestroy(ev_pf_free_[i]); ev_pf_free_[i] = nullptr; }
     }
     if (ev_pf_down_ != nullptr) { cudaEventDestroy(ev_pf_down_); ev_pf_down_ = nullptr; }
+    if (ev_pf_ad2h_ != nullptr) { cudaEventDestroy(ev_pf_ad2h_); ev_pf_ad2h_ = nullptr; }
     if (d_fascale_) { cudaFree(d_fascale_); d_fascale_ = nullptr; }
     if (d_fahx_) { cudaFree(d_fahx_); d_fahx_ = nullptr; }
     if (d_ff_) { cudaFree(d_ff_); d_ff_ = nullptr; }
@@ -1348,6 +1364,14 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
                                            g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
     }
     down_launched_ = true;
+    // STRATA_MW_AD2H: the D2H rides behind the down on this card's stream - the completes then only
+    // wait the event and run the rank-ordered adds (the copy already happened, overlapped).
+    if (ad2h_env()) {
+        if (!check(cudaMemcpyAsync(h_out_, d_out_, owned_row_.size() * (size_t) H * sizeof(float),
+                                   cudaMemcpyDeviceToHost, streams_[0]), "ad2h copy", err)) return false;
+        cudaEventRecord(ev_pf_ad2h_, streams_[0]);
+        ad2h_armed_ = true;
+    }
     // PFPIPE: this window's down-complete event (the completes sync on it, not the stream - gup(s+1)
     // is already queued behind it) and the staging-set-free event (the upload of s+2 waits it).
     if (pf_pipe_env() && d_faq2_ != nullptr) {
@@ -1514,8 +1538,27 @@ bool MaxwellExperts::finish_chain(std::string& err) {
                          device_, n, 1000.0 * a_set / (double) n, 1000.0 * a_sync / (double) n);
     }
     if (w_dst_mapped_) { owned_row_.clear(); return true; }
-    if (!check(cudaMemcpy(h_out_, d_out_, owned_row_.size() * (size_t) w_n_embd_ * sizeof(float),
-                          cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
+    if (ad2h_armed_) {
+        // STRATA_MW_AD2H: the copy already ran behind the down (prefill_launch_down armed it); wait it
+        // and fall through to the SAME rank-ordered scatter the blocking copy fed.  GENTLE_SYNC (the
+        // S0/REV campaigns' finding): a spinning sync clogs the completion path the LATER cards'
+        // downs/D2Hs need - the flip test (STRATA_MW_REV) showed the down staircase follows the
+        // COMPLETION ORDER, so the completes must not spin on the host.
+        static const bool gentle2 = [] {
+            const char* e = std::getenv("STRATA_MW_GENTLE_SYNC");
+            return e != nullptr && std::atoi(e) != 0;
+        }();
+        if (gentle2) {
+            for (;;) {
+                const cudaError_t q = cudaEventQuery(ev_pf_ad2h_);
+                if (q == cudaSuccess) break;
+                if (q != cudaErrorNotReady) { err = "ad2h query: " + std::string(cudaGetErrorString(q)); return false; }
+                std::this_thread::sleep_for(std::chrono::microseconds(30));
+            }
+        } else if (!check(cudaEventSynchronize(ev_pf_ad2h_), "ad2h sync", err)) return false;
+        ad2h_armed_ = false;
+    } else if (!check(cudaMemcpy(h_out_, d_out_, owned_row_.size() * (size_t) w_n_embd_ * sizeof(float),
+                                 cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
     for (size_t s = 0; s < owned_row_.size(); ++s) {
         const int32_t i = owned_row_[s];
         const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;

@@ -33,3 +33,25 @@ all arms quality-gated (fixed answers, topic recall, 2/2 needle).  CPU rig refer
 
 STRATA_MW_MT, STRATA_MW_MT_T (128x4 default | 256x4 KEEPER | 256x8 | 256x4g), STRATA_MW_MT_E
 (4 | 2), STRATA_MW_TWOPHASE, STRATA_MW_PFPIPE, STRATA_MW_NTM, STRATA_MW_LAYERPROF.
+
+## Session 2 (2026-10-26 evening): AD2H +11% (152.5), the completes mapped, the overlap finding
+
+- STRATA_PREFILL_TIMING (the 3060-side phase profiler, pre-existing): 10k prompt = GPU timeline 63.7s of
+  which host grouping 84.3%; the 3060's OWN compute (attention+gdn+qsa+gemms+everything) = 15.7% (~10s).
+  The wall is the SUM: the 3060's attention and the M10 chain never overlap (strict per-chunk layer loop).
+- STRATA_MAXWELL_TIMING: finish sync 3.0-3.4 ms/card, begin 0.17 ms/card -> the completes (not begins)
+  carry the host tail; the down staircase's ~2 ms steps matched the per-card complete cost.
+- STRATA_MW_AD2H (the completes' D2H pre-enqueued behind each down, rank-ordered adds kept):
+  137.4 -> 152.5-152.6 tok/s (+11%), recall 2/2.  THE DAY'S WIN.
+- STRATA_MW_REV (flip test, measurement only, reversed add order): the down staircase FLIPPED with the
+  completion order (CUDA4 4.7 fastest / CUDA1 8.9 slowest, reversed from normal) -> the stretch is
+  ORDER-driven, not device-driven; later cards' [m_,b_] spans absorb the earlier completes' host time.
+  With AD2H the span's b_ record is enqueued by the rank-ordered loop - part of the "stretch" is an
+  attribution artifact; the wall-clock budget closes as: gup 8 + down 4.4-8 + completes ~18 + 3060
+  5.8 + transfers 3.6 + grouping ~4 = ~47 ms/unit (152 tok/s).
+- GENTLE_SYNC on the AD2H event syncs (30us polls): 148.5 = NULL (third and final GENTLE null).
+- The per-unit budget at 152.5: the M10 chain ~16-19 ms wall + the 3060 ~5.8 ms + host ~20 ms; the two
+  engines NEVER overlap.  Named next levers: (a) the chunk-wavefront pipeline (chunk c+1's attention
+  layers overlap chunk c's expert layers - the 3060 side is only 10s, so perfect overlap caps at the
+  M10 chain ~44s = 200 tok/s for the current chain), (b) parallel completes (the event-waits overlap,
+  the adds stay rank-ordered), (c) the gup smem packing (5 blocks/SM).
