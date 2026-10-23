@@ -50,3 +50,23 @@ The begin is trivial; the finish's stream sync absorbs the gup+down kernel walls
 | 4 | CPU-share hybrid for prefill only (let the pool take part of the prefill misses beside the M10s) | bounded by the 4 vCPUs | config+plumbing |
 
 Data: strata-pp4.out (the MWPROF prefill lines + engine prefill rates).
+
+## The fix campaign (each fix tested alone, same prompts, same session)
+
+| fix | arm | 10k prefill | verdict |
+|---|---|---:|---|
+| (baseline) | - | 75.8 tok/s (serve 59.7 ms/L, 15.0 ms/sub-batch) | reference |
+| #2 wider sub-batches | STRATA_MW_NTM=256 | **76.3 tok/s** (serve 59.1 ms/L: begin 0.70 + finish 58.4 per 256-tok batch) | **NULL** - round trips cost ~nothing; per-token serve identical (237 vs 238 us/tok). The serve is pure kernel throughput. |
+| (probe) job sort by expert | STRATA_MW_PSORT=1 | **76.1 tok/s** (finish 14.9) | **NULL** - not L2-locality-bound either; the kernel is instruction-issue-bound |
+| #4 CPU-share hybrid | STRATA_MW_PSHARE=50 | **27.5 tok/s** (serve 82.6 ms/L, d2h 2.9 ms) | **NEGATIVE 3x** - the pool drafts the host thread (the tier's driver) |
+| #4b + --no-host-worker | PSHARE=50 + no-host-worker | **26.4 tok/s** (serve 89.3, d2h 2.9) | **NEGATIVE** - the pool's page-cache reads saturate the host memory path the tier's staging needs (the D2H phase alone went 0.58 -> 2.9 ms/layer) |
+
+Two crash bugs found and fixed on the way (recorded in the commits): a const_cast write to a
+rodata flag, and the pool's MAXT-fixed job arrays overflowing on popular experts (c>MAXT now
+stays on the tier). The tier-expert guard in the CPU-share candidate list also closes a latent
+double-mark in our fork (tier-owned experts were CPU-share candidates).
+
+**Remaining fix: #1 multi-token jobs (one weight-unpack serving M tokens' dots)** - the only
+lever that cuts the instruction stream itself; expected +25-40% combined with NTM=256 (the
+multiplicity at 64-token windows is only ~1.75x, at 256 ~5x). #3 overlap is bounded ~7% (the
+non-serve phases are 3.7 ms of a ~61 ms layer).

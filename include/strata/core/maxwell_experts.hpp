@@ -115,6 +115,7 @@ public:
     /// SPLIT_MODE_TENSOR: this card holds tensor shards of the resident set (not whole experts); its
     /// output rows are PARTIAL sums the caller must reduce across cards in rank order.
     bool tensor() const { return tp_cards_ > 1; }
+    int64_t n_tok_max() const { return n_tok_max_; }   ///< the sub-batch window (STRATA_MW_NTM; the prefill's MW_SUB follows it)
     /// E1: the tier's service counter (the value the last launch/host-raise left on comp_seq_).  The
     /// dispatcher reads it to pick the double-buffered staging parity of the UPCOMING service - its
     /// ring value is seq()+1, the same value the verifier publishes as this step's expected sequence.

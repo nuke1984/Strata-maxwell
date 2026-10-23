@@ -420,8 +420,19 @@ bool MaxwellExperts::open(int device,
     // activation buffers: int8 codes + fp32 scales + hx per chunk, for H-wide and FF-wide acts.
     // n_tok_max/cap_entries bound the window.  P3.1: 8 tokens was the decode window; the prefill feeds whole
     // prompt chunks, so the window is 64 tokens (640 entries) and callers sub-batch larger chunks.
-    n_tok_max_ = 64;
-    cap_entries_ = 64 * 10;
+    // STRATA_MW_NTM (opt-in, default 64): the prefill sub-batch window - the wider arm of the 2026-10-23
+    // prefill campaign (every buffer below scales with it: acts staging + jobs + faq/fasc/fahx + the down's
+    // out; at 256 the per-card cost is ~48 MB, inside the 150 MiB reserve).
+    static const int ntm_env = [] {
+        const char* e = std::getenv("STRATA_MW_NTM");
+        const int v = e != nullptr ? std::atoi(e) : 64;
+        const int ok = (v == 64 || v == 128 || v == 256 || v == 512) ? v : 64;
+        if (ok != 64)
+            std::fprintf(stderr, "strata maxwell: sub-batch window %d tokens (STRATA_MW_NTM; 64 is the default)\n", ok);
+        return ok;
+    }();
+    n_tok_max_ = ntm_env;
+    cap_entries_ = n_tok_max_ * 10;
     // P3.2: ONE packed ActQ buffer per device, tokens contiguous ([q H][scale][hx] each, ACTS_STRIDE), so a
     // layer's window uploads only n_tok * ACTS_STRIDE bytes - not the whole 64-token buffer (measured: the
     // full 205 KB copy cost 0.073 ms per device per layer on the M10's slow host link).
@@ -823,6 +834,19 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         if (slot < 0) continue;
         jobs.push_back({slot, i / k, (int32_t) i});
     }
+    // STRATA_MW_PSORT (opt-in probe, 2026-10-23): stable-sort the window's jobs by expert slot.  The
+    // prefill builds them token-major, so one expert activated by several tokens has its jobs (and its
+    // WEIGHT READS) scattered across the list; sorted, the gup/down weight accesses of the same expert
+    // become adjacent -> L2 locality.  No numerics change (each job carries its entry index; the faq
+    // layout follows the job list, the down reads it in the same order).
+    static const bool psort = [] {
+        const char* e = std::getenv("STRATA_MW_PSORT");
+        const bool on = e != nullptr && std::atoi(e) != 0;
+        if (on) std::fprintf(stderr, "strata maxwell: prefill jobs sorted by expert (STRATA_MW_PSORT)\n");
+        return on;
+    }();
+    if (psort && jobs.size() > 1)
+        std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.slot < b.slot; });
     // One packing routine for BOTH dispatch paths (the persist ring slot and the legacy staging):
     // [acts: n_tok x ACTS_STRIDE][job table: (slot, tok, dst) x njobs] at `to`; returns the bytes
     // written.  `tp_compact` writes the COMPACT JOB SLOT as dst (SPLIT_MODE_TENSOR: the partial
