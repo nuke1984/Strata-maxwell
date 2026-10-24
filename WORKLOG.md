@@ -364,3 +364,19 @@ arm-against-arm, same day/same binary whenever possible.
   removing exactly that barrier - the consumer could not be isolated in-engine (all identified
   readers are m.cs-ordered; only a NULL-stream barrier works - a driver/vGPU-level visibility
   dependency).  Full argument + every number: bench/results/2026-10-26-prefill-campaign/README.md.
+
+## 2026-10-24 - the decode campaign opens: baseline 61.7-66.5, the anatomy, three levers closed
+- Baseline (default path): 61.7-66.5 tok/s flat over ctx 0-8k; window 47.0 ms @ T=3.3,
+  2.97 tokens/window, accepted 198-204 of 210-249.
+- Anatomy (three profilers, cross-checked): verify 44.3 = graph-real 18.7 + waitCPU 12.8 (the
+  lockstep: the graph spins on the host's completion flag ~265 us/L) + GPU-reach 3 + host staging
+  ~6 + slop; draft 3.3 serial.  M10 gup 198-219 us/L is the INSTRUCTION floor (~113M instr/card/L
+  vs 640G/s issue; DRAM slack 4.7-7x) - same physics as prefill, not recoverable on sm_50.
+  One serve per layer carries both split groups' jobs.
+- Perfect-overlap floor ~= 27-30 ms ~= 100-110 tok/s: the target IS the perfect-pipelining
+  boundary.
+- CLOSED (measured): GPUFLAG=2 parity + a hang mode at spec_min_p=0.1; spec_min_p plateau
+  (0.65 parity x20 trials, 0.35/0.2 negative - accepted is constant ~200, the MTP prefix is
+  ~3 tokens); expert-cache 2300 fails to boot (the MTP head needs 138 MiB, 99 free).
+- NEXT: speculative drafting - the draft's 3.3 ms hidden in the waitCPU shadow.
+- Full numbers: bench/results/2026-10-24-decode-campaign/README.md
