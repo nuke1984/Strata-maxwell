@@ -380,3 +380,21 @@ arm-against-arm, same day/same binary whenever possible.
   ~3 tokens); expert-cache 2300 fails to boot (the MTP head needs 138 MiB, 99 free).
 - NEXT: speculative drafting - the draft's 3.3 ms hidden in the waitCPU shadow.
 - Full numbers: bench/results/2026-10-24-decode-campaign/README.md
+
+## 2026-10-24 (session 2) - the decode lever table: 62.5 -> 71.2 tok/s (+14%), the space closed
+- Closed negative (measured): GPUFLAG=1 -3%; GPUFLAG=2 parity + hang at smp=0.1; spec_min_p plateau
+  (0.4-0.65 parity at depth 6 too); expert-cache 2300 does not boot (MTP head 138 MiB vs 99 free);
+  HOST_WAIT_US parity; --batch 2 aggregate 44 (each ~22) - the 0.1.x "aggregate >100" is gone on
+  0.2.2; --lookup-chain 4 prose -40%; --mtp-q4 crashes at load (both cache sizes); speculative
+  drafting closed by economics (a missed guess = a 44 ms redo to save 3.3 ms; needs a second
+  verifier stage this rig lacks).
+- WINNERS: --spec 6 (+5.3% - T-flat windows make deeper verified drafts free; greedy outputs
+  IDENTICAL, every row target-verified; NOTE this supersedes the old "depth 4" call, which dated
+  from the CPU-pool era); + STRATA_MW_MT=1 (+6.9% more - T=6 windows cross the MT n_tok>=4 gate);
+  + STRATA_MW_MT_T=256x4 (+0.7%).  Depth 8 with MT: 70.0 - the optimum is 6 (acceptance-capped).
+- Final: 71.2 tok/s on the standard list protocol; full gates green (arithmetic, 10k topics,
+  needle 2/2, parity 0).  Prefill side effect: ~101 tok/s with the MT envs (from 75).
+- The remaining 40% to 100: the waitCPU lockstep (12.8 ms) + draft (3.3) + reach (3.3) - every
+  incremental lever is in the table above; the escape is the decode wavefront (a second verifier
+  resource), unbuildable on this rig as configured.
+- Full table: bench/results/2026-10-24-decode-campaign/README.md

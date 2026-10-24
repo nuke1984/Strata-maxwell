@@ -44,3 +44,31 @@ graph idle): speculative drafting - draft K+1's chain during K's verify on the a
 acceptance, validate against the verdict, re-draft on miss.  The draft runs on the 3060 whose
 graph idles 12.8 ms/window spinning on the tier flag, so the overlap target is genuinely idle
 hardware, not contention.
+
+## Session 2 (2026-10-24, later): the lever table - closed negative x8, the winners x3 (62.5 -> 71.2, +14%)
+
+| Arm | Result (300-tok list protocol) | Verdict |
+|---|---|---|
+| STRATA_MW_GPUFLAG=1 (device flags, host sync kept) | 58.1-60.1 (-3%) | closed negative: the multi-wait nodes cost more than the de-poisoned downs save |
+| STRATA_MW_GPUFLAG=2 (no-wait) | parity (62.3/62.5) + a hang at spec_min_p=0.1 | closed (see session 1) |
+| spec_min_p 0.4-0.65 x depth-6 (per-request, n=2 each) | all parity (min 4.48-4.62 s) | 0.5 stands |
+| --expert-cache 2300 | fails to boot (MTP head needs 138 MiB, 99 free) | closed: VRAM-capped |
+| STRATA_HOST_WAIT_US=10 | 61.8-64.4 (parity) | closed |
+| --batch 2 (ctx 64k; 256k does not fit the head) | each request ~22, aggregate ~44 (-30%) | closed negative: the 0.1.x "aggregate >100" does not hold on 0.2.2's serving stack |
+| --lookup-chain 4 | lists neutral, PROSE 39.8 (-40%) | closed negative |
+| --mtp-q4 all | crashes at load ("writing the draft head"), at cache 1800 AND 1700 | closed: broken on this stack |
+| speculative draft overlap (analysis) | a missed guess costs a 44 ms verify redo to save 3.3 ms; only pays on a second idle verifier stage, which this rig lacks | closed by economics |
+| **--spec 6** (from 4) | 65.4-66.2 (**+5.3%**), accepted 230 of 270-283 | **WINNER** (greedy outputs identical: every row still target-verified) |
+| **+ STRATA_MW_MT=1** | 67.0-70.6 | **WINNER** (+6.9% more): T=6 decode windows cross the MT kernels' n_tok>=4 gate - the run-table gup beats the batch kernel at T=6 |
+| **+ STRATA_MW_MT_T=256x4** | 70.3-71.3 | **WINNER** (+0.7%): the prefill geometry holds on decode |
+| --spec 8 + MT + 256x4 | 69.4-70.5 | the optimum stays at 6 (acceptance-model-capped) |
+
+The winning stack's gates (all pass): 2+2=4, 17x23=391, 9999^2=99980001, Paris, 10k topics correct,
+needle recall 2/2, maxwell_iq_parity 0 failures.  Side effect: with the MT envs, prefill also rose
+75 -> ~101 tok/s (the full 152.5 prefill stack needs its own AD2H/TWOPHASE envs on top).
+
+**Final position: 71.2 tok/s (baseline 62.5, +14%)** via --spec 6 (config arg) + STRATA_MW_MT=1 +
+STRATA_MW_MT_T=256x4 (env knobs, default off).  The window is now ~43 ms; the remaining 40% to 100
+is the waitCPU lockstep (12.8 ms) + the serial draft (3.3) + reach (3.3) - the incremental lever
+space is measured-closed (the table above); the next step would be the decode wavefront, which
+needs a second verifier resource this rig does not have.
