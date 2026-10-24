@@ -414,3 +414,14 @@ arm-against-arm, same day/same binary whenever possible.
   this rig cannot host one (the M10s cannot run the dense model; a drafter on an M10 runs ~10x
   slower).  Aggregate (--batch 2) measured 44 - no side door.  Full gates + parity 0 on the final
   binary.  Every number: bench/results/2026-10-24-decode-campaign/README.md.
+
+## 2026-10-24 (production switch, user go) - the full fast stack is LIVE
+- Production now serves: config strata-spec6.json (the production config + --spec 6) with env
+  STRATA_MW_MT=1 STRATA_MW_MT_T=256x4 STRATA_MW_NTM=256 STRATA_MW_TWOPHASE=1 STRATA_MW_AD2H=1.
+- Launch: setsid env STRATA_MW_MT=1 STRATA_MW_MT_T=256x4 STRATA_MW_NTM=256 STRATA_MW_TWOPHASE=1
+  STRATA_MW_AD2H=1 nohup .venv/bin/python serve/server.py --engine strata
+  --config strata-spec6.json --port 8088 &
+- Live-verified (2026-10-24): prefill 151.9/152.1 (2.7k), 150.1 (10k diverse); decode 72.0-72.6
+  (300-tok lists); gates green live (2+2, 17x23=391, 9999^2, Paris, 10k topics, needle 2/2).
+- NEVER add STRATA_MW_DRED (quarantined; see bench/results/2026-10-26-prefill-campaign).  The
+  latent cross-stream ordering note applies to this stack as documented (safe as deployed).
