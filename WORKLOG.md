@@ -398,3 +398,19 @@ arm-against-arm, same day/same binary whenever possible.
   incremental lever is in the table above; the escape is the decode wavefront (a second verifier
   resource), unbuildable on this rig as configured.
 - Full table: bench/results/2026-10-24-decode-campaign/README.md
+
+## 2026-10-24 (session 3) - q4 forensics + the decode ceiling verdict: ~71 tok/s, 100 needs a second verifier
+- CORRECTION: the winning stack's window is ~61 ms @ 4.35 tokens/window (not the ~43 ms session 2
+  mis-stated); rate 70.3-71.9 across sessions on the standard protocol.
+- The mtp-q4 crash root-caused: the Q4_0 image (153.07 MB) is BIGGER than this model's draft head
+  (144.57 MB, ~4.25 bits/value - denser than Q4_0); the in-place rewrite cannot work.  Hardening
+  left in tree: OnDevice guards + an honest error message.  --mtp-q4 proj (loads after the fix):
+  66.2 - NEGATIVE (noisier drafts: accepted 230/278 vs 234/258).  spec_min_p re-closed on the MT
+  stack (0.5 optimal).
+- THE CEILING VERDICT: the decode ceiling within every architecture this tree offers is ~71 tok/s.
+  The 61 ms window = graph-real ~20 (floors) + waitCPU 14.3 (every protocol removal measured) +
+  draft 5.2 (data-serial; q4 negative) + staging ~7 + reach 2.7.  100 needs the window <= 43.5 =
+  both walls gone - only the decode wavefront (speculative windows on a SECOND verifier) can, and
+  this rig cannot host one (the M10s cannot run the dense model; a drafter on an M10 runs ~10x
+  slower).  Aggregate (--batch 2) measured 44 - no side door.  Full gates + parity 0 on the final
+  binary.  Every number: bench/results/2026-10-24-decode-campaign/README.md.

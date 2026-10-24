@@ -190,6 +190,10 @@ const void* MtpDrafter::wq(const char* name, int& type) const {
 // --mtp-q4: every Q8_0 tensor of dense.bin as Q4_0 (ggml's reference quantizer), in one device buffer
 bool MtpDrafter::make_q4_dense(const std::vector<uint8_t>& blob, std::string& err) {
 #ifdef STRATA_NATIVE_EXPERTS
+    // the bind can run with another device current (the Maxwell tier's open() leaves its last card
+    // in scope); dense4_ is allocated on the drafter's device - guard the scope or the malloc/copy
+    // land in a foreign context and fail (the --mtp-q4 load crash on the M10 rig)
+    const OnDevice on_device(device_);
     uint64_t total = 0;
     std::vector<std::pair<const Tensor*, uint64_t>> plan;
     for (const auto& t : tensors_) {
@@ -225,6 +229,9 @@ bool MtpDrafter::make_q4_dense(const std::vector<uint8_t>& blob, std::string& er
 // --mtp-q4: the draft head's subset rows as Q4_0 (dequantized from the main head's format)
 bool MtpDrafter::make_q4_head(std::string& err) {
 #ifdef STRATA_NATIVE_EXPERTS
+    // as make_q4_dense: dhead_ lives on the drafter's device, the bind's caller may hold another
+    // one current (the tier's open()); without the guard the rewrite copy fails and the load dies
+    const OnDevice on_device(device_);
     const int64_t N = g_->n_embd;
     const auto* tt = ggml_get_type_traits((ggml_type) head_->type());
     if (tt == nullptr || tt->to_float == nullptr || N % 32 != 0) { err = "mtp: --mtp-q4 cannot read the head's format"; return false; }
@@ -237,7 +244,10 @@ bool MtpDrafter::make_q4_head(std::string& err) {
         ggml_quantize_chunk(GGML_TYPE_Q4_0, row.data(), dst.data() + (size_t) r * out_row, 0, 1, N, nullptr);
     }
     // the Q4_0 rows replace the subset in place (they are smaller)
-    if (cudaMemcpy(dhead_, dst.data(), dst.size(), cudaMemcpyHostToDevice) != cudaSuccess) { err = "mtp: writing the draft head"; return false; }
+    if (cudaMemcpy(dhead_, dst.data(), dst.size(), cudaMemcpyHostToDevice) != cudaSuccess)
+        { err = std::string("mtp: writing the draft head: ") + cudaGetErrorString(cudaGetLastError())
+                + " (dev " + std::to_string(device_) + ", dst " + std::to_string(dst.size())
+                + " B, head " + std::to_string((size_t) n_dvocab_ * in_row) + " B)"; return false; }
     dhead_type_ = GGML_Q4_0;
     std::fprintf(stderr, "strata mtp: --mtp-q4: draft head over %lld tokens as Q4_0 (%.1f MiB read per step, was %.1f)\n",
                  (long long) n_dvocab_, (double) dst.size() / 1048576.0, (double) src.size() / 1048576.0);

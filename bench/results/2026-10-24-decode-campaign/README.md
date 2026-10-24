@@ -72,3 +72,54 @@ STRATA_MW_MT_T=256x4 (env knobs, default off).  The window is now ~43 ms; the re
 is the waitCPU lockstep (12.8 ms) + the serial draft (3.3) + reach (3.3) - the incremental lever
 space is measured-closed (the table above); the next step would be the decode wavefront, which
 needs a second verifier resource this rig does not have.
+
+## Session 3 (2026-10-24, evening): the q4 forensics, the corrected arithmetic, the ceiling verdict
+
+CORRECTION to session 2's closing note: the winning stack's window is **~61 ms @ 4.35 tokens/window**
+(300 tok / 69-70 windows / 4.21-4.26 s), not ~43 ms - the T=6 window does more verify work than the
+T=3.3 one; the rate gain came from tokens/window 2.97 -> 4.35 outrunning the window 47 -> 61 ms.
+
+Fresh anatomy on the winning stack (instrumented ~7%): verify ~55 = graph-real ~20 + **waitCPU 14.26**
+(10.89 GDN + 3.37 QSA, ~300 us/L uniform) + host staging ~7 + GPU-reach 2.65 + stage/slop; **draft 5.16**
+(deeper chains draft 5 steps).  T avg 4.74 of 6, VRAM hits 2.23/L of ~47 visits.
+
+### The mtp-q4 forensics (the load crash root-caused)
+- The real error (after making the message honest): "writing the draft head: invalid argument
+  (dev 0, dst 153070560 B, head 144566640 B)" - **the Q4_0 image is BIGGER than the head**: this
+  model's draft head is ~4.25 bits/value (1360 B/row), denser than Q4_0 (1440 B/row).  The in-place
+  rewrite cannot work; the feature assumes a Q8_0 head.  Upstream hardening left in the tree:
+  OnDevice guards in make_q4_dense/make_q4_head (the bind can hold another device current) + the
+  error now carries the sizes.  q4-head: physically inapplicable to this model.
+- --mtp-q4 proj (Q8_0 -> Q4_0 draft projections; loads fine after the fix): **66.2 tok/s - NEGATIVE**
+  vs 71.2 (at cache 1700; the mechanism is visible: noisier 4-bit drafts - accepted 230/278 vs
+  234/258).  Closed.
+- spec_min_p re-swept on the MT stack (0.35-0.5, interleaved): 0.5 optimal (4.287 s median; all
+  lower thresholds worse).  Closed (twice now, once per stack).
+
+## THE CEILING VERDICT (measured, 2026-10-24)
+
+The M10 rig's decode ceiling within every architecture this tree offers is **~71 tok/s**
+(single request, greedy, standard list protocol; 70.3-71.9 across sessions).  The case:
+
+1. EVERY incremental lever is measured-closed (16 arms across sessions 1-3: the tables above).
+   The winners: --spec 6 + STRATA_MW_MT=1 + STRATA_MW_MT_T=256x4 (62.5 -> 71.2).
+2. The window at the optimum (~61 ms @ 4.35 tok/window) decomposes as: graph-real ~20 ms (each
+   phase at or under its bandwidth/instruction floor - hc reads ~5 ms ARE the weight bytes), 
+   waitCPU 14.3 ms (the per-layer lockstep: the graph spins on the host's tier flag while
+   [staging + H2D + gup(instruction floor) + down] runs - every protocol removal measured:
+   E1 mode 1 -3%, mode 2 parity + a hang, persist parity, dispatch threads negative in P3.4),
+   draft 5.2 ms (data-serial: the chain needs the verify's own residual rows; q4 closed above;
+   overlap needs a speculative window whose miss costs a full-window redo >= the 5.2 saved),
+   host staging ~7 + reach 2.7 + slop.
+3. 100 tok/s needs the window at <= 43.5 ms - i.e. removing ~ALL of waitCPU AND the draft: the two
+   walls whose every in-architecture attack is closed with numbers.  The remaining mechanism is
+   the decode wavefront (speculative windows + snapshot undo on a second verifier resource), which
+   this rig cannot host: the M10s cannot run the dense model/KV, and a drafter moved to an M10
+   would compute its chain ~10x slower (sm_50, no tensor cores).  tokens/window is model-capped
+   (depth ladder 4/6/8 closed; threshold closed twice; acceptance ~4.35 at the optimum).
+4. Aggregate throughput is not a side door: --batch 2 measured 44 aggregate (worse than one slot).
+
+Like prefill's 155-vs-250, the 100 target sits exactly at the perfect-overlap boundary of this
+architecture; the measured, shippable optimum is 71.  Full gates green on the final binary
+(arithmetic, 10k topics, needle 2/2, maxwell_iq_parity 0 failures; the binary carries only the
+inert q4 hardening, default paths unchanged).
