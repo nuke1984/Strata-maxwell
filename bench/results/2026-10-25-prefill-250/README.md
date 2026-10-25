@@ -125,3 +125,38 @@ the latent ordering debt is structurally satisfied by the schedule, not borrowed
 Prerequisites: fix the PFPIPE allocation hole (allocate set 2 when the knob is on), keep the
 Dm tail slots per-sub-batch disjoint (they are), gates on every step.  Est. per-layer saving at
 8 sub-batches: up to ~7x the overlappable host share - to be measured, not assumed.
+
+## Session 3 (2026-10-25 night): PFPIPE armed for the first time - NEGATIVE and FAULTING (the barrier's third confirmation)
+
+The arm: the PFPIPE allocation hole fixed (d_up2_/h_up2_ now allocated under the knob - it was
+gpuflag>=2-only, which is why pf_on was always false), plus two never-run-path bugs hardened:
+ev_pf_down_ is now recorded under PFPIPE (it was DRED-only - the completes would have synced a
+never-recorded event and scattered stale partials), and the PFPIPE completes now use the AD2H
+pre-arm (the original form did a blocking D2H, discarding AD2H's overlap).
+
+| run (same binary, same day) | 2.7k | 10k | gates |
+|---|---:|---:|---|
+| baseline (incumbent stack) | 152.0/152.2 | - | green |
+| +STRATA_MW_PFPIPE=1 (ARMED, banner x4) | 150.6/150.7 | 148.8 | green on the big prompts - then the engine FAULTED on a later small request: "MaxwellExperts (CUDA2): pf down sync: an illegal memory access" |
+
+VERDICT: the sub-batch pipeline (the only legal overlap inside the chunk-major architecture) is
+measured NEGATIVE (-1%) and UNSTABLE.  The overlap thesis failed because the completes' wall is
+DEVICE-WAIT time, not host-CPU time: the M10 round s+1 sits behind round s on the same per-card
+stream, so overlapping the host's waits buys nothing - and compressing the completes' host latency
+trips the SAME illegal-access family as DRED modes 1/3.  This is the THIRD independent confirmation
+of the barrier (DRED modes 1/3: crash; mode 6: wrong answers; PFPIPE armed: crash).
+
+PFPIPE joins DRED as DO-NOT-ENABLE (the hardening stays - a broken knob that never ran was worse -
+but its armed form is measured negative and faulting).  The winning stack is unchanged.
+
+### The arithmetic after the third confirmation (measured floors only)
+
+The unit floor with PERFECT 3060-side overlap (the layer-major wavefront, whose M10 rounds stay
+exactly today's serial form): M10 serve 16-19 ms + completes ~13-18 ms (barrier-priced - three
+confirmations) + combine/H2D ~4-6 ms = ~33-43 ms per 256-tok unit = a ceiling of ~200-227 tok/s
+EVEN IF the 3060+host work hid perfectly.  250 (unit <= 28.9 ms) requires compressing the
+serve+completes wall itself - precisely what DRED (5 sessions), mode 6/7 economics, and now PFPIPE
+each measured to be correctness-load-bearing or faulting on this vGPU stack.
+Remaining honest arms before any verdict: (a) interleave the next grouping into the completes'
+idle waits (bounded by the ~4 ms grouping), (b) fp16 partials (halve the D2H/H2D bytes, ~2 ms).
+Both are sub-10% arms; neither reaches 250 alone or stacked.

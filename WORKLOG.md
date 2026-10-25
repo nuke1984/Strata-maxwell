@@ -457,3 +457,18 @@ arm-against-arm, same day/same binary whenever possible.
   allocation hole), begin(s+1) before completes(s), M10 serve overlaps the completes' host
   work; the schedule adds the barrier distance structurally.  Measured one change at a time.
 - Production restored (fast stack) and verified (answer 4).
+
+## 2026-10-25 (session 3) - PFPIPE armed: NEGATIVE (-1%) and FAULTING; the barrier's third confirmation
+- Fixed the PFPIPE allocation hole (d_up2_ under the knob) + two never-run-path bugs (ev_pf_down_
+  never recorded; the completes' blocking D2H discarding AD2H).  The arm then RAN for the first
+  time (banner x4): 150.6/150.7 (2.7k), 148.8 (10k) vs 152.0/152.2 same-binary baseline - NEGATIVE -
+  and after passing the big-prompt gates the engine FAULTED ("pf down sync: illegal memory access",
+  CUDA2) on a later small request.  PFPIPE = DO-NOT-ENABLE (hardening kept; armed form measured).
+- WHY: the completes' wall is device-wait time (the M10 rounds serialize per-card stream), not
+  host-CPU time - overlapping host waits buys nothing; compressing the completes' host latency is
+  the DRED-modes-1/3 fault family.  THIRD independent barrier confirmation.
+- Floor arithmetic (measured): perfect 3060 overlap still floors at serve 16-19 + completes 13-18
+  + join 4-6 = 33-43 ms/unit = ~200-227 tok/s ceiling; 250 needs the serve+completes wall broken -
+  the wall three experimental families price as correctness-load-bearing/faulting on this stack.
+- Remaining arms before a verdict: interleave-grouping (~4 ms bound), fp16 partials (~2 ms).
+- Production restored (fast stack), verified (answer 4).

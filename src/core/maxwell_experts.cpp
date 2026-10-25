@@ -493,7 +493,11 @@ bool MaxwellExperts::open(int device,
     } else {
         if (!check(cudaMalloc(&d_up_, up_bytes_), "cudaMalloc staging", err)) { close(); return false; }
         if (!check(cudaMallocHost((void**) &h_up_, up_bytes_), "cudaMallocHost staging", err)) { close(); return false; }
-        if (gpuflag_mode() >= 2) {   // E1 mode 2: the second staging set (layer l+1 stages while l reads)
+        if (gpuflag_mode() >= 2 || pf_pipe_env()) {   // E1 mode 2 OR PFPIPE: the second staging set
+                                                       // (layer l+1 stages while l reads).  The 2026-10-25
+                                                       // fix: PFPIPE's pf_on requires d_up2_, but it was
+                                                       // allocated ONLY under gpuflag>=2 - the arm never ran
+                                                       // (its documented null measured a dead knob).
             if (!check(cudaMalloc(&d_up2_, up_bytes_), "cudaMalloc staging2", err)) { close(); return false; }
             if (!check(cudaMallocHost((void**) &h_up2_, up_bytes_), "cudaMallocHost staging2", err)) { close(); return false; }
         }
@@ -1411,8 +1415,11 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
         ad2h_armed_ = true;
     }
     // The down-complete event: PFPIPE's completes sync on it, and DRED's caller waits it to order the
-    // peer copy of this card's partials.
-    if (dred_env() && ev_pf_down_ != nullptr) cudaEventRecord(ev_pf_down_, streams_[0]);
+    // peer copy of this card's partials.  Recorded under PFPIPE too (the 2026-10-25 fix: the PFPIPE
+    // completes synced an event only DRED ever recorded - a never-recorded event "completes"
+    // immediately and the partials would scatter before the down wrote them).
+    if ((dred_env() || (pf_pipe_env() && d_faq2_ != nullptr)) && ev_pf_down_ != nullptr)
+        cudaEventRecord(ev_pf_down_, streams_[0]);
     // PFPIPE: the staging-set-free event (the upload of s+2 waits it).
     if (pf_pipe_env() && d_faq2_ != nullptr) {
         cudaEventRecord(ev_pf_free_[pf_seq_ & 1u], streams_[0]);
@@ -1457,9 +1464,17 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         if (!pf_owned_.empty()) {
             DeviceScope scope(device_);
             if (!scope.ok) { err = scope.err; return false; }
-            if (!check(cudaEventSynchronize(ev_pf_down_), "pf down sync", err)) return false;
-            if (!check(cudaMemcpy(h_out_, d_out_, pf_owned_.size() * (size_t) w_n_embd_ * sizeof(float),
-                                  cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
+            if (ad2h_armed_) {
+                // the AD2H pre-arm rode behind the down (the 2026-10-25 fix: the original PFPIPE form
+                // did a BLOCKING D2H here, throwing away AD2H's +11% overlap; the pre-armed copy has
+                // already landed by the time this window's down event fired).
+                if (!check(cudaEventSynchronize(ev_pf_ad2h_), "pf ad2h sync", err)) return false;
+                ad2h_armed_ = false;
+            } else {
+                if (!check(cudaEventSynchronize(ev_pf_down_), "pf down sync", err)) return false;
+                if (!check(cudaMemcpy(h_out_, d_out_, pf_owned_.size() * (size_t) w_n_embd_ * sizeof(float),
+                                      cudaMemcpyDeviceToHost), "copy results batch", err)) return false;
+            }
             for (size_t si = 0; si < pf_owned_.size(); ++si) {
                 const int32_t i = pf_owned_[si];
                 const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;
