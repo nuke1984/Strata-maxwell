@@ -37,6 +37,16 @@ hold a model's routed experts, medium-big MoE models become affordable to serve.
 
 How to build and run it: **[docs/MAXWELL.md](docs/MAXWELL.md)**.
 
+**The M10 tier was written with GLM 5.3 (Z.ai).**
+
+## The test: M10 VRAM vs CPU RAM
+
+**The test's specific purpose: serve the model at its full 256K context.** At that context the
+KV cache consumes most of the 3060's 12 GB, leaving only ~2.5 GiB for experts — so **22,702 of
+the 24,576 routed experts (92%) must be offloaded**, and their main load falls on the M10
+(setup A) or on host RAM (setup B). This is the particular test that measures the effective
+cost of offloading experts, and whether the M10's 32 GB can carry most of a big MoE's experts.
+
 ```text
                        prompt
                           |
@@ -57,16 +67,6 @@ How to build and run it: **[docs/MAXWELL.md](docs/MAXWELL.md)**.
    | resident tier     |     | resident copy     |
    +-------------------+     +-------------------+
 ```
-
-**The M10 tier was written with GLM 5.3 (Z.ai).**
-
-## The test: M10 VRAM vs CPU RAM
-
-**The test's specific purpose: serve the model at its full 256K context.** At that context the
-KV cache consumes most of the 3060's 12 GB, leaving only ~2.5 GiB for experts — so **22,702 of
-the 24,576 routed experts (92%) must be offloaded**, and their main load falls on the M10
-(setup A) or on host RAM (setup B). This is the particular test that measures the effective
-cost of offloading experts, and whether the M10's 32 GB can carry most of a big MoE's experts.
 
 Same host, same model, **equal expert split** — the one comparison that counts, both sides
 fully deterministic (every expert in real memory, no page cache, no file reads after load).
