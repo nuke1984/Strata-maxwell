@@ -1,0 +1,5 @@
+{
+  "model_name": "qwen3.8-flash-next-iq2_xs",
+  "api_key": "YOUR-API-KEY",
+  "port": 8088
+}

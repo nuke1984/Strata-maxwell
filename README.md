@@ -35,6 +35,15 @@ hold a model's routed experts, medium-big MoE models become affordable to serve.
   `STRATA_MW_TWOPHASE`, `STRATA_MW_AD2H`, `STRATA_MW_FASTCOMPLETE`.
 - MTP speculative decoding (spec 6); PLE n-gram lookups over direct I/O.
 
+How to build and run it: **[docs/MAXWELL.md](docs/MAXWELL.md)**.
+
+```mermaid
+flowchart LR
+    P["prompt"] --> R["RTX 3060 (sm_86)<br/>dense spine · KV k8v4 · MTP draft<br/>expert cache: 1874 experts"]
+    R -->| "cache misses: the other 22,702 experts" | M["setup A: Tesla M10<br/>4× GK210 dies · 30.5 GB<br/>resident expert tier"]
+    R -->| "cache misses: the other 22,702 experts" | C["setup B: CPU RAM<br/>32.2 GB page-locked<br/>resident copy"]
+```
+
 **The M10 tier was written with GLM 5.3 (Z.ai).**
 
 ## The test: M10 VRAM vs CPU RAM
@@ -76,12 +85,24 @@ The implication goes past this one rig: good results with the experts offloaded 
 **open the way to very cheap serving hardware** — a $100 cast-off card carries the experts —
 and **free the host's CPU and RAM for other compute**.
 
+## Limits & open questions
+
+- Measured on exactly **one rig and one model** (Qwen3.8-Flash-Next, IQ2_XS pack). No other
+  model, host GPU, or M10 count has numbers behind it.
+- The M10 tier prefills in 64-token windows: host RAM wins prompt speed ~2.8× (measured);
+  decode is where the M10 pays (~1.8×). Prompt-heavy, decode-light workloads would pick B.
+- **Never tried**: a mixed tier — M10 for the decode-hot experts + RAM for prefill breadth.
+- A full load takes ~4-6 minutes; the tier must see the M10's dies as CUDA devices with
+  enough free VRAM (verified at load — the engine refuses to serve half-loaded).
+
 ## Use it freely
 
 The code is MIT licensed, same as Strata (see [LICENSE](LICENSE)). Fork it, run your own
 experiments — other cards, other MoE models, other expert splits, other context lengths — and
-treat `bench/results/` as the template for recording what you measure. Contributions and
-reproductions are welcome.
+treat `bench/results/` as the template for recording what you measure (the protocol script is
+[`bench/prefarm.py`](bench/prefarm.py), the index is
+[`bench/results/README.md`](bench/results/README.md)). Contributions and reproductions are
+welcome.
 
 Full records: [`WORKLOG.md`](WORKLOG.md) and [`bench/results/`](bench/results/) (the
 head-to-head with every number and its load-log evidence:
