@@ -146,3 +146,15 @@ silicon's price for 2-bit dequant, not a tuning gap.
   itself is functionally verified.
 - LAUNCH HYGIENE (bit us once): drain ALL FIVE GPUs before relaunch (a GPU0-only check left the
   M10s holding parity's memory; the tier's 8 GB/die open then failed silently at "policy is").
+
+## 2026-10-25 (the head-to-head) - strata-maxwell-M10 vs strata-standard CPU/RAM, same host, equal expert split
+- Stock 0.2.6 built clean (/home/toor/Strata-stock026 worktree); A/B with IDENTICAL generic args
+  and EQUAL 3060 expert caches (1874 slots both, verified).  Full gates green on every run.
+- THE NUMBERS (engine-log tok/s): A (M10) prefill 153-154, decode 69.7-70.4.  B (CPU/RAM,
+  stock 0.2.6): prefill 42-54 partially warm -> **219-300 (2.7k) / 397.8 (10k) fully warm**;
+  decode 26-42.  The historical 259.9 reproduces and is exceeded: it was this host's warm
+  page-cache path (39 GB of experts cached).
+- VERDICT: the M10 stack wins decode ~2x and is warmth-independent; the warm CPU/RAM path wins
+  prefill ~2x and is cache-state-dependent.  Production stays on A (stable decode + stable
+  prefill).  Open: the B warmth/flags residual, and a never-tried mixed mode.
+- bench/results/2026-10-25-m10-vs-standard/README.md carries the full schema and every number.
