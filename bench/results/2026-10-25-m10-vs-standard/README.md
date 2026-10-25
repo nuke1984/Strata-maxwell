@@ -1,5 +1,9 @@
 # 2026-10-25 — THE test: strata-maxwell (experts in M10 VRAM) vs strata-standard (experts in CPU RAM)
 
+Purpose: serve the model at its **full 256K context** — at that context the KV cache consumes
+most of the 3060's 12 GB, leaving ~2.5 GiB for experts, so 92% of the routed experts must be
+offloaded. The test measures the effective cost of that offload: M10 VRAM (A) vs host RAM (B).
+
 One head-to-head, this host (RTX 3060 + 4×M10, 4-core AVX2 CPU, 39 GB RAM), same model/pack/PLE
 shard/MTP/256k/kv-k8v4/profile. Both sides deterministic: every routed expert lives in real
 memory (VRAM or page-locked RAM), no page cache, no mmap-on-demand, no file reads after load.

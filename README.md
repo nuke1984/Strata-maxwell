@@ -39,6 +39,12 @@ hold a model's routed experts, medium-big MoE models become affordable to serve.
 
 ## The test: M10 VRAM vs CPU RAM
 
+**The test's specific purpose: serve the model at its full 256K context.** At that context the
+KV cache consumes most of the 3060's 12 GB, leaving only ~2.5 GiB for experts — so **22,702 of
+the 24,576 routed experts (92%) must be offloaded**, and their main load falls on the M10
+(setup A) or on host RAM (setup B). This is the particular test that measures the effective
+cost of offloading experts, and whether the M10's 32 GB can carry most of a big MoE's experts.
+
 Same host, same model, **equal expert split** — the one comparison that counts, both sides
 fully deterministic (every expert in real memory, no page cache, no file reads after load).
 
@@ -63,6 +69,17 @@ engine logs), two 300-token greedy decodes, full quality gates on both sides —
 deterministic, and leaves all 39 GB of host RAM free. Host RAM wins prefill (~2.8× on fresh
 2.7k prompts; the CPU's wide prefill windows against the M10 tier's 64-token windows). For
 interactive serving the M10 tier is the production choice on this rig.
+
+The implication goes past this one rig: good results with the experts offloaded to an M10
+**open the way to very cheap serving hardware** — a $100 cast-off card carries the experts —
+and **free the host's CPU and RAM for other compute**.
+
+## Use it freely
+
+The code is MIT licensed, same as Strata (see [LICENSE](LICENSE)). Fork it, run your own
+experiments — other cards, other MoE models, other expert splits, other context lengths — and
+treat `bench/results/` as the template for recording what you measure. Contributions and
+reproductions are welcome.
 
 Full records: [`WORKLOG.md`](WORKLOG.md) and [`bench/results/`](bench/results/) (the
 head-to-head with every number and its load-log evidence:
