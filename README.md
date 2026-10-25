@@ -37,11 +37,25 @@ hold a model's routed experts, medium-big MoE models become affordable to serve.
 
 How to build and run it: **[docs/MAXWELL.md](docs/MAXWELL.md)**.
 
-```mermaid
-flowchart LR
-    P[prompt] --> R["RTX 3060 (sm_86)<br/>dense spine · KV k8v4 · MTP draft<br/>expert cache: 1874 experts"]
-    R -- "cache misses: the other 22,702 experts" --> M["setup A: Tesla M10<br/>4× GK210 dies · 30.5 GB<br/>resident expert tier"]
-    R -- "cache misses: the other 22,702 experts" --> C["setup B: CPU RAM<br/>32.2 GB page-locked<br/>resident copy"]
+```text
+                       prompt
+                          |
+                          v
+          +---------------------------------+
+          |  RTX 3060 (sm_86)               |
+          |  dense spine, KV k8v4, MTP      |
+          |  expert cache: 1874 experts     |
+          +---------------------------------+
+                          |
+      cache misses: the other 22,702 experts
+             |                         |
+             v                         v
+   +-------------------+     +-------------------+
+   | setup A           |     | setup B           |
+   | Tesla M10         |     | CPU RAM           |
+   | 4x GK210, 30.5 GB |     | 32.2 GB locked    |
+   | resident tier     |     | resident copy     |
+   +-------------------+     +-------------------+
 ```
 
 **The M10 tier was written with GLM 5.3 (Z.ai).**
