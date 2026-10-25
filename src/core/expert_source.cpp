@@ -5,6 +5,8 @@
 #include "strata/platform/aux_cpus.hpp"
 #include "strata/core/remote_experts.hpp"
 #include "strata/core/peer_experts.hpp"
+#include "strata/core/maxwell_experts.hpp"
+#include "strata/core/maxwell_meta.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
 #include "strata/artifact/gguf_reader.hpp"
 
@@ -3454,6 +3456,32 @@ uint64_t FileExpertSource::release(int64_t layer, int64_t expert) {
 #endif
 }
 
+bool FileExpertSource::drop_file_cache(std::string& err) {
+    err.clear();
+    if (maps_.empty()) { err = "FileExpertSource: no mapped experts"; return false; }
+#if defined(_WIN32)
+    // Windows leaves the mapped pages out of the working set on its own (see `warm`); nothing to do here.
+    err = "FileExpertSource: dropping the file cache is not implemented on Windows";
+    return false;
+#else
+    for (const Map& m : maps_) {
+        if (m.base == nullptr || m.bytes == 0) continue;
+        // MADV_DONTNEED first: it drops the process's own pages, which is what pins the cache while the file is
+        // mapped.  The mapping stays open (a later read faults the page back in from the file), so `blob` and
+        // `copy_from_files` keep working; only the resident pages go.
+        if (::madvise((void*) m.base, (size_t) m.bytes, MADV_DONTNEED) != 0) {
+            err = "FileExpertSource: madvise could not release the mapped experts";
+            return false;
+        }
+        if (m.fd >= 0 && ::posix_fadvise(m.fd, 0, 0, POSIX_FADV_DONTNEED) != 0) {
+            err = "FileExpertSource: posix_fadvise could not drop the mapped experts' pages";
+            return false;
+        }
+    }
+    return true;
+#endif
+}
+
 bool FileExpertSource::pin_cache_complement(
     const ExpertCache& cache, std::string& err, bool pin,
     const std::vector<std::pair<int32_t, int32_t>>& additional_gpu_pairs, int64_t lend_from_slot,
@@ -4687,6 +4715,22 @@ void expert_pool_dispatch(void* user, const float* x_f, const int32_t* ids, cons
                 d.failed = true; d.fail = remote_error.c_str(); d.fail_layer = d.layers; return;
             }
     }
+    // Maxwell (sm_50) tier: start this layer's owned experts before the CPU's own work, like the peer.
+    // Unlike remote, MaxwellExperts::begin takes the raw activation and quantises on the host, so it needs
+    // no kind array: it serves every entry whose expert it owns and the pool skips those below.
+    if (d.maxwell_count > 0) {
+        static thread_local int32_t maxwell_kind[32];
+        if (k > 32) {
+            d.failed = true; d.fail = "maxwell experts: routing width exceeds 32"; return;
+        }
+        for (int64_t i = 0; i < k; ++i) maxwell_kind[i] = -1;
+        static thread_local std::string maxwell_error;
+        // NOTE: d.act was quantised above (act_quant_q8_1); the M10s consume the SAME ActQ.
+        for (int m = 0; m < d.maxwell_count; ++m)
+            if (!d.maxwell[m]->begin(d.layers, &d.act, ids, 1, k, maxwell_kind, out, false, maxwell_error)) {
+                d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
+            }
+    }
 
     for (int64_t i = 0; i < k; ++i) {
         const int64_t e = ids[i];
@@ -4726,6 +4770,14 @@ void expert_pool_dispatch(void* user, const float* x_f, const int32_t* ids, cons
             std::memset(out + (size_t) i * (size_t) n_embd, 0, (size_t) n_embd * sizeof(float));
             continue;
         }
+        // Maxwell (sm_50) tier: an owned expert's row is computed on the M10, not the CPU.
+        bool maxwell_owns = false;
+        for (int m = 0; m < d.maxwell_count; ++m) maxwell_owns |= d.maxwell[m]->owns(d.layers, e);
+        if (maxwell_owns) {
+            std::memset(out + (size_t) i * (size_t) n_embd, 0, (size_t) n_embd * sizeof(float));
+            ++d.maxwell_entries;
+            continue;
+        }
 
         // `njobs` indexes the JOB ARRAY and `i` indexes the OUTPUT - they are the same only when nothing is a
         // hit, and using one for the other is how a hit's row would get two experts summed into it.
@@ -4745,6 +4797,14 @@ void expert_pool_dispatch(void* user, const float* x_f, const int32_t* ids, cons
         for (int r = 0; r < d.remote_count; ++r)
             if (!d.remote[r]->finish(out, remote_error)) {
                 d.failed = true; d.fail = remote_error.c_str(); d.fail_layer = d.layers; return;
+            }
+    }
+    // Maxwell (sm_50) tier: copy each M10's staged rows into their routed positions.
+    if (d.maxwell_count > 0) {
+        static thread_local std::string maxwell_error;
+        for (int m = 0; m < d.maxwell_count; ++m)
+            if (!d.maxwell[m]->finish(out, maxwell_error)) {
+                d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
             }
     }
     ++d.layers;
@@ -4869,6 +4929,11 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 const int32_t e = ids[distinct[q]];
                 if (e < 0 || e >= d.n_expert || minr[q] < tail_rank) continue;
                 if (d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) continue;   // resident
+                if (d.maxwell_meta || d.maxwell_count > 0) {   // a Maxwell tier holds it in VRAM too: not a miss to skip
+                    bool mw_held = d.maxwell_meta && d.maxwell_meta->owns(d.layers, e);
+                    for (int m2 = 0; m2 < d.maxwell_count; ++m2) mw_held |= d.maxwell[m2]->owns(d.layers, e);
+                    if (mw_held) continue;
+                }
                 skip_d[q] = true;
                 --nmiss;
                 ++d.tail_experts;
@@ -4897,8 +4962,16 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 continue;
             }
             if (e >= 0 && e < d.n_expert) {
+                // Maxwell (sm_50) tier FIRST: with STRATA_MAXWELL_HOT the M10s also hold hot experts the
+                // 3060's cache has, and the M10 must win so that routed entry leaves the 3060's hit path
+                // (the load balance between the two).  The block below keeps its own check: it is false now.
+                bool maxwell_held = d.maxwell_meta && d.maxwell_meta->owns(d.layers, e);
+                if (d.maxwell_count > 0)
+                    for (int m = 0; m < d.maxwell_count; ++m) maxwell_held |= d.maxwell[m]->owns(d.layers, e);
                 const int32_t slot = d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e];
-                if (slot >= 0) {
+                if (maxwell_held) {
+                    kd = 3;
+                } else if (slot >= 0) {
                     kd = 0;
                     ptr = (unsigned long long) (d.cache_base + (d.cache_slot_off ? (size_t) d.cache_slot_off[slot]
                                                                                  : (size_t) slot * (size_t) d.cache_blob));
@@ -4962,11 +5035,22 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     } else {
         for (int64_t i = 0; i < n; ++i) {
             const int32_t e = ids[i];
-            kind[i] = (e >= 0 && e < d.n_expert && d.host_res != nullptr &&
-                       d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) ? 0
-                    : (e >= 0 && e < d.n_expert && d.peer != nullptr && d.peer->has(d.layers, e)) ? 2 : -1;
+            int kd = -1;
+            if (e >= 0 && e < d.n_expert && d.maxwell_meta && d.maxwell_meta->owns(d.layers, e)) kd = 3;
+            else if (e >= 0 && e < d.n_expert && d.host_res != nullptr &&
+                d.host_res[(size_t) d.layers * (size_t) d.n_expert + (size_t) e] >= 0) kd = 0;
+            else if (e >= 0 && e < d.n_expert && d.peer != nullptr && d.peer->has(d.layers, e)) kd = 2;
+            else if (e >= 0 && e < d.n_expert && d.maxwell_count > 0) {
+                for (int m = 0; m < d.maxwell_count; ++m)
+                    if (d.maxwell[m]->owns(d.layers, e)) { kd = 3; break; }
+            }
+            kind[i] = kd;
         }
     }
+    // fp16 rows (opt-in): publish which entries the Maxwell tier wrote into the fp16 buffer, so the
+    // verifier's row copy converts exactly those rows and leaves the CPU's fp32 rows alone.  n bytes/layer.
+    if (d.plan != nullptr && d.plan->kind16 != nullptr && d.rows_f16)
+        for (int64_t i = 0; i < n; ++i) d.plan->kind16[i] = (uint8_t) (kind[i] == 3);
     if (d.peer != nullptr) {                 // multi-GPU: start the second GPU's share before the CPU's own work
         std::string perr;
         if (!d.peer->launch(d.layers, x_f, ids, n_tok, k, kind, perr, out)) {
@@ -4977,9 +5061,18 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
             return;
         }
     }
+    // Maxwell (sm_50) tier: start the M10s' share before the CPU's own work, like the peer.
+    // STRATA_MW_REV (A/B): serve the cards in REVERSE order - begin and finish both.  Splits the
+    // down-stagger's cause in two: if the fast card flips (C4 fast, C1 slow) the stagger follows the
+    // SERVICE order; if C1 stays fast it is the card's position (topology), not our order.
+    static const bool rev_order = [] {
+        const char* e = std::getenv("STRATA_MW_REV");
+        return e != nullptr && std::atoi(e) != 0;
+    }();
     if (d.remote_count > 0) {
         static thread_local std::string remote_error;
-        for (int r = 0; r < d.remote_count; ++r) {
+        for (int ri = 0; ri < d.remote_count; ++ri) {
+            const int r = rev_order ? d.remote_count - 1 - ri : ri;
             if (!d.remote[r]->begin(d.layers, x_f, ids, n_tok, k, kind, d.host_res, remote_error)) {
                 d.failed = true; d.fail = remote_error.c_str(); d.fail_layer = d.layers; return;
             }
@@ -5002,17 +5095,75 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
         if (!published) ++d.stale_x;
     }
     const auto c1 = std::chrono::steady_clock::now();
-    if (any_cpu) {
+    bool any_mw = false;
+    if (d.maxwell_meta || d.maxwell_count > 0)
+        for (int64_t i = 0; i < n; ++i) if (kind[i] == 3) { any_mw = true; break; }
+    if (any_cpu || any_mw) {
         // #578 --remote-expert-opt: a token whose experts all run on a GPU (CUDA0 or a helper) needs no CPU activation
         const bool ep = d.remote_count > 0 && d.remote[0]->optimized_decode();
         for (int64_t t = 0; t < n_tok; ++t) {
-            if (ep && std::all_of(kind + t * k, kind + (t + 1) * k, [](int32_t v) { return v >= 0; })) continue;
+            // Maxwell (sm_50): the M10s consume the SAME ActQ objects the CPU pool uses, so a token with a
+            // kind-3 entry must be quantised even when the --remote-expert-opt path would skip it.
+            bool mw_tok = false;
+            if (any_mw)
+                for (int64_t j = 0; j < k; ++j) if (kind[t * k + j] == 3) { mw_tok = true; break; }
+            if (ep && !mw_tok && std::all_of(kind + t * k, kind + (t + 1) * k, [](int32_t v) { return v >= 0; })) continue;
             if (native && strata::kernels::cpu::q2_native_kernels(lay.fmt[(size_t) d.layers].gu_type))   // a native Q2_0 pack: the Q2_0 kernels' activations
                 act_quant_any(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
-            else if (native)
+            else if (native) {
                 native_quant_act(lay.fmt[(size_t) d.layers], x_f + (size_t) t * H, d.nact_multi.data() + (size_t) t * kNativeActBytes);
+                // Maxwell (sm_50): the tier's i-quant kernel consumes the SAME ActQ (ActQ.q is
+                // block_q8_1.qs bit for bit, and the kernel rounds each chunk's scale to the d the
+                // device q8_1 quantizer stores), so a kind-3 token needs it even on an i-quant layer
+                if (mw_tok) act_quant_any(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
+            }
             else
                 act_quant_q8_1(x_f + (size_t) t * H, H, d.act_multi[(size_t) t]);
+        }
+    }
+    // Maxwell (sm_50) tier AFTER act_quant: the M10s consume the SAME ActQ objects the CPU pool uses
+    // (d.act_multi), so there is zero quantisation divergence between the two paths.  NO !native guard:
+    // kind=3 is assigned above for native packs too, and a guarded begin would leave those rows ZERO
+    // (the jobs loop skips them for the CPU) - which corrupted every reply until here.
+    if (d.maxwell_meta) {
+        static thread_local std::string meta_error;
+        if (!d.maxwell_meta->decode(d.layers, d.act_multi.data(), ids, n_tok, k, meta_error)) {
+            d.failed = true; d.fail = meta_error.c_str(); d.fail_layer = d.layers; return;
+        }
+    } else if (d.maxwell_count > 0) {
+        static thread_local std::string maxwell_error;
+        // LPT (P6.x): the begin() calls are serial (~21.5 us each in this VM), so the LAST device's chain
+        // starts ~64 us after the first.  Beginning the busiest device FIRST minimises the maximum
+        // completion time (max over devices of start_i + chain_i).  One cheap in-memory scan per device.
+        int order[4] = {0, 1, 2, 3};
+        int64_t cnt[4] = {0, 0, 0, 0};
+        for (int m = 0; m < d.maxwell_count; ++m)
+            cnt[m] = d.maxwell[m]->count_owned(d.layers, ids, n_tok, k);
+        for (int a = 0; a < d.maxwell_count; ++a)
+            for (int b = a + 1; b < d.maxwell_count; ++b)
+                if (cnt[order[b]] > cnt[order[a]]) { const int t = order[a]; order[a] = order[b]; order[b] = t; }
+        // SPLIT_MODE_TENSOR: every card computes EVERY tier entry and writes its PARTIAL into its own
+        // area; the verifier assembles after the flags.  The tier's rows travel COMPACT (job slots), so
+        // the dispatch publishes this step's ENTRY LIST - [count, e0, e1, ...] int32s - into the buffer
+        // of the UPCOMING ring's parity (seq()+1, the value the verifier publishes as this step's
+        // expected sequence; all cards advance in lockstep); the assembly kernel re-expands by it.
+        const bool mw_tp = d.mw_partial[0] != nullptr && d.maxwell[0] != nullptr && d.maxwell[0]->tensor();
+        if (mw_tp) {
+            int32_t* sel = (int32_t*) (((d.maxwell[0]->seq() + 1u) & 1u) ? d.mw_tp_row[1] : d.mw_tp_row[0]);
+            int32_t n_tp = 0;
+            for (int64_t i = 0; i < n_tok * k; ++i)
+                if (kind[i] == 3) sel[1 + n_tp++] = (int32_t) i;
+            sel[0] = n_tp;
+        }
+        for (int oi = 0; oi < d.maxwell_count; ++oi) {
+            const int m = order[oi];
+            // TP: the card's destination is its own PARTIAL area (the assembled row lands in `out` later,
+            // on the 3060, from the four partials); otherwise the shared rows area, as before.
+            float* dst = mw_tp ? d.mw_partial[m] : out;
+            if (!d.maxwell[m]->begin(d.layers, d.act_multi.data(), ids, n_tok, k, kind, dst, d.rows_f16,
+                                      maxwell_error)) {
+                d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
+            }
         }
     }
     const auto c2 = std::chrono::steady_clock::now();
@@ -5078,10 +5229,11 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
                 ++d.tail_skipped;
                 continue;
             }
-            if (kind[i] >= 0) {             // CUDA0, PCIe, or a remote/peer result staged into this row below
+            if (kind[i] >= 0) {             // CUDA0, PCIe, a remote/peer result, or a Maxwell row below
                 if (kind[i] == 0) ++d.cache_hits;
                 else ++d.offload_entries;                       // #588: PCIe or another GPU
                 if (kind[i] == 2 && d.peer != nullptr) ++d.peer_entries;
+                else if (kind[i] == 3) ++d.maxwell_entries;
                 // multi-GPU: a direct peer launch is writing this row right now - zeroing it would race it;
                 // dec_batch: copy_rows_from_mapped_kernel already zeroes kind 0/1 rows on the GPU
                 if (!((kind[i] == 2 && d.peer != nullptr && d.peer->launched_direct()) ||
@@ -5195,6 +5347,16 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
             return;
         }
     }
+    // Maxwell (sm_50) tier: each M10's staged rows, into their routed positions.
+    if (d.maxwell_count > 0) {
+        static thread_local std::string maxwell_error;
+        for (int mi = 0; mi < d.maxwell_count; ++mi) {
+            const int m = rev_order ? d.maxwell_count - 1 - mi : mi;
+            if (!d.maxwell[m]->finish(out, maxwell_error)) {
+                d.failed = true; d.fail = maxwell_error.c_str(); d.fail_layer = d.layers; return;
+            }
+        }
+    }
     const auto c4 = std::chrono::steady_clock::now();
     pt("ran");
     auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
@@ -5202,6 +5364,29 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
     d.ms_actq += ms(c1, c2);
     d.ms_jobs += ms(c2, c3);
     d.ms_run += ms(c3, c4);
+    // T1 (2026-10-12): the per-layer roundtrip decomposition.  STRATA_MW_LAYERPROF=1 prints the phase
+    // averages every 1920 layers (40 windows): plan (kind assignment + act quant), actq (the Maxwell
+    // begin: staging, uploads, gup launch), jobs, run (down launch + M10 finish syncs + scatter).
+    // The ring wait, the pool wall and the post-pool -> flag span print from verify.cpp's loop; the
+    // remainder of the layer wall is the 3060's own compute.
+    {
+        static struct LProf {
+            double plan = 0, actq = 0, jobs = 0, run = 0;
+            int64_t n = 0;
+            bool on = std::getenv("STRATA_MW_LAYERPROF") != nullptr;
+        } lp;
+        if (lp.on) {
+            lp.plan += ms(c0, c1); lp.actq += ms(c1, c2); lp.jobs += ms(c2, c3); lp.run += ms(c3, c4);
+            if (++lp.n % 1920 == 0) {
+                std::fprintf(stderr, "MWPROF layer %lld: plan %.1f actq %.1f jobs %.1f run %.1f us/layer "
+                                     "(dispatch span %.1f)\n", (long long) lp.n,
+                             lp.plan / lp.n * 1000.0, lp.actq / lp.n * 1000.0,
+                             lp.jobs / lp.n * 1000.0, lp.run / lp.n * 1000.0,
+                             (lp.plan + lp.actq + lp.jobs + lp.run) / lp.n * 1000.0);
+                std::fflush(stderr);
+            }
+        }
+    }
     for (int64_t i = 0; i < n_tok * k; ++i) {
         const int64_t e = ids[i];
         if (e >= 0 && e < d.n_expert) d.job_of[(size_t) e] = -1;
@@ -6097,6 +6282,68 @@ const uint8_t* ArenaExpertSource::device_alias(int64_t layer, int64_t expert) co
     // one registration slice per layer
     if ((size_t) layer >= dev_slice_.size()) return nullptr;
     return dev_slice_[(size_t) layer] + (uint64_t) expert * lay.blob_bytes(layer);
+}
+
+// No duplication, and ACTUALLY in physical RAM: cudaHostRegister pinned the arena's pages, and madvise(DONTNEED)
+// alone only removes them from RSS - the driver returns the physical memory solely on cudaHostUnregister (an
+// isolated test measured RSS 94 MB / MemFree 544 MB after madvise, then MemFree 3339 MB after unregister).  One
+// whole-range registration cannot be split, so the arena is unregistered entirely; the untouched experts stay
+// resident (merely unpinned).  The caller passes blobs nobody reads any more (Maxwell-resident, already in VRAM).
+bool ArenaExpertSource::release_arena(const std::vector<std::pair<int32_t, int32_t>>& ranges, std::string& err,
+                                      size_t& released_bytes) {
+    err.clear();
+    released_bytes = 0;
+    PinnedArena* a = (PinnedArena*) arena_;
+    if (a == nullptr || base_ == nullptr) { err = "the arena is not open"; return false; }
+    if (a->registered_bytes == 0 && a->locked_bytes == 0) { err = "the arena is not pinned"; return false; }
+    // the working-set lock, if any, starts where the CUDA registration ended
+    const uint64_t lock_off = a->slice_bytes ? a->registered_bytes : 0;
+    const auto& lay = strata::kernels::cpu::expert_layout();
+#if !defined(_WIN32)
+    // Blob offsets are not page-aligned (1382400 B = 337.5 pages) and madvise refuses unaligned addresses
+    // (EINVAL): round INWARD, keeping the shared edge pages (they may hold neighbouring experts' bytes).
+    // STRATA_ARENA_NO_MADVISE=1 keeps the data (isolation: unregister alone vs data loss).
+    const bool whole = (int64_t) ranges.size() == lay.n_layers * n_expert_;
+    if (whole) {
+        // the caller released EVERY expert: one madvise over the page-aligned span, not 24k of them
+        const uintptr_t start = ((uintptr_t) base_ + 4095) & ~(uintptr_t) 4095;
+        const uintptr_t end = ((uintptr_t) base_ + (uintptr_t) a->capacity) & ~(uintptr_t) 4095;
+        if (end > start && ::madvise((void*) start, (size_t) (end - start), MADV_DONTNEED) == 0)
+            released_bytes = (size_t) (end - start);
+    } else if (std::getenv("STRATA_ARENA_NO_MADVISE") == nullptr)
+    for (const auto& pr : ranges) {
+        if (pr.first < 0 || pr.first >= lay.n_layers || pr.second < 0 || pr.second >= n_expert_) continue;
+        const uint8_t* ptr = base_ + lay.blob_offset(pr.first, pr.second);
+        const size_t bytes = (size_t) lay.blob_bytes(pr.first);
+        const uintptr_t start = ((uintptr_t) ptr + 4095) & ~(uintptr_t) 4095;
+        const uintptr_t end = ((uintptr_t) ptr + bytes) & ~(uintptr_t) 4095;
+        if (end > start && ::madvise((void*) start, (size_t) (end - start), MADV_DONTNEED) == 0)
+            released_bytes += (size_t) (end - start);
+    }
+#else
+    (void) ranges;   // no madvise on Windows: unregister still returns the whole arena's pages
+#endif
+    if (a->registered_bytes > 0) {
+        if (a->slice_bytes > 0 && !a->slice_starts.empty()) {
+            for (uint64_t off : a->slice_starts) (void) cudaHostUnregister((void*) (base_ + off));
+        } else {
+            (void) cudaHostUnregister((void*) base_);
+        }
+        a->registered_bytes = 0;
+        a->registered_slices = 0;
+        a->slice_starts.clear();
+    }
+    if (a->locked_bytes > 0) {
+        strata::platform::unlock_resident((uint8_t*) base_ + lock_off, a->locked_bytes);
+        a->locked_bytes = 0;
+    }
+    (void) cudaGetLastError();
+    // The device aliases are gone: pinned()/device_alias()/pcie_layer() now answer false, so the direct-PCIe
+    // path used for host misses falls back to DMA (from pageable memory) or the CPU pool.
+    dev_slice_.clear();
+    slice_bytes_ = 0;
+    pinned_bytes_ = 0;
+    return true;
 }
 
 const uint8_t* ArenaExpertSource::blob(int64_t layer, int64_t expert) {

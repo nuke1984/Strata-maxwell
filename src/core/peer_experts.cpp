@@ -22,6 +22,9 @@ namespace strata::core {
 static bool g_peer_portable = false;
 void set_peer_portable(bool on) { g_peer_portable = on; }
 bool peer_portable() { return g_peer_portable; }
+static bool g_maxwell_portable = false;
+void set_maxwell_portable(bool on) { g_maxwell_portable = on; }
+bool maxwell_portable() { return g_maxwell_portable; }
 
 namespace {
 

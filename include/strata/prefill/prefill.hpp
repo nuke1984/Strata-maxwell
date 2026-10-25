@@ -22,8 +22,8 @@
 #include <memory>
 #include <string>
 
-namespace strata::core { class PeerExperts; }
 namespace strata::kernels::cpu { class ExpertPool; }
+namespace strata::core { class PeerExperts; class MaxwellExperts; class MaxwellMetaTier; }
 
 namespace strata::prefill {
 
@@ -38,6 +38,7 @@ struct PrefillStats {
     int64_t experts_direct = 0;     ///< ...of which MMQ read in their cache slots, not gathered (STRATA_MMQ_DIRECT=1)
     int64_t experts_cpu = 0;        ///< ...computed on the CPU pool instead of streamed (STRATA_PREFILL_CPU_SHARE)
     double cpu_share = 0;           ///< ...the share of the streamed ones it took last (measured by default)
+    int64_t experts_maxwell = 0;    ///< routed entries computed on the Maxwell (sm_50) tiers
     double ms_ple = 0;
 };
 
@@ -179,6 +180,12 @@ public:
     /// rows per layer; the rest of the peer's experts are read by this GPU over P2P).  Allocates the peer's buffers for
     /// chunks of up to init's `chunk` tokens.  Needs P2P between the two cards.
     bool set_peer(core::PeerExperts* peer, int64_t cap_rows, std::string& err);
+
+    /// Maxwell (sm_50) tiers: the experts they hold are computed THERE for every prompt chunk and written into
+    /// the layer's grouped `Dm` rows (via finish_to), so the arena is never read for them and can be released.
+    /// `tiers`/`count` are the driver's MaxwellExperts instances.  Call after init and after the tiers are open.
+    bool set_maxwell(core::MaxwellExperts** tiers, int count, std::string& err);
+    bool set_maxwell_meta(core::MaxwellMetaTier* tier, std::string& err);
 
     /// Plan v0.3 P6: called after every chunk with the chunk's final multi-stream residual rows (device,
     /// T x hc*n_embd, valid until the next chunk) and the chunk's first position; the MTP draft layer builds its

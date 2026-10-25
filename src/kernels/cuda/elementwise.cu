@@ -235,6 +235,31 @@ __global__ void copy_from_mapped_kernel(float4* __restrict__ dst, const volatile
 
 // the CPU rows of a verify window, skipping the rows the GPU plan computes itself (the
 // pool writes +0.0 into those, so this writes +0.0 too): block = row, the plan's hit rows `dst[0, *count)`.
+// fp16 -> fp32 (IEEE half), the inverse of the Maxwell kernel's hand-rolled conversion.  Runs on the
+// primary GPU (it reads the Maxwell tier's fp16 rows out of mapped host memory).
+__device__ __forceinline__ float h2f(uint16_t h) {
+    const uint32_t sign = (uint32_t) (h & 0x8000u) << 16;
+    const uint32_t ex = (h >> 10) & 0x1Fu;
+    const uint32_t m = h & 0x3FFu;
+    uint32_t f;
+    if (ex == 0) {
+        if (m == 0) {
+            f = sign;
+        } else {   // denormal: normalize
+            uint32_t mm = m;
+            int e = -1;
+            while ((mm & 0x400u) == 0) { mm <<= 1; --e; }
+            mm &= 0x3FFu;
+            f = sign | (uint32_t) (127 - 15 + e) << 23 | (mm << 13);
+        }
+    } else if (ex == 31) {
+        f = sign | 0x7F800000u | (m << 13);
+    } else {
+        f = sign | ((ex + 127 - 15) << 23) | (m << 13);
+    }
+    return __uint_as_float(f);
+}
+
 __global__ void copy_rows_from_mapped_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
                                              const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
                                              const volatile uint32_t* wait_flag = nullptr, uint32_t wait_value = 0) {
@@ -254,6 +279,73 @@ __global__ void copy_rows_from_mapped_kernel(float4* __restrict__ dst, const vol
     float4* d = dst + (int64_t) row * row4;
     if (hit) {
         for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        const volatile float4* sr = src + (int64_t) row * row4;
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
+    }
+}
+
+// mode 3 (the aggregate tier's one-passage completion): the SAME fused row copy, with the E1 multi-wait
+// folded into the per-block poll instead of a separate 1-thread wait_mw launch.  The check order keeps
+// wait_mw's safety: `exp` is published BEFORE the main flag rises, and the main flag (raised only after
+// the host dispatched the tier) anchors the wait - so an early-arriving block reads a stale `exp` only
+// while `main` still holds it back, and by the time main passes, exp is this step's value.
+__global__ void copy_rows_from_mapped_mw_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
+                                                const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
+                                                const volatile uint32_t* main_flag, uint32_t ring,
+                                                const volatile uint32_t* exp,
+                                                const volatile uint32_t* f0, const volatile uint32_t* f1,
+                                                const volatile uint32_t* f2, const volatile uint32_t* f3) {
+    const int row = blockIdx.x;
+    __shared__ int hit;
+    if (threadIdx.x == 0) {
+        while (true) {
+            const uint32_t e = *exp;
+            if (*main_flag >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+            strata_spin_pause();
+        }
+        __threadfence_system();
+        int h = 0;
+        const int c = *count;
+        for (int i = 0; i < c; ++i) h |= hit_rows[i] == row;
+        hit = h;
+    }
+    __syncthreads();
+    float4* d = dst + (int64_t) row * row4;
+    if (hit) {
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        const volatile float4* sr = src + (int64_t) row * row4;
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
+    }
+}
+
+__global__ void copy_rows_from_mapped_f16_kernel(float4* __restrict__ dst, const volatile float4* src, int64_t row4,
+                                                 const int32_t* __restrict__ hit_rows, const int32_t* __restrict__ count,
+                                                 const volatile uint16_t* __restrict__ src16,
+                                                 const volatile uint8_t* __restrict__ kind16) {
+    const int row = blockIdx.x;
+    __shared__ int mode;   // 0 = copy the fp32 row, 1 = zero it (the GPU's own), 2 = convert the fp16 row
+    if (threadIdx.x == 0) {
+        int h = 0;
+        const int c = *count;
+        for (int i = 0; i < c; ++i) h |= hit_rows[i] == row;
+        mode = h ? 1 : (kind16[row] ? 2 : 0);
+    }
+    __syncthreads();
+    float4* d = dst + (int64_t) row * row4;
+    if (mode == 1) {
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    } else if (mode == 2) {
+        const volatile uint16_t* s = src16 + (int64_t) row * (row4 * 4);
+        for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) {
+            float4 v;
+            v.x = h2f(s[i * 4 + 0]);
+            v.y = h2f(s[i * 4 + 1]);
+            v.z = h2f(s[i * 4 + 2]);
+            v.w = h2f(s[i * 4 + 3]);
+            d[i] = v;
+        }
     } else {
         const volatile float4* sr = src + (int64_t) row * row4;
         for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) d[i] = const_cast<const float4*>(sr)[i];
@@ -295,6 +387,196 @@ void copy_rows_from_mapped_after(const uint32_t* flag, uint32_t value, float* ds
     }
     copy_rows_from_mapped_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
         (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count, (const volatile uint32_t*) flag, value);
+}
+
+// SPLIT_MODE_TENSOR (the Meta tier): assemble the tier's rows from the FOUR cards' partial areas.
+// The tier's rows travel COMPACT (one job slot per tier entry, identical job order on every card); the
+// dispatch publishes this step's ENTRY LIST ([count, e0, e1, ...] int32s, double-buffered by ring
+// parity - the same parity the tier's staging sets use), and block j re-expands it: the summed row
+// ((p0[j]+p1[j])+p2[j])+p3[j] - rank order, fixed, deterministic - lands at ENTRY e_j in the mapped
+// rows area the plain copy then reads.  Thread 0 spins the mode-3 E1 multi-wait first (the same poll
+// order and the same exp/main anchoring), so no partial is read before its card's doorbell.
+__global__ void sum_tp_rows_mw_kernel(float4* __restrict__ rows, int64_t row4,
+                                      const volatile float4* p0, const volatile float4* p1,
+                                      const volatile float4* p2, const volatile float4* p3,
+                                      const int32_t* __restrict__ lst_a, const int32_t* __restrict__ lst_b,
+                                      uint32_t ring,
+                                      const volatile uint32_t* main_flag, const volatile uint32_t* exp,
+                                      const volatile uint32_t* f0, const volatile uint32_t* f1,
+                                      const volatile uint32_t* f2, const volatile uint32_t* f3) {
+    if (threadIdx.x == 0) {
+        while (true) {
+            const uint32_t e = *exp;
+            if (*main_flag >= ring && *f0 >= e && *f1 >= e && *f2 >= e && *f3 >= e) break;
+            strata_spin_pause();
+        }
+        __threadfence_system();
+    }
+    __syncthreads();
+    const int32_t* lst = (ring & 1u) ? lst_b : lst_a;   // the dispatch's entry list for THIS step
+    const int j = (int) blockIdx.x;
+    if (j >= lst[0]) return;
+    const int64_t e = lst[1 + j];
+    float4* d = rows + e * row4;
+    const volatile float4* s0 = p0 + (int64_t) j * row4;
+    const volatile float4* s1 = p1 + (int64_t) j * row4;
+    const volatile float4* s2 = p2 + (int64_t) j * row4;
+    const volatile float4* s3 = p3 + (int64_t) j * row4;
+    for (int64_t i = threadIdx.x; i < row4; i += blockDim.x) {
+        const float4 a = const_cast<const float4*>(s0)[i];
+        const float4 b = const_cast<const float4*>(s1)[i];
+        const float4 c = const_cast<const float4*>(s2)[i];
+        const float4 g = const_cast<const float4*>(s3)[i];
+        float4 v;
+        v.x = ((a.x + b.x) + c.x) + g.x;   // rank order, fixed - deterministic
+        v.y = ((a.y + b.y) + c.y) + g.y;
+        v.z = ((a.z + b.z) + c.z) + g.z;
+        v.w = ((a.w + b.w) + c.w) + g.w;
+        d[i] = v;
+    }
+}
+
+// Meta is one consumer endpoint. Wait for the parent's publication BEFORE reading
+// expected, so an old ticket cannot be accepted during the main-flag transition.
+__global__ void maxwell_meta_reduce_kernel(const volatile uint32_t* main, uint32_t ring,
+    const volatile uint32_t* expected, const volatile uint32_t* f0, const volatile uint32_t* f1,
+    const volatile uint32_t* f2, const volatile uint32_t* f3,
+    const float4* a0, const float4* a1, const float4* a2, const float4* a3,
+    const float4* b0, const float4* b1, const float4* b2, const float4* b3,
+    const int32_t* ma, const int32_t* mb, float4* dst, const float4* fallback, int64_t width4,
+    const int32_t* hits, const int32_t* count, bool direct, bool wire16,
+    const volatile uint32_t* cancel, uint32_t* counter, volatile uint32_t* consumed) {
+    __shared__ int job, zero, stopped;
+    __shared__ uint32_t ticket;
+    const int row = (int) blockIdx.x;
+    if (threadIdx.x == 0) {
+        while (*main < ring && !*cancel) strata_spin_pause();
+        ticket = *expected;
+        while (!*cancel && (*f0 < ticket || *f1 < ticket || *f2 < ticket || *f3 < ticket)) strata_spin_pause();
+        __threadfence_system();
+        stopped = *cancel != 0;
+        job = stopped ? -1 : ((ticket & 1u) ? mb[row] : ma[row]);
+        zero = stopped;
+        if (job < 0 && !stopped)
+            for (int i = 0; i < *count; ++i) zero |= hits[i] == row;
+    }
+    __syncthreads();
+    // Double-buffered partial areas: the submission's parity is baked into the ticket the
+    // ranks' flags carry, so the consumer picks the same set the writer used - no host gate.
+    const float4* base[4] = {((ticket & 1u) ? b0 : a0), ((ticket & 1u) ? b1 : a1),
+                             ((ticket & 1u) ? b2 : a2), ((ticket & 1u) ? b3 : a3)};
+    for (int64_t i = threadIdx.x; i < width4; i += blockDim.x) {
+        float4 value;
+        if (stopped) value = make_float4(0, 0, 0, 0);
+        else if (job >= 0) {
+            const int64_t at = (int64_t) job * width4 + i;
+            float4 s[4];
+            for (int r = 0; r < 4; ++r) {
+                if (!wire16) {
+                    s[r] = base[r][at];
+                } else {
+                    // fp16 wire: halves are ROW-MAJOR (H per row), so this float4 (=4 floats)
+                    // pairs with halves [4i,4i+4): one uint2 (8 B) load. Conversion is exact.
+                    const uint2 h = ((const uint2*) base[r])[at];
+                    const uint16_t q[4] = {(uint16_t) h.x, (uint16_t) (h.x >> 16),
+                                           (uint16_t) h.y, (uint16_t) (h.y >> 16)};
+                    s[r] = make_float4(strata::kernels::f32_from_f16(q[0]), strata::kernels::f32_from_f16(q[1]),
+                                       strata::kernels::f32_from_f16(q[2]), strata::kernels::f32_from_f16(q[3]));
+                }
+            }
+            value = make_float4(((s[0].x + s[1].x) + s[2].x) + s[3].x, ((s[0].y + s[1].y) + s[2].y) + s[3].y,
+                               ((s[0].z + s[1].z) + s[2].z) + s[3].z, ((s[0].w + s[1].w) + s[2].w) + s[3].w);
+        } else if (zero) {
+            if (!direct) continue;   // the reference copy zeroes hits, so no host write is needed
+            value = make_float4(0, 0, 0, 0);
+        } else value = fallback[(int64_t) row * width4 + i];
+        dst[(int64_t) row * width4 + i] = value;
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (direct && threadIdx.x == 0 && atomicAdd(counter, 1u) == gridDim.x - 1) {
+        *counter = 0;
+        __threadfence_system();
+        *consumed = ticket;
+        __threadfence_system();
+    }
+}
+
+__global__ void maxwell_meta_complete_kernel(const volatile uint32_t* expected, volatile uint32_t* consumed) {
+    __threadfence_system();
+    *consumed = *expected;
+    __threadfence_system();
+}
+void maxwell_meta_complete(const uint32_t* expected, uint32_t* consumed, void* stream) {
+    maxwell_meta_complete_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(expected, consumed);
+}
+
+void maxwell_meta_reduce(const uint32_t* main, uint32_t ring, const uint32_t* expected,
+    const uint32_t* const* flags, const float* const* partials_a, const float* const* partials_b,
+    const int32_t* ma, const int32_t* mb,
+    float* dst, const float* fallback, int64_t rows, int64_t width, const int32_t* hits,
+    const int32_t* count, bool direct, bool wire16, const uint32_t* cancel, uint32_t* counter,
+    uint32_t* consumed, void* stream) {
+    maxwell_meta_reduce_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        main, ring, expected, flags[0], flags[1], flags[2], flags[3],
+        (const float4*) partials_a[0], (const float4*) partials_a[1], (const float4*) partials_a[2], (const float4*) partials_a[3],
+        (const float4*) partials_b[0], (const float4*) partials_b[1], (const float4*) partials_b[2], (const float4*) partials_b[3],
+        ma, mb, (float4*) dst, (const float4*) fallback, width / 4, hits, count, direct, wire16,
+        cancel, counter, consumed);
+}
+
+// mode 3: the E1 multi-wait (main + 4 tier flags + expected ring) fused into the row copy's blocks -
+// one launch, one poll, the unfused [wait_mw + copy] pair replaced.
+void copy_rows_from_mapped_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                                    const uint32_t* const* mw, float* dst, const float* src, int64_t rows,
+                                    int64_t width, const int32_t* hit_rows, const int32_t* count, void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) dst & 15) != 0 || ((uintptr_t) src & 15) != 0) {
+        std::fprintf(stderr, "copy_rows_from_mapped_after_mw: width must be a multiple of 4 and both pointers 16-byte aligned\n");
+        std::exit(1);
+    }
+    copy_rows_from_mapped_mw_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count,
+        (const volatile uint32_t*) main_flag, ring, (const volatile uint32_t*) exp,
+        (const volatile uint32_t*) mw[0], (const volatile uint32_t*) mw[1],
+        (const volatile uint32_t*) mw[2], (const volatile uint32_t*) mw[3]);
+}
+
+// SPLIT_MODE_TENSOR: the tier's rows assembled from the four cards' PARTIAL areas (rank-ordered sum)
+// after the E1 multi-wait - launched where the plain path waits, so the row copy that follows reads
+// completed rows (its own wait, if any, passes instantly).  `partials` are the four mapped partial
+// areas (device-visible host memory, entry-major at `width`), `tp_a`/`tp_b` the double-buffered
+// per-entry tier bitmaps (selected by the ring's parity, matching the tier's staging sets).
+void sum_tp_rows_after_mw(const uint32_t* main_flag, uint32_t ring, const uint32_t* exp,
+                          const uint32_t* const* mw, float* rows_dst, int64_t rows, int64_t width,
+                          const float* const* partials, const int32_t* lst_a, const int32_t* lst_b,
+                          void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) rows_dst & 15) != 0) {
+        std::fprintf(stderr, "sum_tp_rows_after_mw: width must be a multiple of 4 and the rows 16-byte aligned\n");
+        std::exit(1);
+    }
+    sum_tp_rows_mw_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) rows_dst, width / 4,
+        (const volatile float4*) partials[0], (const volatile float4*) partials[1],
+        (const volatile float4*) partials[2], (const volatile float4*) partials[3],
+        lst_a, lst_b, ring,
+        (const volatile uint32_t*) main_flag, (const volatile uint32_t*) exp,
+        (const volatile uint32_t*) mw[0], (const volatile uint32_t*) mw[1],
+        (const volatile uint32_t*) mw[2], (const volatile uint32_t*) mw[3]);
+}
+
+void copy_rows_from_mapped_f16(float* dst, const float* src, int64_t rows, int64_t width, const int32_t* hit_rows,
+                               const int32_t* count, const uint16_t* src16, const uint8_t* kind16, void* stream) {
+    if (rows <= 0) return;
+    if ((width & 3) != 0 || ((uintptr_t) dst & 15) != 0 || ((uintptr_t) src & 15) != 0 ||
+        ((uintptr_t) src16 & 1) != 0) {
+        std::fprintf(stderr, "copy_rows_from_mapped_f16: bad width or alignment\n");
+        std::exit(1);
+    }
+    copy_rows_from_mapped_f16_kernel<<<(unsigned) rows, 128, 0, (cudaStream_t) stream>>>(
+        (float4*) dst, (const volatile float4*) src, width / 4, hit_rows, count,
+        (const volatile uint16_t*) src16, (const volatile uint8_t*) kind16);
 }
 void copy_from_mapped(float* dst, const float* src, int64_t n, void* stream) {
     if (n <= 0) return;
@@ -457,5 +739,6 @@ void rms_norm_weighted(float* x, const float* w, int64_t rows, int64_t cols, flo
     check_launch("rms_norm_weighted");
     sync_if_needed(stream, "rms_norm_weighted");
 }
+
 
 }  // namespace strata::kernels

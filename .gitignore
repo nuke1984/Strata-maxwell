@@ -66,6 +66,8 @@ build-vision-cuda12.bat
 # local Windows HIP packaging output
 dist-hip/
 
+# the engine/server session logs this rig produces at the repo root (campaign artifacts)
+/strata-*.out
 # Terminal / Desktop split: local venvs, build output and archives never enter git
 .terminal-venv/
 .terminal-test-venv/
