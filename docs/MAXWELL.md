@@ -1,6 +1,6 @@
 # The Maxwell tier — build & run
 
-The Maxwell tier turns a **Tesla M10** (four GK210 dies, 32 GB GDDR5) into a resident expert
+The Maxwell tier turns a **Tesla M10** (four GM107 dies, 32 GB GDDR5) into a resident expert
 store for MoE models: at load it copies the profile-ranked routed experts the host GPU's
 cache cannot hold into the M10's VRAM, verifies every blob with a round-trip quantization
 gate, and serves every later cache miss from VRAM — no file reads after load, no page cache.

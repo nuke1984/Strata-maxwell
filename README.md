@@ -20,7 +20,7 @@ hold a model's routed experts, medium-big MoE models become affordable to serve.
 
 - **RTX 3060 (Ampere)** — the dense spine: attention, dense layers, the KV cache (k8v4), the
   MTP draft head, PLE — plus a **1874-slot routed-expert cache (2.53 GiB)**.
-- **Tesla M10** — four Maxwell GK210 dies, ~7.6 GiB usable each = **30.5 GB expert tier**,
+- **Tesla M10** — four Maxwell GM107 dies, ~7.6 GiB usable each = **30.5 GB expert tier**,
   holding the **other 22,702 routed experts**, resident in VRAM at load.
 - **Host** — 4-core AVX2 CPU, 39 GB RAM. In production it holds no experts at all.
 
@@ -63,7 +63,7 @@ cost of offloading experts, and whether the M10's 32 GB can carry most of a big 
    +-------------------+     +-------------------+
    | setup A           |     | setup B           |
    | Tesla M10         |     | CPU RAM           |
-   | 4x GK210, 30.5 GB |     | 32.2 GB locked    |
+   | 4x GM107, 30.5 GB |     | 32.2 GB locked    |
    | resident tier     |     | resident copy     |
    +-------------------+     +-------------------+
 ```
