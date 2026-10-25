@@ -115,3 +115,41 @@ cleared it: all four dies back, enumerated clean, zero Xids since.
 Persistence mode re-applied; parity 0 failures; production (incumbent fast stack - NO
 FASTCOMPLETE) relaunched and verified: 2.7k 152.8/152.8, 10k 150.6, all gates green, zero Xids.
 FASTCOMPLETE is documented, opt-in, awaiting the user's go for production.
+
+## Session 3 (2026-10-25, post-incident, user go): the post-FASTCOMPLETE lever audit - all remaining arms bounded or closed
+
+### tools/xdev_twohop_probe.cu: the cross-device mechanics measured CLEAN in the row-split regime
+The DRED-era "cross-device transfers fault" claims came from tensor-split/never-engaged arms; the
+proven two-hop form (M10 VRAM -> pinned staging owned by the 3060 -> H2D) was re-tested standalone
+in the current regime: 250 rounds, all four cards, changing patterns, checksums every 50 rounds -
+**0 mismatches, 0 Xids**.  Per card per round: D2H enqueue 0.005 ms, the transfer wall ~1.18 ms
+(3.93 MB at ~3.3 GB/s over the M10's host link), H2D enqueue 0.005 ms.
+CONSEQUENCE: the "direct-into-Dm" completes redesign (permute on the M10 + final-position D2H +
+per-card H2D) is mechanically possible - but the arithmetic closes it: the same bytes ride the
+same wire; only the host scatter (~0.6 ms, already parallel under FASTCOMPLETE) disappears, minus
+a new permute kernel in the serve.  BOUNDED <= +1%: NOT worth the surgery.  (The historically
+crashing forms - direct peer copy, cross-device stream waits - deliberately NOT retested: no arm
+needs them, and the Xid-158 incident taught us a faulting op can wedge a die.)
+
+### The smem-packing lever (named twice, never measured): arithmetic vapor - CLOSED
+sizeof(block_q8_1) = 36 B (the old note's "40B" was wrong); the packing (drop the unused ds[1]=0
+half -> 34 B/entry) saves 768 B of ~23 KB per block.  Residency changes at ~5 KB granularity -
+the packing cannot change occupancy at ANY geometry.  Closed by arithmetic (the measured
+occupancy envelope already bounded its effect at <=1% anyway).
+
+### The f16-on-the-wire arm: the last real one, honestly sized
+The completes' remaining PCIe wall is the D2H transfer (~1.18 ms/card, inside the event wait;
+FASTCOMPLETE already parallelized everything else).  f16 halves it -> ~0.6 ms/unit -> ~+1.2%.
+Costs: an f16 output form for the MT down (or a convert kernel), f16 AD2H, host-side f16->f32 in
+the scatter - and the QUALITY RISK is real (the mtp-q4-proj precedent: 4-bit drafts measurably
+noisier; the gates decide).  ~157.9 -> ~159.8 for medium surgery and a quality coin-flip.
+Recommendation: leave it as the documented, bounded, unstarted arm unless the +1.2% matters.
+
+### The post-FASTCOMPLETE ledger
+| arm | verdict |
+|---|---|
+| direct-D2H completes (two-hop) | mechanics CLEAN (probe); bounded <=+1% - skipped |
+| smem packing | arithmetic vapor - closed |
+| f16 on the wire | ~+1.2%, quality-risky - documented, unstarted |
+| cross-device waits / peer copy | deliberately untested (no payoff, real risk) |
+| everything else from the campaigns | closed with measurements (the corrected-model reopen found only the completes family; FASTCOMPLETE was its prize) |

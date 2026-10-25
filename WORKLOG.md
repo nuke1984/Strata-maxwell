@@ -532,3 +532,15 @@ arm-against-arm, same day/same binary whenever possible.
   --config strata-spec6.json --port 8088 &
 - Live-verified: 2.7k 157.5/157.9, 10k 155.3; gates green live (answers, topics, needle 2/2).
 - NEVER enable STRATA_MW_DRED (quarantined) or STRATA_MW_PFPIPE (hard-disabled in code).
+
+## 2026-10-25 (session 3) - the post-FASTCOMPLETE lever audit: the reopens bounded or closed
+- tools/xdev_twohop_probe.cu: the two-hop (M10 -> 3060-owned pinned -> H2D) measured CLEAN in the
+  row-split regime (250 rounds, 4 cards, 0 mismatches, 0 Xids; transfer wall ~1.18 ms/card at
+  3.93 MB).  The direct-into-Dm completes redesign is mechanically possible but bounded <=+1%
+  (same bytes, only the host scatter disappears) - skipped.  The historically crashing forms
+  (peer copy, cross-device waits) deliberately not retested.
+- The smem-packing lever (named twice, never measured): sizeof(block_q8_1)=36 B; the packing
+  saves 768 B of ~23 KB - cannot change residency at any geometry.  CLOSED by arithmetic.
+- f16-on-the-wire: the last real arm, ~+1.2% (halves the 1.18 ms D2H wall), quality-risky
+  (mtp-q4-proj precedent), medium surgery - documented, unstarted, recommended only if the
+  +1.2% matters.
