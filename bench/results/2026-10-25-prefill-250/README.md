@@ -83,3 +83,45 @@ Protocol: 2.7k x3 + 10k x1 + full gates; engine-log tok/s; production down durin
 
 The E=8 event also re-validated the gate suite: the 2.7k/10k protocols caught a corruption that
 the short fixed-answer + needle gates alone missed (multi-window prompts are where wide runs live).
+
+## Session 2 (2026-10-25 evening): the dies are PARALLEL - the wall map redrawn
+
+### The four-die parallelism probe (tools/mw_parallel_probe.cu, new)
+4 M10 contexts, DRAM-bound kernel ~4.4 ms/die, launched back-to-back then synced:
+- one die alone: 4.43 ms | all four wall: 4.53-4.69 ms | sync waits: 4.4/0.1/0.0/0.1
+- reverse-order syncs: the wait MOVES to the last-synced die (0.0/0.0/0.05/4.47) - pure
+  wait-order artifact, not execution order.
+VERDICT: the vGPU does NOT timeslice the dies - they execute CONCURRENTLY.  The 4x3.4 ms
+"staircase" in the completes is transfer/completion artifacts, not device serialization.
+Consequences: (a) the M10 chain's device work is already the parallel minimum - the wavefront
+overlap math stands (chain ~44 s of the 65.6 s per 10k at 152.5); (b) the completes' wall is
+host-wait + shared-PCIe transfer time, not four serial device executions.
+
+### The ordering audit (the wavefront prerequisite) - what the code re-read says
+- The block H2D and the combine are BOTH on m.cs (ordered); the completes' host scatter is
+  host-sequential.  No unstreamed launches in prefill.cpp; dequant_s2's NULL-stream kernel is
+  parity-test-only (dead lead, noted as library hygiene).
+- Mode 7's zero-mismatch checksums already proved the Dm DATA is always right - the corruption
+  is a consumer read.  "Only a NULL-stream barrier works" still points at a legacy-NULL-stream
+  consumer, but it is not in the prefill file; the 5-session in-engine hunt stays unconcluded.
+- KEY STRUCTURAL FACT for the wavefront: the prompt loop is CHUNK-MAJOR (chunks of C tokens,
+  all 48 layers each - prefill.cpp:2753) - chunks are strictly sequential (data dependency).
+  The legal overlap is INSIDE each layer's sub-batch loop (the NTM windows, prefill.cpp:4186):
+  sub-batch experts are independent (disjoint token rows of the same layer input), and the
+  per-sub-batch Dm tail writes are disjoint by construction.
+
+### THE DISCOVERY: PFPIPE (the wavefront-lite arm) NEVER RAN
+Session 4's own conclusion: "PFPIPE's staging alternation never ran in ANY test: d_up2_/h_up2_
+are allocated only under gpuflag>=2, so pf_on was always false (the PFPIPE null stands but
+measured only the streams_[1] upload form)".  The one arm that pipelines the sub-batch loop
+(begin s+1 under completes s, rotated staging) measured NOTHING - its null is VOID.
+
+### The next arm, designed: STRATA_MW_SBPIPE (the sub-batch pipeline)
+Per layer, for sub-batches s: [downs(s) TWOPHASE] -> [begin(s+1) on the ROTATED staging set]
+-> [completes(s): waits+scatter+H2D+combine-slot].  The M10 serve(s+1) overlaps completes(s)
+host work (~18 ms of waits/scatter/transfer per round at 152.5).  Pipelining also ADDS distance
+between Dm writes and downstream reads (the barrier's requirement) instead of removing it -
+the latent ordering debt is structurally satisfied by the schedule, not borrowed from latency.
+Prerequisites: fix the PFPIPE allocation hole (allocate set 2 when the knob is on), keep the
+Dm tail slots per-sub-batch disjoint (they are), gates on every step.  Est. per-layer saving at
+8 sub-batches: up to ~7x the overlappable host share - to be measured, not assumed.

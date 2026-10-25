@@ -442,3 +442,18 @@ arm-against-arm, same day/same binary whenever possible.
 - NEXT (the measured walls, in order): (1) parallel completes + EXPLICIT cross-stream ordering (also
   retires the latent correctness debt), (2) the chunk wavefront (est. 245-265, the only >=240 path).
 - Production restored on the fast stack and verified (2+2, recall OK).
+
+## 2026-10-25 (session 2) - the dies are PARALLEL; PFPIPE never ran; the SBPIPE arm designed
+- tools/mw_parallel_probe.cu (new): four M10 contexts, DRAM-bound kernel - all four wall 4.5 ms
+  ~= one die 4.4 ms.  NO vGPU timeslicing; the completes' "staircase" is transfer/completion
+  artifact.  The wavefront overlap math stands (chain 44 s of 65.6 s at 152.5).
+- The ordering audit re-read: block H2D + combine are m.cs-ordered; no unstreamed launches in
+  the prefill path; dequant_s2's NULL-stream kernel is parity-only.  Mode 7's zero mismatches
+  already proved Dm data right - the race is a consumer read; in-engine hunt stays open.
+- The prompt loop is CHUNK-MAJOR - cross-chunk overlap is illegal (data dependency); the legal
+  overlap is INSIDE each layer's sub-batch loop (independent expert rounds, disjoint Dm slots).
+- DISCOVERY: PFPIPE never ran (its staging alternation was dead code - d_up2_ allocated only
+  under gpuflag>=2); its null is VOID.  Next arm: STRATA_MW_SBPIPE - rotate staging (fix the
+  allocation hole), begin(s+1) before completes(s), M10 serve overlaps the completes' host
+  work; the schedule adds the barrier distance structurally.  Measured one change at a time.
+- Production restored (fast stack) and verified (answer 4).
