@@ -505,3 +505,21 @@ arm-against-arm, same day/same binary whenever possible.
   PFPIPE arm (armed this campaign, crashed in row split).
 - NEXT: the decoupling proof on production (compress the completes to their floor; gates at max
   speed = construction proof); PFPIPE disposition; tensor-regime documentation.
+
+## 2026-10-25 (session 2 + the incident + recovery) - decoupling PROVEN, FASTCOMPLETE +2.8%, PFPIPE hard-disabled, M10 wedged and recovered
+- STRATA_MW_FASTCOMPLETE (opt-in): 4 threads [wait own AD2H -> scatter own rows], joined before
+  the block H2D.  The DECOUPLING PROOF: all gates green at compressed completes time - production
+  correctness never depended on the completes' latency (row-split: scatter->H2D->combine is plain
+  program+stream order).  Measured pair: incumbent 152.2/152.0/150.5 vs FASTCOMPLETE
+  156.2/156.7/154.5 (+2.8%).  Outputs bit-identical by construction.
+- PFPIPE: the faq-parity bug found+fixed (swap only on par==1 degenerated A,B,B,A - window 2's gup
+  overwrote the in-flight down's image); STILL faults (CUDA3) and corrupts small prompts.  Four
+  bugs fixed across two campaigns, still crashing, slower than FASTCOMPLETE: pf_pipe_env() returns
+  false unconditionally.  The knob cannot arm.
+- THE INCIDENT (journal forensics): the last PFPIPE re-test's Xid 31 (die 04:00) escalated to 8x
+  Xid 158 (FB-flush timeouts) - the die wedged, the machine died hard at ~12:18, the M10 did not
+  return on reboot.  NO PCIe/AER bus errors anywhere; the Oct-23 Xid-31 burst (~40, DRED-era) all
+  recovered - the escalation was bad-luck timing, not new stress.  Full host power-off cleared it.
+- RECOVERY VERIFIED: persistence mode on; parity 0; production (incumbent stack, fast stack envs,
+  no FASTCOMPLETE) relaunched: 2.7k 152.8/152.8, 10k 150.6, gates green, zero Xids.  FASTCOMPLETE
+  documented, awaiting the user's go.

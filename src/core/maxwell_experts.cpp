@@ -82,8 +82,15 @@ static bool dred_env() {
 
 // STRATA_MW_PFPIPE: the prefill upload pipeline (see the members in the header).  Read once.
 static bool pf_pipe_env() {
-    static const bool on = std::getenv("STRATA_MW_PFPIPE") != nullptr && std::atoi(std::getenv("STRATA_MW_PFPIPE")) != 0;
-    return on;
+    // HARD-DISABLED (2026-10-25, the ordering-debt campaign): the armed form FAULTS ("pf down sync:
+    // illegal memory access") and corrupts small-prompt answers after multi-window prefills, through
+    // FOUR fixed bugs (the gpuflag>=2 allocation hole, the never-recorded ev_pf_down_, the completes'
+    // blocking D2H discarding AD2H, and the faq swap's degenerate A,B,B,A alternation) - and it
+    // measures 148.8-151.6 vs the incumbent's 152 and FASTCOMPLETE's 156.  The code stays for the
+    // record; the knob must not arm.  The sub-batch pipelining idea is closed: the completes' wall
+    // is device-wait time (the M10 rounds serialize per-card stream), and compressing the begins
+    // buys nothing the concurrent completes don't buy safely.
+    return false;
 }
 
 // S0: whether the M10 tier's own counters run (STRATA_MW_LAYERPROF - the same flag the host-side layer
@@ -1082,10 +1089,16 @@ bool MaxwellExperts::begin_chain(std::string& err) {
         const bool pf_on = pf_pipe_env() && d_up2_ != nullptr && n_tok >= 4;
         if (pf_on && pf_par == 1) { hsel = h_up2_; dsel = d_up2_; }
         if (pf_on && d_faq2_ != nullptr) {
-            if (pf_par == 1) {
+            // the faq image must ALTERNATE EVERY window (A,B,A,B...): d_faq_ must equal set[pf_par]
+            // at this gup's launch.  The historical form swapped only when par==1, degenerating the
+            // pattern to A,B,B,A,A... - from window 2 on, gup(s+1) overwrote the image the previous
+            // window's still-in-flight down read (the PFPIPE fault/corruption family, 2026-10-25).
+            const bool want_alt = pf_par == 1;
+            if (pf_faq_alt_ != want_alt) {
                 int8_t* tf = d_faq_; d_faq_ = d_faq2_; d_faq2_ = tf;
                 float* t1 = d_fascale_; d_fascale_ = d_fascale2_; d_fascale2_ = t1;
                 float* t2 = d_fahx_; d_fahx_ = d_fahx2_; d_fahx2_ = t2;
+                pf_faq_alt_ = want_alt;
             }
         }
         h_jobs_ = (int32_t*) (hsel + (size_t) n_tok * ACTS_STRIDE);

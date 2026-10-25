@@ -275,6 +275,10 @@ private:
     // stream sync would also wait the already-enqueued gup(s+1)).  The faq/fasc/fahx pointers below
     // name the CURRENT window's set; the seconds are d_faq2_/d_fascale2_/d_fahx2_.
     int64_t pf_seq_ = 0;
+    // which faq image the members currently hold under PFPIPE (the 2026-10-25 parity fix: the
+    // historical swap-on-par==1 only degenerated the alternation to A,B,B,A,A... and from window 2
+    // each gup overwrote the image the previous window's still-in-flight down read)
+    bool pf_faq_alt_ = false;
     std::vector<int32_t> pf_owned_;   // this window's owned rows, snapshotted at begin (the completes
                                       // run after the next begin has reloaded owned_row_)
     int8_t* d_faq2_ = nullptr;

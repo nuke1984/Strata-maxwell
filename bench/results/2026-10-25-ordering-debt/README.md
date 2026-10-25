@@ -72,3 +72,46 @@ EVERY probe result in the table above reduces to "the block must be written befo
    knob stays reachable.
 3. The tensor-split regime's ordering debt: document as belonging to that (unused) configuration;
    fix only if the user runs it.
+
+## Session 2 (2026-10-25, before the goal was stopped): the DECOUPLING PROVEN + FASTCOMPLETE (+2.8%), PFPIPE hard-disabled, and the hardware incident
+
+### STRATA_MW_FASTCOMPLETE - the decoupling proof and a winner (opt-in, default off)
+Four host threads, one per card: [wait own AD2H event -> scatter own rows]; all join before the
+block H2D.  Row-split safety: the cards' row sets are DISJOINT (each entry owned by exactly one
+card, memcpy not accumulate), so the scatters are independent and the writes-before-upload program
+order is kept BY CONSTRUCTION (the join).  This compresses the completes' host wall to ~max(per
+card) - if the gates stay green at compressed completes time, production correctness NEVER
+depended on the completes' latency: the speed/safety decoupling, proven.
+
+Same-binary pair (this binary, same day, full gates on both):
+| run | 2.7k | 10k | gates |
+|---|---|---:|---|---|
+| incumbent stack | 152.2/152.0 | 150.5 | green |
+| +STRATA_MW_FASTCOMPLETE=1 | **156.2/156.7** | **154.5** | green (all: answers, topics, needle, parity) |
+
+VERDICT: decoupling PROVEN (correct at compressed completes time), and a measured +2.8% winner.
+Outputs bit-identical by construction (disjoint-row memcpy, same bytes, same H2D).
+
+### PFPIPE: the parity bug found, the fault persists, the knob HARD-DISABLED
+Found + fixed a real bug in the never-run code (the faq member swap fired only on par==1,
+degenerating the alternation to A,B,B,A... so from window 2 each gup overwrote the image the
+previous window's in-flight down read).  With the fix it STILL faults ("pf down sync: illegal
+memory access", this time CUDA3) and corrupts small-prompt answers (2+2 -> "2", 17x23 -> "105").
+Four bugs fixed across two campaigns and it still crashes, while measuring 150-151 vs FASTCOMPLETE's
+156: pf_pipe_env() now returns false UNCONDITIONALLY - the arm cannot run even with the env set.
+The sub-batch pipelining idea is closed: the completes' wall is device-wait time; compressing the
+begins buys nothing the concurrent completes don't buy safely.
+
+### THE HARDWARE INCIDENT (the journal forensics, 2026-10-25 12:15)
+The last PFPIPE re-test's Xid 31 (illegal read, die PCI 04:00 = CUDA3) was followed within a
+second by 8x Xid 158 (NV_UFLUSH_FB_FLUSH timeouts) - the die WEDGED mid-fault-recovery; RT
+throttling; the kernel log stops 12:15:30; the machine died hard ~12:18 and the M10 did not come
+back on reboot.  NO PCIe/AER bus errors anywhere in the journal; the earlier Oct-23 Xid-31 burst
+(the DRED-era forensics, ~40 faults) all recovered cleanly - the 158-escalation was the rare
+bad-luck timing (fault landing mid-FB-flush), not a new kind of stress.  A full host power-off
+cleared it: all four dies back, enumerated clean, zero Xids since.
+
+### Post-recovery verification (this build, 2026-10-25 ~13:00)
+Persistence mode re-applied; parity 0 failures; production (incumbent fast stack - NO
+FASTCOMPLETE) relaunched and verified: 2.7k 152.8/152.8, 10k 150.6, all gates green, zero Xids.
+FASTCOMPLETE is documented, opt-in, awaiting the user's go for production.

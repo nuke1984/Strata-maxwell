@@ -4480,11 +4480,43 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                       const char* e = std::getenv("STRATA_MW_REV");
                                       return e != nullptr && std::atoi(e) != 0;
                                   }();
-                                  for (int ii = 0; ii < m.mw_count; ++ii) {
+                                  // STRATA_MW_FASTCOMPLETE (2026-10-25, the ordering-debt campaign's decoupling arm): the four
+                                   // completes run CONCURRENTLY - one thread per card, each [wait own AD2H event ->
+                                   // scatter own rows].  ROW-SPLIT SAFETY: the cards' row sets are DISJOINT (each entry
+                                   // owned by exactly one card; no accumulate), so the scatters are independent writes
+                                   // into mw_block - and every thread JOINS before this block ends, so the
+                                   // writes-before-block-H2D program order is kept by construction.  This compresses
+                                   // the completes' host wall to ~max(per-card) instead of sum - the speed/safety
+                                   // decoupling test: if the gates stay green at compressed completes time, production
+                                   // correctness never depended on the completes' latency.  Tensor split must NOT take
+                                   // this path (the partial adds must stay rank-ordered).
+                                   static const bool fastc = [] {
+                                       const char* e = std::getenv("STRATA_MW_FASTCOMPLETE");
+                                       const bool on = e != nullptr && std::atoi(e) != 0;
+                                       if (on)
+                                           std::fprintf(stderr, "strata maxwell: concurrent prefill completes "
+                                                                "(STRATA_MW_FASTCOMPLETE)\n");
+                                       return on;
+                                   }();
+                                   if (fastc && !mw_tp && !dred_owns) {
+                                       std::vector<std::thread> fcth;
+                                       std::string fcterr[8];
+                                       for (int i = 0; i < m.mw_count && i < 8; ++i)
+                                           fcth.emplace_back([&, i] {
+                                               if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K,
+                                                                       (int32_t) rows_local, N, fcterr[i], mw_tp))
+                                                   fcterr[i] = "fastcomplete card " + std::to_string(i) + ": " + fcterr[i];
+                                           });
+                                       for (auto& t : fcth) t.join();
+                                       for (int i = 0; i < m.mw_count && i < 8; ++i)
+                                           if (!fcterr[i].empty()) { err = fcterr[i]; return false; }
+                                   } else {
+                                   for (int ii = 0; ii < m.mw_count; ++ii) {
                                       const int i = rev ? (m.mw_count - 1 - ii) : ii;
                                       if (!m.mw[i]->finish_to(m.mw_block.data(), slot_h + t0 * K, (int32_t) rows_local,
                                                               N, err, mw_tp))
                                           return false;
+                                  }
                                   }
                                  const auto sb2 = std::chrono::steady_clock::now();
                                  if (pp.on) { pp.sbeg += ppMs(sb0, sb1); pp.sfin += ppMs(sb1, sb2); }
