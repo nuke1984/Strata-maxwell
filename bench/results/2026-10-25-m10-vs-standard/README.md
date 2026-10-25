@@ -59,7 +59,8 @@ needle recall 2/2, decode list shape intact).
 
 1. **Prefill: the RAM path wins decisively** — 430-435 vs ~154 on fresh 2.7k (2.8×), 275 vs 154
    on the 10k (1.8×). The CPU's wide prefill windows beat the M10 tier's 64-token windows.
-2. **Decode: the M10 stack wins ~1.8× over B's best** (70 vs 52.5). Verify-window expert compute
+2. **Decode: the M10 stack wins ~1.3× warm** (70.1 vs 52.5; on B's first run, 69.5 vs 35.9,
+   it is ~1.9× while B's VRAM cache is still adapting). Verify-window expert compute
    on four M10 dies beats the 4-core AVX2 pool even with experts page-locked in RAM.
 3. **Both sides are now deterministic** — no page-cache state anywhere. B's remaining
    trial-0→1 spread (99.9→430 prefill, 35.9→52.5 decode) is engine first-touch warmup and

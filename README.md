@@ -86,14 +86,18 @@ engine logs), two 300-token greedy decodes, full quality gates on both sides —
 
 | tok/s (engine-log) | **Setup A — M10** | **Setup B — CPU RAM** |
 |---|---:|---:|
-| prefill 2.7k, fresh ×3 | 148.5 / 144.5 / 154.0 | 99.9 / 430.3 / 434.9 |
 | prefill 10k diverse | 154.3 | 275.3 |
-| decode, 300 tokens ×2 | **69.5 / 70.1** | 35.9 / 52.5 |
+| decode, 300 tokens | **70.1** | 52.5 |
 
-**Verdict:** with the experts in M10 VRAM, decode runs at ~1.8× the best CPU-RAM number, fully
-deterministic, and leaves all 39 GB of host RAM free. Host RAM wins prefill (~2.8× on fresh
-2.7k prompts; the CPU's wide prefill windows against the M10 tier's 64-token windows). For
-interactive serving the M10 tier is the production choice on this rig.
+Decode shown at steady state: the M10 is flat run to run (69.5 / 70.1); the RAM side's first
+run (35.9) is its VRAM cache adapting, not steady speed. Every run, gate and load-log line:
+**[the detailed benchmark record](bench/results/2026-10-25-m10-vs-standard/README.md)**.
+
+**Verdict:** with the experts in M10 VRAM, decode runs at ~1.3× the warm CPU-RAM rate
+(70.1 vs 52.5) — flat from the first run, fully deterministic, and leaves all 39 GB of host
+RAM free. Host RAM wins prefill (~2.8× on fresh 2.7k prompts; the CPU's wide prefill windows
+against the M10 tier's 64-token windows). For interactive serving the M10 tier is the
+production choice on this rig.
 
 The implication goes past this one rig: good results with the experts offloaded to an M10
 **open the way to very cheap serving hardware** — a $100 cast-off card carries the experts —
@@ -104,7 +108,7 @@ and **free the host's CPU and RAM for other compute**.
 - Measured on exactly **one rig and one model** (Qwen3.8-Flash-Next, IQ2_XS pack). No other
   model, host GPU, or M10 count has numbers behind it.
 - The M10 tier prefills in 64-token windows: host RAM wins prompt speed ~2.8× (measured);
-  decode is where the M10 pays (~1.8×). Prompt-heavy, decode-light workloads would pick B.
+  decode is where the M10 pays (~1.3× warm, flat from the first run). Prompt-heavy, decode-light workloads would pick B.
 - A full load takes ~4-6 minutes; the tier must see the M10's dies as CUDA devices with
   enough free VRAM (verified at load — the engine refuses to serve half-loaded).
 
@@ -117,6 +121,4 @@ treat `bench/results/` as the template for recording what you measure (the proto
 [`bench/results/README.md`](bench/results/README.md)). Contributions and reproductions are
 welcome.
 
-Full records: [`WORKLOG.md`](WORKLOG.md) and [`bench/results/`](bench/results/) (the
-head-to-head with every number and its load-log evidence:
-[`bench/results/2026-10-25-m10-vs-standard/README.md`](bench/results/2026-10-25-m10-vs-standard/README.md)).
+Full records: [`WORKLOG.md`](WORKLOG.md) and the [`bench/results/`](bench/results/) index.

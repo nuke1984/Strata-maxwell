@@ -169,6 +169,6 @@ silicon's price for 2-bit dequant, not a tuning gap.
   both sides (code audit found the silent auto-mmap switch; 0 switches in both logs).
 - NUMBERS (engine-log): A prefill 144.5-154.0 (2.7k) / 154.3 (10k), decode 69.5/70.1.  B prefill
   430.3/434.9 (2.7k fresh) / 275.3 (10k), decode 35.9/52.5.  All gates green both sides.
-- VERDICT: RAM wins prefill ~2.8x; M10 wins decode ~1.8x over B's best; both deterministic.
+- VERDICT: RAM wins prefill ~2.8x; M10 wins decode ~1.3x warm (70.1 vs 52.5; B's first run 35.9 while its VRAM cache adapts - there it is ~1.9x); both deterministic.
   Production stays A.  Full schema + charts: bench/results/2026-10-25-m10-vs-standard/README.md
   (earlier mmap-tier B entries there are superseded/mislabeled, noted in place).
