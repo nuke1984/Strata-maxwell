@@ -425,3 +425,20 @@ arm-against-arm, same day/same binary whenever possible.
   (300-tok lists); gates green live (2+2, 17x23=391, 9999^2, Paris, 10k topics, needle 2/2).
 - NEVER add STRATA_MW_DRED (quarantined; see bench/results/2026-10-26-prefill-campaign).  The
   latent cross-stream ordering note applies to this stack as documented (safe as deployed).
+
+## 2026-10-25 - prefill-250 campaign opens: research phases done, the incremental space re-closed with fresh measurements
+- The user's research plan executed: nvidia-docs mined (tuning guide + GM107 whitepaper + PTX ISA;
+  distillation in bench/results/2026-10-25-prefill-250), web research distilled (llama.cpp MMQ family,
+  minfer SASS study, vLLM/TRT-LLM MoE routing, Sarathi chunked prefill; reality-checked against our
+  kernel - ours already stage-once/reuse at run granularity).  Docs and web AGREE: no missed kernel
+  silver bullet on sm_50; every >=200 path is pipeline.
+- NTM=512 measured NULL (152.1/152.2 vs 152.4; 10k 150.4 vs 150.6): no fixed per-window cost to
+  amortize - the completes' syncs absorb token-scaled work.  Window ladder closed on the modern stack.
+- MT_E=8 REJECTED: -8% speed (140.5-140.9) AND wrong multi-window answers - root cause found and
+  hardened: the runs table is a SHARED gup/down contract, the down's E_MAX was hardcoded 4 and
+  dropped 8-wide runs.  Down now follows STRATA_MW_MT_E; with the fix E=8 is correct and measures
+  128.9 (-15%).  E-ladder closed at E=4.  The gates caught it (2.7k/10k protocols; short gates alone
+  missed it - multi-window is where wide runs live).
+- NEXT (the measured walls, in order): (1) parallel completes + EXPLICIT cross-stream ordering (also
+  retires the latent correctness debt), (2) the chunk wavefront (est. 245-265, the only >=240 path).
+- Production restored on the fast stack and verified (2+2, recall OK).

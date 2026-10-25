@@ -1106,7 +1106,10 @@ bool MaxwellExperts::begin_chain(std::string& err) {
                              geo_of(layer).gu_type != 42 && !w_rows_f16_;
         static const int mt_cap = [] {
             const char* e = std::getenv("STRATA_MW_MT_E");
-            return (e != nullptr && std::atoi(e) == 2) ? 2 : 4;   // MUST match the launcher's E_MAX
+            const int v = e != nullptr ? std::atoi(e) : 4;
+            // 8 (the 2026-10-25 prefill-250 arm): wider runs harvest more weight-hoist amortisation
+            // when tokens/expert > 4 (NTM=512 averages ~10); MUST match the launcher's E_MAX forms.
+            return (v == 2 || v == 8) ? v : 4;
         }();
         if (mt_this)
             std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.slot < b.slot; });

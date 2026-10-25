@@ -1503,12 +1503,30 @@ void s2_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride,
                                      float* d_out, cudaStream_t stream,
                                      int blk_base, int blks, size_t d_row_stride, size_t d_scale_stride) {
     if (nruns <= 0) return;
-    constexpr int SPLIT = 2, THREADS = 128, E_MAX = 4;
+    // The runs table is a SHARED contract with the gup: the host's mt_cap (STRATA_MW_MT_E) builds
+    // runs up to that width, and BOTH kernels must instantiate an E_MAX that covers it - a too-small
+    // E_MAX here silently DROPS wider runs (the 2026-10-25 E=8 corruption: the gup widened, the down
+    // did not, and every multi-window prompt answered garbage while short prompts passed).
+    static const int emax_d = [] {
+        const char* e = std::getenv("STRATA_MW_MT_E");
+        const int v = e != nullptr ? std::atoi(e) : 4;
+        return (v == 2 || v == 8) ? v : 4;
+    }();
+    constexpr int SPLIT = 2, THREADS = 128;
     constexpr int PER_BLOCK = THREADS / SPLIT;
     const int blocks = nruns * (H / PER_BLOCK);
-    expert_s2_stage2_mt_batch<SPLIT, THREADS, E_MAX><<<blocks, THREADS, 0, stream>>>(
-        d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
-        d_faq, d_fasc, d_fahx, d_out, blk_base, blks, d_row_stride, d_scale_stride);
+    if (emax_d == 2)
+        expert_s2_stage2_mt_batch<SPLIT, THREADS, 2><<<blocks, THREADS, 0, stream>>>(
+            d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
+            d_faq, d_fasc, d_fahx, d_out, blk_base, blks, d_row_stride, d_scale_stride);
+    else if (emax_d == 8)
+        expert_s2_stage2_mt_batch<SPLIT, THREADS, 8><<<blocks, THREADS, 0, stream>>>(
+            d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
+            d_faq, d_fasc, d_fahx, d_out, blk_base, blks, d_row_stride, d_scale_stride);
+    else
+        expert_s2_stage2_mt_batch<SPLIT, THREADS, 4><<<blocks, THREADS, 0, stream>>>(
+            d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
+            d_faq, d_fasc, d_fahx, d_out, blk_base, blks, d_row_stride, d_scale_stride);
 }
 
 // v2 ONLY: the down stage with fp16 rows - half the uplink bytes when the destination is mapped host
@@ -2068,28 +2086,44 @@ void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, s
         if (e != nullptr && strncmp(e, "256x4", 5) == 0) return 4;
         return 0;
     }();
-    if (geom == 5) {   // acts-in-global: the GACT kernel, always 256x4 today
+    // STRATA_MW_MT_E (the occupancy lever, 2026-10-26): E_MAX=2 halves the act staging (13.7 KB ->
+    // ~7 blocks x 8 warps = 56 warps/SM at the 256x4 geometry) at half the weight amortisation.  The
+    // run-width cap reads the SAME env on the host side, so the tables always fit the instantiation.
+    // 8 (the 2026-10-25 prefill-250 arm) widens runs the other way: more hoist amortisation per
+    // token where tokens/expert > 4, at double the act smem (the smem form drops to 1 block/SM;
+    // the GACT form keeps ~6).
+    static const int emax = [] {
+        const char* e = std::getenv("STRATA_MW_MT_E");
+        const int v = e != nullptr ? std::atoi(e) : 4;
+        return (v == 2 || v == 8) ? v : 4;
+    }();
+    if (geom == 5) {   // acts-in-global: the GACT kernel, 256x4 geometry; E follows STRATA_MW_MT_E (8 allowed)
         const int blocks = nruns * (FF / 64);
-#define STRATA_LAUNCH_GACT(TY)                                                                     \
-        expert_iq_stage1_mt_batch_gact<TY, 4, 256, 4><<<blocks, 256, 0, stream>>>(                 \
-            d_blobs, blob_stride, d_runs, d_entries, acts_base, o_gate, o_up, gu_row,              \
+#define STRATA_LAUNCH_GACT(TY, EM)                                                                    \
+        expert_iq_stage1_mt_batch_gact<TY, 4, 256, EM><<<blocks, 256, 0, stream>>>(                   \
+            d_blobs, blob_stride, d_runs, d_entries, acts_base, o_gate, o_up, gu_row,                \
             d_faq, d_fasc, d_fahx, d_ff_dbg, row_base, rows_slice)
         switch (gu_type) {
-            case 22: STRATA_LAUNCH_GACT(22); break;
-            case 16: STRATA_LAUNCH_GACT(16); break;
-            case 29: STRATA_LAUNCH_GACT(29); break;
+            case 22:
+                if (emax == 2) STRATA_LAUNCH_GACT(22, 2);
+                else if (emax == 8) STRATA_LAUNCH_GACT(22, 8);
+                else STRATA_LAUNCH_GACT(22, 4);
+                break;
+            case 16:
+                if (emax == 2) STRATA_LAUNCH_GACT(16, 2);
+                else if (emax == 8) STRATA_LAUNCH_GACT(16, 8);
+                else STRATA_LAUNCH_GACT(16, 4);
+                break;
+            case 29:
+                if (emax == 2) STRATA_LAUNCH_GACT(29, 2);
+                else if (emax == 8) STRATA_LAUNCH_GACT(29, 8);
+                else STRATA_LAUNCH_GACT(29, 4);
+                break;
             default: std::exit(1);
         }
 #undef STRATA_LAUNCH_GACT
         return;
     }
-    // STRATA_MW_MT_E (the occupancy lever, 2026-10-26): E_MAX=2 halves the act staging (13.7 KB ->
-    // ~7 blocks x 8 warps = 56 warps/SM at the 256x4 geometry) at half the weight amortisation.  The
-    // run-width cap reads the SAME env on the host side, so the tables always fit the instantiation.
-    static const int emax = [] {
-        const char* e = std::getenv("STRATA_MW_MT_E");
-        return (e != nullptr && std::atoi(e) == 2) ? 2 : 4;
-    }();
     const int thr = geom != 0 ? 256 : 128;
     const int per_block = geom == 4 ? 64 : 32;
     const int blocks = nruns * (FF / per_block);
@@ -2101,18 +2135,21 @@ void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, s
         case 22:   // IQ2_S
             if (geom == 8) STRATA_LAUNCH_MT_G(22, 8, 256, 4);
             else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(22, 4, 256, 2);
+            else if (geom == 4 && emax == 8) STRATA_LAUNCH_MT_G(22, 4, 256, 8);
             else if (geom == 4) STRATA_LAUNCH_MT_G(22, 4, 256, 4);
             else STRATA_LAUNCH_MT_G(22, 4, 128, 4);
             break;
         case 16:   // IQ2_XXS
             if (geom == 8) STRATA_LAUNCH_MT_G(16, 8, 256, 4);
             else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(16, 4, 256, 2);
+            else if (geom == 4 && emax == 8) STRATA_LAUNCH_MT_G(16, 4, 256, 8);
             else if (geom == 4) STRATA_LAUNCH_MT_G(16, 4, 256, 4);
             else STRATA_LAUNCH_MT_G(16, 4, 128, 4);
             break;
         case 29:   // IQ1_M
             if (geom == 8) STRATA_LAUNCH_MT_G(29, 8, 256, 4);
             else if (geom == 4 && emax == 2) STRATA_LAUNCH_MT_G(29, 4, 256, 2);
+            else if (geom == 4 && emax == 8) STRATA_LAUNCH_MT_G(29, 4, 256, 8);
             else if (geom == 4) STRATA_LAUNCH_MT_G(29, 4, 256, 4);
             else STRATA_LAUNCH_MT_G(29, 4, 128, 4);
             break;
