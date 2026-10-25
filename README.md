@@ -105,7 +105,6 @@ and **free the host's CPU and RAM for other compute**.
   model, host GPU, or M10 count has numbers behind it.
 - The M10 tier prefills in 64-token windows: host RAM wins prompt speed ~2.8× (measured);
   decode is where the M10 pays (~1.8×). Prompt-heavy, decode-light workloads would pick B.
-- **Never tried**: a mixed tier — M10 for the decode-hot experts + RAM for prefill breadth.
 - A full load takes ~4-6 minutes; the tier must see the M10's dies as CUDA devices with
   enough free VRAM (verified at load — the engine refuses to serve half-loaded).
 

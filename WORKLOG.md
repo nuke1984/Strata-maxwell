@@ -156,7 +156,8 @@ silicon's price for 2-bit dequant, not a tuning gap.
   page-cache path (39 GB of experts cached).
 - VERDICT: the M10 stack wins decode ~2x and is warmth-independent; the warm CPU/RAM path wins
   prefill ~2x and is cache-state-dependent.  Production stays on A (stable decode + stable
-  prefill).  Open: the B warmth/flags residual, and a never-tried mixed mode.
+  prefill).  Open: the B warmth/flags residual; the mixed mode (M10 decode + RAM prefill) is
+  ruled out - it would hold the host's RAM, the opposite of the tier's purpose (decided 2026-10-25).
 - bench/results/2026-10-25-m10-vs-standard/README.md carries the full schema and every number.
 
 ## 2026-10-25 (the only test that counts) - M10 VRAM vs CPU-RAM, both sides fully resident, equal expert split
