@@ -158,3 +158,16 @@ silicon's price for 2-bit dequant, not a tuning gap.
   prefill ~2x and is cache-state-dependent.  Production stays on A (stable decode + stable
   prefill).  Open: the B warmth/flags residual, and a never-tried mixed mode.
 - bench/results/2026-10-25-m10-vs-standard/README.md carries the full schema and every number.
+
+## 2026-10-25 (the only test that counts) - M10 VRAM vs CPU-RAM, both sides fully resident, equal expert split
+- Spec-corrected head-to-head, no page cache anywhere: A (our port, production recipe) 1874 slots
+  on 3060 + 22,702 experts in M10 VRAM; B (STOCK 0.2.6, stock recipe spec 4) the SAME 1874 slots
+  + the SAME 22,702 experts page-locked in CPU RAM (--resident-experts; the bare --resident-cpu-experts
+  form cannot fit this host: its fixed 8 GiB headroom exceeds 39 GB total - code-verified, engine
+  refused to start rather than fall back, exactly as designed).  PLE --ple-io direct EXPLICIT on
+  both sides (code audit found the silent auto-mmap switch; 0 switches in both logs).
+- NUMBERS (engine-log): A prefill 144.5-154.0 (2.7k) / 154.3 (10k), decode 69.5/70.1.  B prefill
+  430.3/434.9 (2.7k fresh) / 275.3 (10k), decode 35.9/52.5.  All gates green both sides.
+- VERDICT: RAM wins prefill ~2.8x; M10 wins decode ~1.8x over B's best; both deterministic.
+  Production stays A.  Full schema + charts: bench/results/2026-10-25-m10-vs-standard/README.md
+  (earlier mmap-tier B entries there are superseded/mislabeled, noted in place).

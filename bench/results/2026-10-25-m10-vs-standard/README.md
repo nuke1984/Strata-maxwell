@@ -1,57 +1,73 @@
-# 2026-10-25 — strata-maxwell-M10 vs strata-standard-CPU/RAM: the head-to-head (same host, same model, equal expert split)
+# 2026-10-25 — THE test: strata-maxwell (experts in M10 VRAM) vs strata-standard (experts in CPU RAM)
 
-Protocol: both sides on THIS host (RTX 3060 + 4×M10, 4-core CPU, 39 GB RAM), same model/pack/PLE/
-MTP/256k/kv-k8v4/mmap args, full quality gates on every run (all green, both sides).  Standard
-protocol: fresh 2.7k prompts ×3 + the 10k diverse (always 0-reused), 300-token decode lists ×2.
+One head-to-head, this host (RTX 3060 + 4×M10, 4-core AVX2 CPU, 39 GB RAM), same model/pack/PLE
+shard/MTP/256k/kv-k8v4/profile. Both sides deterministic: every routed expert lives in real
+memory (VRAM or page-locked RAM), no page cache, no mmap-on-demand, no file reads after load.
+This entry supersedes every earlier B run in this directory (those measured the mmap file tier,
+a mis-specified config; see the note at the end).
 
-## The schema (as run)
+## The schema (as run, verified from load logs)
 
-| | A: strata-maxwell (our port, tag maxwell-0.2.6-port-production-OK) | B: strata-standard (stock upstream v0.2.6, built clean in /home/toor/Strata-stock026) |
+| | **A — strata-maxwell** | **B — strata-standard** |
 |---|---|---|
-| binary | our port (0.1.51 base + Maxwell layer) | stock v0.2.6 (no Maxwell code exists in it) |
-| 3060 | dense spine + **1874 expert-cache slots (2.53 GiB)** | dense spine + **1874 slots (B-main; pinned identically)** / 2522 auto (B-stock) |
-| remaining routed experts | **M10 tier: 5676 blobs per die, 7.61–7.63 GiB on each of 4 dies** (the profiled set) | **CPU + RAM** (mmap file tier, page cache, 3-worker pool) |
-| PLE | direct (default — never enters RAM), same shard | direct (default), same shard |
-| other args | spec 6, spec-min-p 0.5, spec-split, prefill auto | B-main: identical; B-stock: spec 4, no spec-split, auto cache |
-| env | MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 FASTCOMPLETE=1 | none (the knobs do not exist in stock) |
+| binary | our port, tag `maxwell-0.2.6-port-production-OK` | stock upstream v0.2.6 (clean build, /home/toor/Strata-stock026) |
+| recipe | production: spec 6, spec-min-p 0.5, spec-split, prefill auto + 6 env knobs (MT=1 MT_T=256x4 NTM=256 TWOPHASE=1 AD2H=1 FASTCOMPLETE=1) | stock: spec 4 (default), prefill auto, no knobs (none exist) |
+| 3060 | dense spine + **1874 expert-cache slots (2.53 GiB)** — pinned `--expert-cache 1800 --vram-reserve-mib 976`, fit-path, log-verified | **identical: 1874 slots (2.53 GiB)** — same pins, log-verified |
+| remaining routed experts | **22,702 in M10 VRAM**: 5676+5676+5675+5675 experts, 7.61–7.63 GiB per die, resident at load | **22,702 in CPU RAM**: the resident complement (30.49 GiB, page-locked) + 1304 of 1584 lend-slot duplicates = 32.24 GiB total. Log: `resident RAM mode: 32.24 GiB of experts in RAM (page-locked), 1874 in the GPU cache; adaptive swaps ... (no file reads)` |
+| PLE | **`--ple-io direct` explicit** — pinned; 0 auto-switch lines in log | identical |
+| expert totals | 1874 + 22,702 = 24,576 routed | 1874 + 22,702 = 24,576 routed — EQUAL |
 
-The A-main/B-main pair differs ONLY in: the binary, the two --maxwell flags, and the env knobs.
-The 3060 expert count is EQUAL (1874, verified in both logs).
+Code-verified config note: the bare `--resident-cpu-experts` form hard-codes an 8 GiB RAM
+headroom (generate.cpp:544, no override) — 30.49 + 8 GiB exceeds this host's 39 GB, so it
+refuses to start (measured: hard exit, `CPU expert residency:` error — the no-silent-fallback
+behavior worked as designed). B therefore uses the engine's own setup form `--resident-experts`
+(same resident machinery, copy page-locked, 4 GiB headroom: 30.49+4 < 36.28 available). Its
+soft-fallback path was hard-gated: the success line above is from THIS launch (0 fallback
+lines after this launch's engine-start line). The 280 un-kept lend slots are read from file
+only when a prompt lends them (a prefill-path detail; decode never lends).
 
-## The numbers
+## The numbers (engine-log tok/s, this test's launches only)
 
-| run | prefill 2.7k (fresh) | prefill 10k | decode 300-tok | cache state |
-|---|---:|---:|---:|---|
-| **A: M10 stack** | 153.0 / 153.9 | **154.3** | **69.7 / 70.4** | VRAM-resident (warmth-independent) |
-| B-main, first pass | 42.4 / 46.2 | 53.8 | 26.3 / 39.6 | page cache partially warm |
-| **B-main, warm** | **219.4 / 287.8 / 300.4** | **397.8** | (same as above) | page cache fully warm (39 GB cached) |
-| B-stock (reference) | 217.5 / 243.4 | 160.7 | 26.0 / 41.8 | warm-ish |
+**Prefill** — fresh prompts, 0-reused verified in every line:
 
-Every number: engine-log tok/s.  All gates green on both sides (fixed answers, 10k topics,
-needle 2/2; B-stock's decode accepts fewer drafts at spec 4 — expected, not a fault).
+| | 2.7k trial 0 (1842 tok) | 2.7k trial 1 (1728 tok) | 2.7k trial 2 (1728 tok) | 10k diverse (8836 tok) |
+|---|---:|---:|---:|---:|
+| **A — M10 VRAM** | 148.5 | 144.5 | 154.0 | 154.3 |
+| **B — CPU RAM** | 99.9 | **430.3** | **434.9** | **275.3** |
+
+**Decode** — exact request, both sides identical:
+`POST /v1/chat/completions`, `temperature 0` (greedy), `max_tokens 300`, `stream false`,
+`enable_thinking false`, prompt: *"List 100 distinct animals, one per line, numbered 1. to 100.
+Do not stop early."* (39 tokens as tokenized; response = numbered list, cut by the 300-token
+cap at ~item 53-55 — the model does not stop early).
+
+| side | spec | trial | 300 tok in | **decode tok/s** | drafts accepted |
+|---|---|---|---:|---:|---|
+| **A — M10 VRAM** | 6 + min-p 0.5 + split | 0 | 4318 ms | **69.5** | 234/258 |
+| **A — M10 VRAM** | 6 + min-p 0.5 + split | 1 | 4279 ms | **70.1** | 234/258 |
+| **B — CPU RAM** | 4 (stock default) | 0 | 8355 ms | **35.9** | 202/300 |
+| **B — CPU RAM** | 4 (stock default) | 1 | 5719 ms | **52.5** | 207/285 |
+
+Quality gates: ALL GREEN on both sides (2+2=4, 17×23=391, 9999²=99980001, 10k topics correct,
+needle recall 2/2, decode list shape intact).
 
 ## What the numbers say
 
-1. **DECODE: the M10 stack wins ~2×** (70 vs 26–42).  Every token's experts must compute in the
-   verify window; the M10s' kernels beat this host's 4-core pool decisively there.
-2. **PREFILL: the warm CPU/RAM path wins ~2×** (up to 397.8 on the 10k vs the M10's 154.3) — and
-   it is **page-cache-state-dependent**: the same config measured 42→53 (partial warmth) and
-   219→398 (fully warm).  The M10 stack's 154 is warmth-independent (VRAM-resident experts).
-3. **The historical 259.9 (2026-10-22, `2026-10-22-m10-vs-ram`) reproduces and is exceeded** —
-   it was this host's CPU/RAM path on a warm cache; today's fully-warm 10k hit 397.8.  The
-   earlier campaign framing ("259.9 unreachable by the M10 stack") stands: the M10 prefill
-   ceiling (~154) is far below what this host's RAM does warm.
-4. The decode-side reality inverts the prefill story: at 26–42 tok/s the CPU/RAM rig is not a
-   practical serving config for generation-heavy use; at 70 the M10 stack is.
+1. **Prefill: the RAM path wins decisively** — 430-435 vs ~154 on fresh 2.7k (2.8×), 275 vs 154
+   on the 10k (1.8×). The CPU's wide prefill windows beat the M10 tier's 64-token windows.
+2. **Decode: the M10 stack wins ~1.8× over B's best** (70 vs 52.5). Verify-window expert compute
+   on four M10 dies beats the 4-core AVX2 pool even with experts page-locked in RAM.
+3. **Both sides are now deterministic** — no page-cache state anywhere. B's remaining
+   trial-0→1 spread (99.9→430 prefill, 35.9→52.5 decode) is engine first-touch warmup and
+   VRAM-cache adaptation (adaptive swaps into the 1874 slots), not file-cache warmth: the
+   experts were already all in RAM. A shows the same shape compressed (148→154, flat decode).
+4. Production choice stays **A** (the M10 stack): decode is the interactive metric and A's
+   prefill does not depend on 32 GiB of page-locked RAM leaving no headroom (B runs at
+   ~3 GiB MemAvailable; A leaves the host 39 GB free for everything else).
 
-## Open (measured, unexplained — left open)
+## Superseded
 
-- B-main's FIRST pass (42–54) vs B-stock same-day (160–243): the delta is warmth + possibly the
-  pinned cache/reserve or spec-split; not isolated this run (the warm B-main rerun converged to
-  B-stock's class, so warmth is the dominant term — the residual is unexplored).
-- The 0.2.5/0.2.6 chunked-prompt path's interaction with the CPU tier at various cache sizes.
-- Whether a mixed mode (M10 for decode-critical experts + RAM for prefill breadth) could hold
-  ~70 decode AND ~300 prefill — never tried; the two paths were never run simultaneously.
-
-**Serving choice stays A (the M10 stack)** for production: its decode advantage is stable and
-its prefill does not depend on a 39 GB page cache staying warm.
+The earlier entries in this directory (B-main / B-stock mmap runs, 42→398 "warmth gradient")
+measured `--mmap-experts` alone — the file tier, NOT the specified RAM-resident mode. They
+stand as measurements of that other config; the warmth story explains them and does not apply
+to this test.
