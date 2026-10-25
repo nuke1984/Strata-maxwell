@@ -523,3 +523,12 @@ arm-against-arm, same day/same binary whenever possible.
 - RECOVERY VERIFIED: persistence mode on; parity 0; production (incumbent stack, fast stack envs,
   no FASTCOMPLETE) relaunched: 2.7k 152.8/152.8, 10k 150.6, gates green, zero Xids.  FASTCOMPLETE
   documented, awaiting the user's go.
+
+## 2026-10-25 (production switch, user go) - FASTCOMPLETE is LIVE
+- Production now serves: config strata-spec6.json with env STRATA_MW_MT=1 STRATA_MW_MT_T=256x4
+  STRATA_MW_NTM=256 STRATA_MW_TWOPHASE=1 STRATA_MW_AD2H=1 STRATA_MW_FASTCOMPLETE=1.
+- Launch: setsid env STRATA_MW_MT=1 STRATA_MW_MT_T=256x4 STRATA_MW_NTM=256 STRATA_MW_TWOPHASE=1
+  STRATA_MW_AD2H=1 STRATA_MW_FASTCOMPLETE=1 nohup .venv/bin/python serve/server.py --engine strata
+  --config strata-spec6.json --port 8088 &
+- Live-verified: 2.7k 157.5/157.9, 10k 155.3; gates green live (answers, topics, needle 2/2).
+- NEVER enable STRATA_MW_DRED (quarantined) or STRATA_MW_PFPIPE (hard-disabled in code).
