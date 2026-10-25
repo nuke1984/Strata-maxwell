@@ -160,3 +160,53 @@ each measured to be correctness-load-bearing or faulting on this vGPU stack.
 Remaining honest arms before any verdict: (a) interleave the next grouping into the completes'
 idle waits (bounded by the ~4 ms grouping), (b) fp16 partials (halve the D2H/H2D bytes, ~2 ms).
 Both are sub-10% arms; neither reaches 250 alone or stacked.
+
+## Session 4 (2026-10-25 late): the last kernel lever measured (vmad vs FFMA: 1.07x); the interleave arm closed by dependency; THE CEILING VERDICT
+
+### tools/vmad_ffma_probe.cu (new): the dp4a-form question settled with a number
+The web research claimed FFMA + byte-to-float beats emulated dp4a 3-4x - but that assumed the
+SCALAR fallback.  Our dp4a_s32 is 4x single-issue vmad PTX.  Measured on the M10 (40 blocks x 256
+threads, the apply loop's shape, 32 MACs/iter):
+  vmad form: 326.8 G MAC/s | ffma form: 350.7 G MAC/s | ratio 1.07x
+A full apply-rewrite is worth <=7% of the apply's ~60% gup share = <=0.7% of the unit - inside
+noise.  CLOSED.  (The kernel-lever inventory is now fully measured/bounded.)
+
+### The interleave-grouping arm: structurally EMPTY (closed by dependency)
+Every candidate filler for the completes' idle waits - the next prelude's D2H/quant/sort - depends
+on THIS layer's completes (completes -> block H2D -> combine -> next prelude).  The 3060's idle
+during the completes has no legal work: the never-overlap finding, now confirmed from the
+dependency side.  CLOSED.
+
+## THE CEILING VERDICT (measured, 2026-10-25): 250 is not reachable on this rig/stack
+
+The four-legged case (every leg measured; no projections):
+
+1. THE KERNEL/INCREMENTAL SPACE IS CLOSED.  Docs + web cross-referenced against the code: no
+   missed sm_50 primitive (vmad 1.07x from the FFMA ceiling - today; codebook smem, dual-issue
+   structure, __ldg, L2 - closed by inspection + the GACT measurement).  The occupancy x
+   amortization space swept BOTH directions (256x8, GACT, E=2, E=8 -15%, NTM 64<->512 null).
+   The gup is instruction-bound at 27x DRAM slack - the sm_50 dequant physics, at its measured
+   optimum.
+2. THE CORRECTNESS WALL (four experimental forms).  Every compression of the completes' ~13-18
+   ms/unit host latency faults or corrupts: DRED modes 1/3 crash, mode 6 wrong-at-speed, mode 7
+   correct-but-priced (150-152 <= incumbent), PFPIPE armed (this campaign) crash.  The racing
+   consumer sits below the engine (only a NULL-stream barrier orders it; 6 forensic sessions;
+   compute-sanitizer cannot run the engine on this stack).  The serve+completes couple:
+   29-38 ms of the 47.4 ms unit.
+3. THE OVERLAP CEILING (measured floors).  The dies are parallel (probe) - the chain is the
+   parallel minimum.  The prompt loop is chunk-major; every legal overlap inside it is the
+   sub-batch pipeline (measured NEGATIVE and faulting) or structurally empty (session 4's
+   dependency closure).  The layer-major wavefront - the only remaining >=200 form - floors at
+   serve+completes+join = 33-43 ms/unit = 200-240 tok/s at ZERO join/host cost, and every partial
+   form of it measured fault-prone.
+4. THE ARITHMETIC.  250 tok/s = 28.9 ms/unit - BELOW the correctness-priced floor of this stack
+   (29-38 ms).  The target sits under the wall, not behind a removable overhead.
+
+Shippable optimum: 152.5 (re-verified this session on the final binary: 152.8/153.0 warm 2.7k,
+150.3 10k, full gates + parity 0).  Open bounded micro-arms, documented, none >2%: fp16 D2H legs
+(+1-2%, barrier-safe), the sact 34B smem packing (<=1%, interior of the measured occupancy
+envelope), scatter parallelization (barrier-priced by the mode-5/7 economics).
+
+The CPU rig's 259.9 and the 250 target both require what this stack's measured correctness
+economy forbids: pipelining away the completes' latency.  Like the decode campaign's ~71, the
+number is architectural, not effort-limited.

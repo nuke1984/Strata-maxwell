@@ -472,3 +472,18 @@ arm-against-arm, same day/same binary whenever possible.
   the wall three experimental families price as correctness-load-bearing/faulting on this stack.
 - Remaining arms before a verdict: interleave-grouping (~4 ms bound), fp16 partials (~2 ms).
 - Production restored (fast stack), verified (answer 4).
+
+## 2026-10-25 (session 4, campaign close) - vmad 1.07x; interleave empty by dependency; THE VERDICT
+- tools/vmad_ffma_probe.cu: vmad 326.8 vs FFMA 350.7 G MAC/s on the M10 (1.07x) - the web's 3-4x
+  assumed the scalar fallback; our vmad form is ~at the ceiling.  The kernel lever inventory is
+  fully measured/bounded.  The interleave-grouping arm closed STRUCTURALLY: every filler depends
+  on this layer's completes (completes -> H2D -> combine -> prelude) - the 3060's completes-idle
+  has no legal work.
+- THE CEILING VERDICT (4 legs, all measured): kernels closed (1); the completes' compression is
+  correctness-load-bearing across FOUR forms - DRED 1/3 crash, mode 6 wrong, mode 7 priced,
+  PFPIPE crash - consumer below the engine (2); the dies parallel, every legal in-architecture
+  overlap measured negative/faulting/empty, the layer-major wavefront floors at 33-43 ms/unit =
+  200-240 at zero join cost (3); 250 = 28.9 ms/unit sits BELOW the floor (4).  Not reachable on
+  this rig/stack.  Shippable: 152.5 (re-verified 152.8/153.0 warm, 150.3 10k, gates + parity 0).
+- Micro-arms documented bounded <=2% each (fp16 legs, smem packing, scatter-parallel).  Production
+  serving the fast stack, verified.
