@@ -19,8 +19,8 @@ full quality gates on anything that ships.
 
 ---
 
-## Production now (2026-10-25, tag `production-0.2.6-OK`; the 0.2.2 line is preserved as
-## branch `maxwell-0.2.2` and tag `production-2026-10-25`)
+## Production now (2026-10-25, tag `maxwell-0.2.6-port-production-OK`; the 0.2.2 line is preserved as
+## branch `maxwell-0.2.2` and tag `maxwell-0.2.2-opti-production-OK`)
 
 **Launch recipe** (verified live):
 ```sh
