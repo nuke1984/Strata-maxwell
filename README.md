@@ -50,6 +50,8 @@ fully deterministic (every expert in real memory, no page cache, no file reads a
 
 | | **Setup A — M10** | **Setup B — CPU RAM** |
 |---|---|---|
+| context | **256K** (the model's full length) | **256K** (the model's full length) |
+| KV cache | k8v4 | k8v4 |
 | binary | this repo | stock upstream v0.2.6 |
 | recipe | production (spec 6, min-p 0.5, spec-split + knobs) | stock (spec 4 default) |
 | 3060 expert cache | 1874 experts | 1874 experts (identical, log-verified) |
