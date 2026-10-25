@@ -487,3 +487,21 @@ arm-against-arm, same day/same binary whenever possible.
   this rig/stack.  Shippable: 152.5 (re-verified 152.8/153.0 warm, 150.3 10k, gates + parity 0).
 - Micro-arms documented bounded <=2% each (fp16 legs, smem packing, scatter-parallel).  Production
   serving the fast stack, verified.
+
+## 2026-10-25 (ordering-debt session 1) - the premise audit turns the story: the DRED arm never engages (mw_tp=0); production is row-split
+- The user set the goal: make the speed/safety dependency explicit.  Session 1 ran a 14-form
+  discriminator matrix on the mode-6 family (deterministic: mode 6 wrong x3, mode 7 correct x3;
+  sleeps/readbacks/host-reads/reads-only/writes-only/split-passes ALL wrong; only the real dead
+  scatter correct) - then the execution banners revealed WHY: **mw_tp=0**.  Neither config sets
+  --maxwell-split (default expert/ROW; tensor also needs GPUFLAG) -> the DRED arm NEVER RUNS on
+  this rig -> "mode 6" = completes early-return before the scatter -> mw_block never written ->
+  the always-running block H2D uploads stale garbage.  A mundane unwritten-buffer bug, not a race.
+- Two verification bugs fixed on the way (recorded as rules): the engine log TRUNCATES per launch
+  (grep full+immediately, never tail-by-stale-count); small prompts never reach the sub-batch path.
+- CONSEQUENCES: the historical barrier forensics STAND for the TENSOR-split regime they ran under
+  (their crashes prove the arm engaged); the correct-by-latency narrative belongs to that dormant
+  configuration.  PRODUCTION (row split): scatter->H2D->combine is plain program+stream order - no
+  latency borrowing visible.  The one real compressed-latency fault in production's regime is the
+  PFPIPE arm (armed this campaign, crashed in row split).
+- NEXT: the decoupling proof on production (compress the completes to their floor; gates at max
+  speed = construction proof); PFPIPE disposition; tensor-regime documentation.

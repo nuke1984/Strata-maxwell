@@ -1622,7 +1622,52 @@ bool MaxwellExperts::finish_chain(std::string& err) {
     // empirically necessary part - without them, i.e. with the bare early return, the chain faults
     // with an illegal access on multi-window prompts; with them, every arm form passes), but the
     // host scatter-add is DRED's dead work - the reduce already wrote Dm - so skip it.
-    if (dred_fm == 6) return true;
+    if (dred_fm == 6) {
+        // STRATA_MW_ORDER_PROBE 10/11 (2026-10-25, the ordering-debt campaign): bisect the scatter's
+        // fixing agency AT ITS POSITION (after the per-card AD2H waits - several ms after the prefill-side
+        // probes).  10 = a 6 ms sleep at the exact position (positional latency?); 11 = run the real
+        // dead scatter (reads h_out_, writes the dead mw_block) instead of returning early; anything
+        // else = the historical early return.
+        static const int op6 = std::atoi(std::getenv("STRATA_MW_ORDER_PROBE") ?: "0");
+        if (op6 == 10) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(6));
+            return true;
+        }
+        if (op6 == 12) {   // reads-only at the scatter position: full contiguous h_out_ reads, no writes
+            volatile float acc = 0.f;
+            for (size_t s = 0; s < owned_row_.size(); ++s) {
+                const float* src2 = h_out_ + s * (size_t) w_n_embd_;
+                for (int64_t e = 0; e < w_n_embd_; ++e) acc += src2[e];
+            }
+            if (acc == 1e30f) std::fprintf(stderr, "op12 impossible\n");
+            return true;
+        }
+        if (op6 == 13) {   // writes-only at the scatter position: overwrite the same mw_block rows, no h_out_ reads
+            for (size_t s = 0; s < owned_row_.size(); ++s) {
+                const int32_t i2 = owned_row_[s];
+                const int32_t row2 = w_row_of_ ? w_row_of_[i2] - w_row_base_ : (int32_t) s;
+                float* dst2 = w_dst_ + (size_t) row2 * (size_t) w_n_embd_;
+                for (int64_t e = 0; e < w_n_embd_; ++e) dst2[e] = 1.f;
+            }
+            return true;
+        }
+        if (op6 == 15) {   // read-pass + write-pass (NOT interleaved RMW): full reads then full writes
+            volatile float acc = 0.f;
+            for (size_t s = 0; s < owned_row_.size(); ++s) {
+                const float* src2 = h_out_ + s * (size_t) w_n_embd_;
+                for (int64_t e = 0; e < w_n_embd_; ++e) acc += src2[e];
+            }
+            for (size_t s = 0; s < owned_row_.size(); ++s) {
+                const int32_t i2 = owned_row_[s];
+                const int32_t row2 = w_row_of_ ? w_row_of_[i2] - w_row_base_ : (int32_t) s;
+                float* dst2 = w_dst_ + (size_t) row2 * (size_t) w_n_embd_;
+                for (int64_t e = 0; e < w_n_embd_; ++e) dst2[e] = 1.f;
+            }
+            if (acc == 1e30f) std::fprintf(stderr, "op15 impossible\n");
+            return true;
+        }
+        if (op6 != 11) return true;
+    }
     for (size_t s = 0; s < owned_row_.size(); ++s) {
         const int32_t i = owned_row_[s];
         const int32_t row = w_row_of_ ? w_row_of_[i] - w_row_base_ : i;

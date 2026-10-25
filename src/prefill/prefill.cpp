@@ -4343,6 +4343,118 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                                   }
                                               }
                                           }
+                                               // STRATA_MW_ORDER_PROBE (2026-10-25, the ordering-debt
+                                               // campaign): mode-6-only discriminators, ONE at a time,
+                                               // placed between the reduce and the downstream consumers'
+                                               // enqueues.  THE PROBE FAMILY IS QUARANTINED (DRED modes
+                                               // are test-only, never production).
+                                               //   1 = host sleep 6 ms    (pure latency)
+                                               //   2 = host sleep 1 ms    (dose response)
+                                               //   3 = NULL-stream readback of 4 B of Dm's tail row (mode-7's agent, no m.cs sync)
+                                               //   4 = NULL-stream readback of 4 B of an UNRELATED device buffer
+                                               //   5 = dead reads of h_out_ (the completes' scatter reads, no writes)
+                                               //   6 = mode-6 Dm checksum ALWAYS (pairs with any probe)
+                                               static const int ordp = std::atoi(std::getenv("STRATA_MW_ORDER_PROBE") ?: "0");
+                                               if (dred_mode == 6 && ordp > 0) {
+                                                   static bool once7 = false;
+                                                   if (!once7) { once7 = true; std::fprintf(stderr, "ORDER-PROBE active: ordp=%d\n", ordp); std::fflush(stderr); }
+                                                   if (ordp == 1) std::this_thread::sleep_for(std::chrono::milliseconds(6));
+                                                   if (ordp == 2) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                                   if (ordp == 3) {
+                                                       float sink;
+                                                       const int32_t dst_row = m.dred_map_h[0];
+                                                       if (cudaMemcpy(&sink, m.Dm + (size_t) (rows_local + dst_row) * N, 4,
+                                                                      cudaMemcpyDeviceToHost) != cudaSuccess)
+                                                           std::fprintf(stderr, "ORDER-PROBE 3: readback failed\n");
+                                                   }
+                                                   if (ordp == 7) {   // dose probe: read STRATA_MW_ORDER_BYTES from Dm's tail (no checksum)
+                                                       const char* be = std::getenv("STRATA_MW_ORDER_BYTES");
+                                                       const size_t nb = be != nullptr ? (size_t) std::atoi(be) : 0;
+                                                       if (nb > 0 && nb <= (size_t) N * 4) {
+                                                           static char sinkb[16384];
+                                                           const int32_t dst_row = m.dred_map_h[0];
+                                                           if (cudaMemcpy(sinkb, m.Dm + (size_t) (rows_local + dst_row) * N, nb,
+                                                                          cudaMemcpyDeviceToHost) != cudaSuccess)
+                                                               std::fprintf(stderr, "ORDER-PROBE 7: readback failed\n");
+                                                       }
+                                                   }
+                                                   if (ordp == 14) {   // FULL-coverage checksum: EVERY window, rows {0,17,33,63}
+                                                       static long long cw = 0, mism = 0;
+                                                       ++cw;
+                                                       const int32_t probe_rows[4] = {0, 17, 33, 63};
+                                                       for (int pr = 0; pr < 4; ++pr) {
+                                                           if ((size_t) probe_rows[pr] >= own.size()) break;
+                                                           float back[N];
+                                                           const int32_t dst_row = m.dred_map_h[probe_rows[pr]];
+                                                           if (cudaMemcpy(back, m.Dm + (size_t) (rows_local + dst_row) * N,
+                                                                           (size_t) N * 4, cudaMemcpyDeviceToHost) == cudaSuccess) {
+                                                               double host_sum = 0, dev_sum = 0;
+                                                               for (int e = 0; e < N; ++e) {
+                                                                   double v = 0;
+                                                                   for (int i = 0; i < 4; ++i)
+                                                                       v += (double) m.mw[i]->host_partial()[(size_t) probe_rows[pr] * N + e];
+                                                                   host_sum += v;
+                                                                   dev_sum += (double) back[e];
+                                                               }
+                                                               const double scale = host_sum != 0 ? host_sum : 1.0;
+                                                               if (std::fabs(dev_sum - host_sum) > 1e-3 * std::fabs(scale)) {
+                                                                   ++mism;
+                                                                   if (mism <= 10)
+                                                                       std::fprintf(stderr, "ORDER14-DATA window %lld row %d host %.4f vs Dm %.4f (MISMATCH)\n",
+                                                                                    cw, probe_rows[pr], host_sum, dev_sum);
+                                                               }
+                                                           }
+                                                       }
+                                                       if (cw % 100 == 0) { std::fprintf(stderr, "ORDER14: %lld windows checked, %lld mismatches\n", cw, mism); std::fflush(stderr); }
+                                                   }
+                                                   if (ordp == 8) {   // same bytes, UNRELATED buffer (dred_part[0])
+                                                       const char* be = std::getenv("STRATA_MW_ORDER_BYTES");
+                                                       const size_t nb = be != nullptr ? (size_t) std::atoi(be) : 0;
+                                                       if (nb > 0 && nb <= (size_t) N * 4) {
+                                                           static char sinkb[16384];
+                                                           if (cudaMemcpy(sinkb, m.dred_part[0], nb, cudaMemcpyDeviceToHost) != cudaSuccess)
+                                                               std::fprintf(stderr, "ORDER-PROBE 8: readback failed\n");
+                                                       }
+                                                   }
+                                                   if (ordp == 4) {
+                                                       float sink;
+                                                       if (cudaMemcpy(&sink, m.dred_part[0], 4, cudaMemcpyDeviceToHost) != cudaSuccess)
+                                                           std::fprintf(stderr, "ORDER-PROBE 4: readback failed\n");
+                                                   }
+                                                   if (ordp == 5) {
+                                                       volatile float acc = 0.f;
+                                                       const size_t rr = own.size();
+                                                       for (int i = 0; i < 4; ++i) {
+                                                           const float* ho = (const float*) m.mw[i]->host_partial();
+                                                           for (size_t s2 = 0; s2 < rr * (size_t) N; s2 += 16) acc += ho[s2];
+                                                       }
+                                                       if (acc == 1e30f) std::fprintf(stderr, "ORDER-PROBE 5 impossible\n");
+                                                   }
+                                                   if (ordp == 6) {
+                                                       static int checks6 = 0;
+                                                       if (checks6 < 40) {
+                                                           ++checks6;
+                                                           float back[N];
+                                                           const int probe_row = 0;
+                                                           const int32_t dst_row = m.dred_map_h[probe_row];
+                                                           if (cudaMemcpy(back, m.Dm + (size_t) (rows_local + dst_row) * N,
+                                                                           (size_t) N * 4, cudaMemcpyDeviceToHost) == cudaSuccess) {
+                                                               double host_sum = 0, dev_sum = 0;
+                                                               for (int e = 0; e < N; ++e) {
+                                                                   double v = 0;
+                                                                   for (int i = 0; i < 4; ++i)
+                                                                       v += (double) m.mw[i]->host_partial()[(size_t) probe_row * N + e];
+                                                                   host_sum += v;
+                                                                   dev_sum += (double) back[e];
+                                                               }
+                                                               const double scale = host_sum != 0 ? host_sum : 1.0;
+                                                               if (std::fabs(dev_sum - host_sum) > 1e-3 * std::fabs(scale))
+                                                                   std::fprintf(stderr, "ORDER6-DATA check %d: row %d host %.4f vs Dm %.4f (MISMATCH)\n",
+                                                                                checks6, probe_row, host_sum, dev_sum);
+                                                           }
+                                                       }
+                                                   }
+                                               }
                                       }
                                   }
                                   // STRATA_MW_PFPIPE (opt-in): window s+1's begin (its acts upload
