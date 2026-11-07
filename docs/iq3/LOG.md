@@ -926,6 +926,9 @@ iterazione.
 
 Un solo strumento per le tre misure, con un test offline (`tools/test_iq3_bench.py`, 6 casi: campi
 della riga di log, isolamento della fetta, ultima riga che vince, log assente, criterio, prompt).
+Provato contro la produzione viva prima della finestra (1 run, prompt città, 60 token): riga letta
+dal log del motore, `59.7 tok/s` engine, `drafts 41/51`, `1949 MiB` liberi sulla 3060, servizio
+`active` e health OK dopo — nessun cambio di stato.
 
 | categoria | prompt | note |
 |---|---|---|

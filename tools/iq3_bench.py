@@ -174,6 +174,7 @@ def main() -> int:
     ap.add_argument("--api-key-env", default="")
     ap.add_argument("--api-key-file", default="")
     ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--labels", default="city,code,prose", help="which fixed prompts to run")
     ap.add_argument("--max-tokens", type=int, default=600)
     ap.add_argument("--timeout", type=float, default=1800)
     ap.add_argument("--vram-gpu", type=int, default=4, help="nvidia-smi index to report free VRAM for (the 3060 here)")
@@ -249,9 +250,13 @@ def main() -> int:
         return 0
 
     print(f"# fixed bench, {a.label}, {a.url}, temperature 0, max_tokens {a.max_tokens}, {a.runs} runs each")
+    wanted = [x.strip() for x in a.labels.split(",") if x.strip()]
+    chosen = [(n, p) for n, p in LABELS if n in wanted]
+    if not chosen:
+        raise SystemExit(f"--labels {a.labels!r} names no fixed prompt (city, code, prose)")
     by_label: dict[str, list[float]] = {}
     texts: dict[str, str] = {}
-    for label, prompt in LABELS:
+    for label, prompt in chosen:
         by_label[label] = []
         for i in range(1, a.runs + 1):
             row = run_one(label, prompt, a.max_tokens)
@@ -264,17 +269,17 @@ def main() -> int:
             if i == 1:
                 texts[label] = row["text"]
     print()
-    for label, _ in LABELS:
+    for label, _ in chosen:
         print(f"{label:<5}: {stats(by_label[label])} tok/s")
-    city, code = by_label["city"], by_label["code"]
+    city, code = by_label.get("city", []), by_label.get("code", [])
     if city and code:
         both = city + code
         crit = statistics.fmean(both)
         print(f"\ncriterion (mean of city+code, {len(both)} runs): {crit:.1f} tok/s -> "
               f"{'PASS' if crit >= 55 else 'FAIL'} against 55")
     if a.texts_out and texts:
-        out = [f"# {a.label} - city and code answers, temperature 0, first run\n"]
-        for label in ("city", "code"):
+        out = [f"# {a.label} - answers at temperature 0, first run\n"]
+        for label in (n for n, _ in chosen):
             if label in texts:
                 out.append(f"\n## {label}\n\n```\n{texts[label]}\n```\n")
         Path(a.texts_out).parent.mkdir(parents=True, exist_ok=True)
