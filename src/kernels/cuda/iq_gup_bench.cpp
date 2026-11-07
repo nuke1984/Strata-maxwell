@@ -60,8 +60,9 @@ int main(int argc, char** argv) {
     const uint8_t* du = tu ? model.shard(at).tensor_data(*tu) : nullptr;
     if (!tg || !tu || !dg || !du) { std::fprintf(stderr, "layer %d: no gate/up tensors\n", layer); return 2; }
     const int gu_type = (int) tg->type;
-    if (gu_type != 22 && gu_type != 16 && gu_type != 29) {
-        std::fprintf(stderr, "layer %d: gate/up type %d not IQ2_S/IQ2_XXS/IQ1_M\n", layer, gu_type);
+    if (gu_type != 22 && gu_type != 16 && gu_type != 29 &&
+        gu_type != 18 && gu_type != 21 && gu_type != 23) {
+        std::fprintf(stderr, "layer %d: gate/up type %d not IQ2_S/IQ2_XXS/IQ1_M/IQ3_XXS/IQ3_S/IQ4_XS\n", layer, gu_type);
         return 2;
     }
 
@@ -141,7 +142,8 @@ int main(int argc, char** argv) {
     const double per_us = (double) ms * 1000.0 / iters;
     const double bytes = (double) njobs * 2.0 * (double) part;   // gate+up read per launch
     const double gbps = bytes / (per_us * 1000.0);
-    const char* tn = gu_type == 22 ? "IQ2_S" : gu_type == 16 ? "IQ2_XXS" : "IQ1_M";
+    const char* tn = gu_type == 22 ? "IQ2_S" : gu_type == 16 ? "IQ2_XXS" : gu_type == 29 ? "IQ1_M" :
+                     gu_type == 18 ? "IQ3_XXS" : gu_type == 21 ? "IQ3_S" : "IQ4_XS";
     std::printf("iq_gup_bench: layer %d (%s), %d jobs, %d iters: %.1f us/launch, %.1f GB/s "
                 "(gate+up %.2f MB/launch)\n",
                 layer, tn, njobs, iters, per_us, gbps, bytes / 1048576.0);

@@ -545,12 +545,21 @@ bool MaxwellExperts::open(int device,
     // (~1e-2); a conversion bug is ~1.0 and cannot pass it.
     if (!geo_.empty()) {
         ggml_cpu_init();   // the to_float tables (idempotent; native_fmt already did this)
-        int seen[4] = {0, 0, 0, 0};   // by gate/up type: 42, 22, 16, 29
+        int seen[7] = {0, 0, 0, 0, 0, 0, 0};   // by gate/up type: 42, 22, 16, 29, 18, 21, 23
         double worst = 0.0;
         for (const auto& pr : held_) {
             const int64_t L = pr.first, e = pr.second;
             const auto& f = lay.fmt[(size_t) L];
-            const int ti = f.gu_type == 42 ? 0 : (f.gu_type == 22 ? 1 : (f.gu_type == 16 ? 2 : 3));
+            int ti = -1;   // a gate/up type this tier has no kernel for is not gated (the guard above refuses it)
+            switch (f.gu_type) {
+                case 42: ti = 0; break;
+                case 22: ti = 1; break;
+                case 16: ti = 2; break;
+                case 29: ti = 3; break;
+                case 18: ti = 4; break;
+                case 21: ti = 5; break;
+                case 23: ti = 6; break;
+            }
             if (ti < 0 || seen[ti]) continue;
             seen[ti] = 1;
             const uint8_t* src = src_blob(L, e, ctx);
@@ -665,9 +674,10 @@ bool MaxwellExperts::open(int device,
 
     // ---- STRATA_MW_PERSIST: arm the resident decode kernel -----------------------------------
     // Conditions: the env asks for it; the whole-expert layout (no tensor split); no zero-copy; a
-    // native pack whose every layer is an i-quant the persistent kernel's switch covers (22/16/29 -
-    // a 42/S2 gate/up layer or the canonical pack declines: this model's packs are all-i-quant);
-    // the default gup geometry (STRATA_MW_IQ_SPLIT 4, no T256), which is what <4,128> instantiates.
+    // native pack whose every layer is an i-quant the persistent kernel's switch covers (22/16/29 and
+    // 18/21/23 - a 42/S2 gate/up layer or the canonical pack declines: this model's packs are
+    // all-i-quant); the default gup geometry (STRATA_MW_IQ_SPLIT 4, no T256), which is what <4,128>
+    // instantiates.
     static const bool persist_env = [] {
         const char* e = std::getenv("STRATA_MW_PERSIST");
         const bool on = e != nullptr && e[0] != '\0' && e[0] != '0';
@@ -689,7 +699,8 @@ bool MaxwellExperts::open(int device,
         }
         if (ok)
             for (const auto& g : geo_)
-                if (g.gu_type != 22 && g.gu_type != 16 && g.gu_type != 29) { ok = false; break; }
+                if (g.gu_type != 22 && g.gu_type != 16 && g.gu_type != 29 &&
+                    g.gu_type != 18 && g.gu_type != 21 && g.gu_type != 23) { ok = false; break; }
         if (!ok) {
             std::fprintf(stderr, "strata maxwell (CUDA%d): PERSIST declined (needs whole-expert, no "
                                  "zero-copy, an all-i-quant native pack, SPLIT 4 / 128 threads)\n", device_);
@@ -1094,8 +1105,9 @@ bool MaxwellExperts::begin_chain(std::string& err) {
     // v2 (default): gate+up and the FF quantisation in ONE launch - the fused kernel's block covers exactly
     // one 32-value chunk of its job, so the separate quant launch (~4 us of API per device per layer in this
     // VM, plus the kernel off the chain) disappears.  v1 keeps the two-launch pair.  A native pack's
-    // i-quant layers (IQ2_S/IQ2_XXS/IQ1_M) take the IQ kernel - it is fused by construction, and the
-    // STRATA_S2_V2 arm is the S2 form's geometry A/B, not a choice the i-quant path offers.
+    // i-quant layers (IQ2_S/IQ2_XXS/IQ1_M/IQ3_XXS/IQ3_S/IQ4_XS) take the IQ kernel - it is fused by
+    // construction, and the STRATA_S2_V2 arm is the S2 form's geometry A/B, not a choice the i-quant
+    // path offers.
     const LayerGeo& g = geo_of(layer);
     if (g.gu_type == 42) {
         if (s2_expert_maxwell_v2()) {

@@ -858,6 +858,21 @@ __device__ __forceinline__ int get_int_b2(const void* x, const int& i32) {
     return x32;
 }
 __device__ __forceinline__ int get_int_b4(const void* x, const int& i32) { return ((const int*) x)[i32]; }
+// 16 nibbles -> 16 int8s through a 16-entry table (llama.cpp's vecdotq.cuh lookup; IQ4_XS / IQ4_NL).
+// __byte_perm is available on every CUDA architecture this tier builds for.
+__device__ __forceinline__ int2 get_int_from_table_16(const int& q4, const int8_t* table) {
+    const uint32_t* table32 = (const uint32_t*) table;
+    uint32_t tmp[2];
+    const uint32_t low_high_selection_indices = (0x32103210 | ((q4 & 0x88888888) >> 1));
+#pragma unroll
+    for (uint32_t i = 0; i < 2; ++i) {
+        const uint32_t shift = 16 * i;
+        const uint32_t low = __byte_perm(table32[0], table32[1], q4 >> shift);
+        const uint32_t high = __byte_perm(table32[2], table32[3], q4 >> shift);
+        tmp[i] = __byte_perm(low, high, low_high_selection_indices >> shift);
+    }
+    return make_int2(__byte_perm(tmp[0], tmp[1], 0x6420), __byte_perm(tmp[0], tmp[1], 0x7531));
+}
 __device__ __forceinline__ uint32_t unpack_ksigns(const uint8_t v) {
     const uint32_t p = __popc(v) & 1;
     const uint32_t s = v ^ p << 7;
@@ -964,9 +979,87 @@ __device__ __forceinline__ float vec_dot_iq1_m_q8_1(const void* __restrict__ vbq
     return d * ((sumi[0] + sumf[0]) * sc0 + (sumi[1] + sumf[1]) * sc1);
 }
 
+// IQ3_XXS / IQ3_S / IQ4_XS (the IQ3_S model file's gate/up encodings, 18 / 21 / 23).  Same transcription
+// rule as above; IQ3_XXS and IQ3_S read a shared copy of their 32-bit codebook grid (1 KB / 2 KB), IQ4_XS
+// has no codebook and reads a shared copy of the 16-entry kvalues_iq4nl table instead.
+__device__ __forceinline__ float vec_dot_iq3_xxs_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                      const int& kbx, const int& iqs, const uint32_t* __restrict__ grid_sh) {
+    const block_iq3_xxs* bq3 = (const block_iq3_xxs*) vbq + kbx;
+    const int2 q3_packed = make_int2(get_int_b2(bq3->qs, iqs), get_int_b2(bq3->qs, iqs + 1));
+    const uint8_t* q3 = (const uint8_t*) &q3_packed;
+    const uint32_t aux32 = get_int_b2(bq3->qs, QK_K / 16 + iqs / 2);
+    int sumi = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const int2 grid_pos = make_int2((int) grid_sh[q3[l0 + 0]], (int) grid_sh[q3[l0 + 1]]);
+        const uint32_t signs = unpack_ksigns(aux32 >> (7 * l0 / 2));
+        const int signs0 = __vcmpne4(signs & 0x08040201, 0);
+        const int grid_l = __vsub4(grid_pos.x ^ signs0, signs0);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int signs1 = __vcmpne4(signs & 0x80402010, 0);
+        const int grid_h = __vsub4(grid_pos.y ^ signs1, signs1);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        sumi = dp4a_s32(grid_l, u0, sumi);
+        sumi = dp4a_s32(grid_h, u1, sumi);
+    }
+    const int ls = aux32 >> 28;
+    sumi = (ls * sumi + sumi / 2) / 2;
+    const float d = h2f_dev(bq3->d) * low2f_dev(bq8_1[iqs / 2].ds);
+    return d * sumi;
+}
+
+__device__ __forceinline__ float vec_dot_iq3_s_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                    const int& kbx, const int& iqs, const uint32_t* __restrict__ grid_sh) {
+    const block_iq3_s* bq3 = (const block_iq3_s*) vbq + kbx;
+    const int2 qs_packed = make_int2(get_int_b2(bq3->qs, iqs + 0), get_int_b2(bq3->qs, iqs + 1));
+    const uint8_t* qs = (const uint8_t*) &qs_packed;
+    const int qh = bq3->qh[iqs / 2];
+    const int signs_packed_32 = get_int_b2(bq3->signs, iqs / 2);
+    const uint8_t* signs_packed_8 = (const uint8_t*) &signs_packed_32;
+    int sumi = 0;
+#pragma unroll
+    for (int l0 = 0; l0 < 8; l0 += 2) {
+        const int2 grid_pos = make_int2((int) grid_sh[qs[l0 + 0] | ((qh << (8 - l0)) & 0x100)],
+                                        (int) grid_sh[qs[l0 + 1] | ((qh << (7 - l0)) & 0x100)]);
+        const int signs0 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x03) << 7) | ((signs_packed_8[l0 / 2] & 0x0C) << 21), 0x00000000);
+        const int signs1 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x30) << 3) | ((signs_packed_8[l0 / 2] & 0xC0) << 17), 0x00000000);
+        const int grid_l = __vsub4(grid_pos.x ^ signs0, signs0);
+        const int grid_h = __vsub4(grid_pos.y ^ signs1, signs1);
+        const int u0 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 0);
+        const int u1 = get_int_b4(bq8_1[iqs / 2].qs, l0 + 1);
+        sumi = dp4a_s32(grid_l, u0, sumi);
+        sumi = dp4a_s32(grid_h, u1, sumi);
+    }
+    sumi *= 1 + 2 * ((bq3->scales[iqs / 4] >> ((iqs << 1) & 0x04)) & 0x0F);
+    const float d = h2f_dev(bq3->d) * low2f_dev(bq8_1[iqs / 2].ds);
+    return d * sumi;
+}
+
+__device__ __forceinline__ float vec_dot_iq4_xs_q8_1(const void* __restrict__ vbq, const block_q8_1* __restrict__ bq8_1,
+                                                     const int& kbx, const int& iqs, const int8_t* __restrict__ kvalues_sh) {
+    const block_iq4_xs* bq4 = (const block_iq4_xs*) vbq + kbx;
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int aux_q4 = get_int_b4(bq4->qs, iqs + j);
+        const int2 v = get_int_from_table_16(aux_q4, kvalues_sh);
+        const int u0 = get_int_b4(bq8_1[iqs / 4].qs, j + 0);
+        const int u1 = get_int_b4(bq8_1[iqs / 4].qs, j + 4);
+        sumi = dp4a_s32(v.x, u0, sumi);
+        sumi = dp4a_s32(v.y, u1, sumi);
+    }
+    const int ls = ((bq4->scales_l[iqs / 8] >> (iqs & 0x04)) & 0x0F) | (((bq4->scales_h >> (iqs / 2)) & 0x03) << 4);
+    sumi *= ls - 32;
+    const float d = h2f_dev(bq4->d) * low2f_dev(bq8_1[iqs / 4].ds);
+    return d * sumi;
+}
+
 // The formats of the i-quant layers this tier takes (as iq_kernels.cu's Fmt<>): qk = values per block,
 // ipb = dot calls per block, step = the iqs stride between calls.  22 = IQ2_S, 16 = IQ2_XXS, 29 = IQ1_M
-// (the IQ2_XS model file's three gate/up encodings; down is Q2_0 everywhere, the S2 kernel above).
+// (the IQ2_XS file's three gate/up encodings) and 18 = IQ3_XXS, 21 = IQ3_S, 23 = IQ4_XS (the IQ3_S file's
+// three); down is Q2_0 wherever this tier takes a layer at all, the S2 kernel above.  grid_bytes is the
+// codebook the dot reads (staged in shared memory): 8 KB / 2 KB / 8 KB for 22 / 16 / 29, 1 KB / 2 KB for
+// 18 / 21, and 16 BYTES for 23 - IQ4_XS has no codebook, only the kvalues_iq4nl table.
 template <int TY> struct IqFmt;
 template <> struct IqFmt<22> {
     static constexpr int qk = 256, ipb = 8, step = 2;
@@ -990,6 +1083,30 @@ template <> struct IqFmt<29> {
     __device__ static const void* grid_dev() { return (const void*) iq1s_grid_gpu; }
     __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
         return vec_dot_iq1_m_q8_1(v, y, kbx, iqs, (const uint32_t*) gsh);
+    }
+};
+template <> struct IqFmt<18> {
+    static constexpr int qk = 256, ipb = 8, step = 2;
+    static constexpr int grid_bytes = 256 * 4;   // iq3xxs_grid: uint32 x 256
+    __device__ static const void* grid_dev() { return (const void*) iq3xxs_grid; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq3_xxs_q8_1(v, y, kbx, iqs, (const uint32_t*) gsh);
+    }
+};
+template <> struct IqFmt<21> {
+    static constexpr int qk = 256, ipb = 8, step = 2;
+    static constexpr int grid_bytes = 512 * 4;   // iq3s_grid: uint32 x 512
+    __device__ static const void* grid_dev() { return (const void*) iq3s_grid; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq3_s_q8_1(v, y, kbx, iqs, (const uint32_t*) gsh);
+    }
+};
+template <> struct IqFmt<23> {
+    static constexpr int qk = 256, ipb = 8, step = 4;
+    static constexpr int grid_bytes = 16;   // kvalues_iq4nl: int8 x 16 (a table, not a codebook grid)
+    __device__ static const void* grid_dev() { return (const void*) kvalues_iq4nl; }
+    __device__ static float dot(const void* v, const block_q8_1* y, int kbx, int iqs, const void* gsh) {
+        return vec_dot_iq4_xs_q8_1(v, y, kbx, iqs, (const int8_t*) gsh);
     }
 };
 
@@ -1016,15 +1133,16 @@ template <> struct IqFmt<29> {
 // is the inline version's, untouched - bit-identical by construction.
 // The IQ gup body's shared-memory layout, ONE source of truth for the body, the batched wrapper
 // and the persistent kernel's union buffer: [sact (H/32 blocks)][align 16][sx PER_BLOCK*MR floats]
-// [align 16][sgrid: XXS 2 KB, S/IQ1_M 8 KB].  MR (rows per thread-group, STRATA_MW_IQ_MR) widens
-// only the sx region - one slot per row of the block's PER_BLOCK*MR rows.
+// [align 16][sgrid: XXS 2 KB, S/IQ1_M 8 KB, IQ3_XXS 1 KB, IQ3_S 2 KB, IQ4_XS 16 B].  MR (rows per
+// thread-group, STRATA_MW_IQ_MR) widens only the sx region - one slot per row of the block's
+// PER_BLOCK*MR rows.
 template <int TY, int SPLIT, int THREADS, int MR = 1>
 struct IqV2qSmem {
     static_assert(MR == 1 || MR == 2 || MR == 4 || MR == 5, "STRATA_MW_IQ_MR takes 1, 2, 4 or 5");
     static constexpr int per_block = THREADS / SPLIT;
     static constexpr int sact = ((H / 32) * (int) sizeof(block_q8_1) + 15) & ~15;
     static constexpr int sx = (per_block * MR * 4 + 15) & ~15;
-    static constexpr int grid = (TY == 16 ? 2048 : 8192);   // F::grid_bytes
+    static constexpr int grid = IqFmt<TY>::grid_bytes;   // 8 KB / 2 KB / 8 KB (22/16/29), 1 KB / 2 KB (18/21), 16 B (23)
     static constexpr int total = sact + sx + grid;
 };
 
@@ -1082,8 +1200,13 @@ __device__ __forceinline__ void iq_stage1_v2q_body(const int vb, char* smem,
     }
     // the codebook grids staged once per block: the dots hit them at data-dependent indices, and a
     // shared copy turns those latency-exposed global reads (~21 GB/s measured, 18% of the ceiling)
-    // into shared lookups.  2 KB (IQ2_XXS) or 8 KB (IQ2_S / IQ1_M); staged coalesced.
-    {
+    // into shared lookups.  8 KB (IQ2_S / IQ1_M), 2 KB (IQ2_XXS), 1 KB (IQ3_XXS), 2 KB (IQ3_S); staged
+    // coalesced.  IQ4_XS stages kvalues_iq4nl, a 16-BYTE int8 table: copied byte-wise, because the
+    // source array carries no 4-byte alignment the int4/int32 paths would require.
+    if constexpr (F::grid_bytes <= 16) {
+        const uint8_t* g = (const uint8_t*) F::grid_dev();
+        if (threadIdx.x < (unsigned) F::grid_bytes) sgrid[threadIdx.x] = g[threadIdx.x];
+    } else {
         const int4* g = (const int4*) F::grid_dev();
         int4* d = (int4*) sgrid;
 #pragma unroll
@@ -1212,12 +1335,24 @@ __device__ __forceinline__ void persist_grid_barrier(PersistCtl* c) {
     __syncthreads();
 }
 
+// The min-blocks hint is load-bearing: adding three formats to the gup switch took this kernel from 95
+// to 120 registers, i.e. 5 blocks/SM down to 4 (-20% occupancy on the card this tier exists for), with
+// no spill either way.  Pinning 5 restores the shipped allocation and keeps a future format from
+// silently costing resident blocks again (measured: 96 registers, LOCAL 0, STACK 0).
 template <int SPLIT, int THREADS>
-__global__ void __launch_bounds__(THREADS) maxwell_persist_kernel(const PersistParams* __restrict__ pp,
-                                                                  PersistCtl* c) {
+__global__ void __launch_bounds__(THREADS, 5) maxwell_persist_kernel(const PersistParams* __restrict__ pp,
+                                                                     PersistCtl* c) {
+    // The gup smem union: IQ2_S / IQ1_M stage the largest codebooks (8 KB each) and dominate the other
+    // four formats this kernel takes (IQ2_XXS 2 KB, IQ3_XXS 1 KB, IQ3_S 2 KB, IQ4_XS 16 B - all over the
+    // same sact/sx regions).  The static_assert keeps a future format from silently overflowing the buffer.
     constexpr int kGupSmem = IqV2qSmem<22, SPLIT, THREADS>::total > IqV2qSmem<29, SPLIT, THREADS>::total
                                  ? IqV2qSmem<22, SPLIT, THREADS>::total
                                  : IqV2qSmem<29, SPLIT, THREADS>::total;
+    static_assert(kGupSmem >= IqV2qSmem<16, SPLIT, THREADS>::total &&
+                  kGupSmem >= IqV2qSmem<18, SPLIT, THREADS>::total &&
+                  kGupSmem >= IqV2qSmem<21, SPLIT, THREADS>::total &&
+                  kGupSmem >= IqV2qSmem<23, SPLIT, THREADS>::total,
+                  "the persistent kernel's gup union must cover every i-quant format the switch takes");
     constexpr int kSmem = kGupSmem > kS2DownSmem ? kGupSmem : kS2DownSmem;
     __shared__ __align__(16) char smem[kSmem];
     __shared__ int sh_s;
@@ -1272,7 +1407,7 @@ __global__ void __launch_bounds__(THREADS) maxwell_persist_kernel(const PersistP
         // registers, 4 blocks/SM - the batched kernel needs ~8).  One loop per branch keeps the
         // live ranges clean.
         const int gup_blocks = (int) (((size_t) h.njobs * (size_t) h.tp_rows + kGupPer - 1) / kGupPer);
-        switch (h.gu_type) {   // arm time guarantees 22/16/29 (native pack, no S2/42 layer)
+        switch (h.gu_type) {   // arm time guarantees 22/16/29/18/21/23 (native pack, no S2/42 layer)
             case 22:
                 for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
                     iq_stage1_v2q_body<22, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
@@ -1284,6 +1419,18 @@ __global__ void __launch_bounds__(THREADS) maxwell_persist_kernel(const PersistP
             case 29:
                 for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
                     iq_stage1_v2q_body<29, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            case 18:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<18, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            case 21:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<21, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
+                break;
+            case 23:
+                for (int vb = (int) blockIdx.x; vb < gup_blocks; vb += gridDim.x)
+                    iq_stage1_v2q_body<23, SPLIT, THREADS>(vb, smem, blobs, h.blob_stride, jobs, (int) h.njobs, acts_base, h.o_gate, h.o_up, h.gu_row, pp->faq, pp->fasc, pp->fahx, nullptr, h.tp_row_base, h.tp_rows);
                 break;
             default:
                 break;
@@ -1641,9 +1788,28 @@ void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs
             else if (split == 2) STRATA_LAUNCH_IQ(29, 2, 128);
             else STRATA_LAUNCH_IQ(29, 1, 128);
             break;
+        case 18:   // IQ3_XXS
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(18, 4, 256); else STRATA_LAUNCH_IQ(18, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(18, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(18, 2, 128);
+            else STRATA_LAUNCH_IQ(18, 1, 128);
+            break;
+        case 21:   // IQ3_S
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(21, 4, 256); else STRATA_LAUNCH_IQ(21, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(21, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(21, 2, 128);
+            else STRATA_LAUNCH_IQ(21, 1, 128);
+            break;
+        case 23:   // IQ4_XS
+            if (wide) { if (split == 4) STRATA_LAUNCH_IQ(23, 4, 256); else STRATA_LAUNCH_IQ(23, 2, 256); }
+            else if (split == 4) STRATA_LAUNCH_IQ(23, 4, 128);
+            else if (split == 2) STRATA_LAUNCH_IQ(23, 2, 128);
+            else STRATA_LAUNCH_IQ(23, 1, 128);
+            break;
         default:
             std::fprintf(stderr, "iq_expert_maxwell_gup_quant_batch_async: ggml type %d is not an "
-                                 "i-quant this tier's kernels take (22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M)\n",
+                                 "i-quant this tier's kernels take (22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M, "
+                                 "18 IQ3_XXS, 21 IQ3_S, 23 IQ4_XS)\n",
                          gu_type);
             std::exit(1);
     }
@@ -1796,6 +1962,115 @@ template <> struct IqMt<29> {   // IQ1_M
     __device__ static int blk(int iqs) { return iqs; }
 };
 
+template <> struct IqMt<18> {   // IQ3_XXS
+    struct Pack { int p[8]; int ls; float d; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq3_xxs* bq3 = (const block_iq3_xxs*) v + kbx;
+        const int2 q3_packed = make_int2(get_int_b2(bq3->qs, iqs), get_int_b2(bq3->qs, iqs + 1));
+        const uint8_t* q3 = (const uint8_t*) &q3_packed;
+        const uint32_t aux32 = get_int_b2(bq3->qs, QK_K / 16 + iqs / 2);
+        const uint32_t* grid_sh = (const uint32_t*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int2 grid_pos = make_int2((int) grid_sh[q3[l0 + 0]], (int) grid_sh[q3[l0 + 1]]);
+            const uint32_t signs = unpack_ksigns(aux32 >> (7 * l0 / 2));
+            const int signs0 = __vcmpne4(signs & 0x08040201, 0);
+            w.p[l0 + 0] = __vsub4(grid_pos.x ^ signs0, signs0);
+            const int signs1 = __vcmpne4(signs & 0x80402010, 0);
+            w.p[l0 + 1] = __vsub4(grid_pos.y ^ signs1, signs1);
+        }
+        w.ls = aux32 >> 28;
+        w.d = h2f_dev(bq3->d);
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
+        int sumi = 0;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int u0 = get_int_b4(qs, l0 + 0);
+            sumi = dp4a_s32(w.p[l0 + 0], u0, sumi);
+            const int u1 = get_int_b4(qs, l0 + 1);
+            sumi = dp4a_s32(w.p[l0 + 1], u1, sumi);
+        }
+        sumi = (w.ls * sumi + sumi / 2) / 2;
+        const float d = w.d * dys;
+        return d * sumi;
+    }
+    __device__ static int blk(int iqs) { return iqs / 2; }
+};
+
+template <> struct IqMt<21> {   // IQ3_S
+    struct Pack { int p[8]; int sc; float d; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq3_s* bq3 = (const block_iq3_s*) v + kbx;
+        const int2 qs_packed = make_int2(get_int_b2(bq3->qs, iqs + 0), get_int_b2(bq3->qs, iqs + 1));
+        const uint8_t* qs = (const uint8_t*) &qs_packed;
+        const int qh = bq3->qh[iqs / 2];
+        const int signs_packed_32 = get_int_b2(bq3->signs, iqs / 2);
+        const uint8_t* signs_packed_8 = (const uint8_t*) &signs_packed_32;
+        const uint32_t* grid_sh = (const uint32_t*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int2 grid_pos = make_int2((int) grid_sh[qs[l0 + 0] | ((qh << (8 - l0)) & 0x100)],
+                                            (int) grid_sh[qs[l0 + 1] | ((qh << (7 - l0)) & 0x100)]);
+            const int signs0 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x03) << 7) | ((signs_packed_8[l0 / 2] & 0x0C) << 21), 0x00000000);
+            const int signs1 = __vcmpne4(((signs_packed_8[l0 / 2] & 0x30) << 3) | ((signs_packed_8[l0 / 2] & 0xC0) << 17), 0x00000000);
+            w.p[l0 + 0] = __vsub4(grid_pos.x ^ signs0, signs0);
+            w.p[l0 + 1] = __vsub4(grid_pos.y ^ signs1, signs1);
+        }
+        w.sc = 1 + 2 * ((bq3->scales[iqs / 4] >> ((iqs << 1) & 0x04)) & 0x0F);
+        w.d = h2f_dev(bq3->d);
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
+        int sumi = 0;
+#pragma unroll
+        for (int l0 = 0; l0 < 8; l0 += 2) {
+            const int u0 = get_int_b4(qs, l0 + 0);
+            sumi = dp4a_s32(w.p[l0 + 0], u0, sumi);
+            const int u1 = get_int_b4(qs, l0 + 1);
+            sumi = dp4a_s32(w.p[l0 + 1], u1, sumi);
+        }
+        sumi *= w.sc;
+        const float d = w.d * dys;
+        return d * sumi;
+    }
+    __device__ static int blk(int iqs) { return iqs / 2; }
+};
+
+template <> struct IqMt<23> {   // IQ4_XS
+    struct Pack { int p[8]; int ls; float d; };
+    __device__ static Pack hoist(const void* v, int kbx, int iqs, const uint8_t* sgrid) {
+        const block_iq4_xs* bq4 = (const block_iq4_xs*) v + kbx;
+        const int8_t* kv = (const int8_t*) sgrid;
+        Pack w;
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            const int2 vv = get_int_from_table_16(get_int_b4(bq4->qs, iqs + j), kv);
+            w.p[2 * j + 0] = vv.x;
+            w.p[2 * j + 1] = vv.y;
+        }
+        w.ls = ((bq4->scales_l[iqs / 8] >> (iqs & 0x04)) & 0x0F) | (((bq4->scales_h >> (iqs / 2)) & 0x03) << 4);
+        w.d = h2f_dev(bq4->d);
+        return w;
+    }
+    __device__ static float apply(const Pack& w, const uint8_t* qs, float dys) {
+        int sumi = 0;
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            const int u0 = get_int_b4(qs, j + 0);
+            sumi = dp4a_s32(w.p[2 * j + 0], u0, sumi);
+            const int u1 = get_int_b4(qs, j + 4);
+            sumi = dp4a_s32(w.p[2 * j + 1], u1, sumi);
+        }
+        sumi *= w.ls - 32;
+        const float d = w.d * dys;
+        return d * sumi;
+    }
+    __device__ static int blk(int iqs) { return iqs / 4; }
+};
 // The MT kernel's geometry: one run (one expert, E <= E_MAX adjacent entries) x PER_BLOCK rows per
 // block; the standard job table is NOT consumed here (the down still uses it downstream).
 template <int TY, int SPLIT = 4, int THREADS = 128, int E_MAX = 8>
@@ -1823,10 +2098,15 @@ __global__ void expert_iq_stage1_mt_batch(const uint8_t* __restrict__ blobs, siz
     if (E <= 0 || E > E_MAX || vb * PER_BLOCK >= rows_slice) return;
     const uint8_t* blob = blobs + (size_t) slot * blob_stride;
     {
-        const int4* g = (const int4*) F::grid_dev();
-        int4* d = (int4*) sgrid;
+        if constexpr (F::grid_bytes <= 16) {
+            const uint8_t* g = (const uint8_t*) F::grid_dev();
+            if (threadIdx.x < (unsigned) F::grid_bytes) sgrid[threadIdx.x] = g[threadIdx.x];
+        } else {
+            const int4* g = (const int4*) F::grid_dev();
+            int4* d = (int4*) sgrid;
 #pragma unroll
-        for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
+            for (int i = (int) threadIdx.x; i < F::grid_bytes / 16; i += THREADS) d[i] = g[i];
+        }
         const int total = E * ACTS_B;
         for (int i = (int) threadIdx.x; i < total; i += THREADS) {
             const int e = i / ACTS_B, k = i % ACTS_B;
@@ -1964,6 +2244,18 @@ void iq_expert_maxwell_gup_quant_mt_async(int gu_type, const uint8_t* d_blobs, s
         case 29:   // IQ1_M
             if (g256) STRATA_LAUNCH_MT_G(29, 4, 256);
             else STRATA_LAUNCH_MT_G(29, 4, 128);
+            break;
+        case 18:   // IQ3_XXS
+            if (g256) STRATA_LAUNCH_MT_G(18, 4, 256);
+            else STRATA_LAUNCH_MT_G(18, 4, 128);
+            break;
+        case 21:   // IQ3_S
+            if (g256) STRATA_LAUNCH_MT_G(21, 4, 256);
+            else STRATA_LAUNCH_MT_G(21, 4, 128);
+            break;
+        case 23:   // IQ4_XS
+            if (g256) STRATA_LAUNCH_MT_G(23, 4, 256);
+            else STRATA_LAUNCH_MT_G(23, 4, 128);
             break;
         default:
             std::fprintf(stderr, "iq_expert_maxwell_gup_quant_mt_async: ggml type %d is not an "

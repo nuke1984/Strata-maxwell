@@ -90,9 +90,9 @@ void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32
 /// `o_gate`/`o_up`, `gu_row` bytes per row, `blob_stride` bytes per blob (a native pack's blob size is
 /// per layer).  `acts_base` is the same packed ActQ the S2 call reads: ActQ.q is block_q8_1.qs bit for
 /// bit and the kernel rounds each chunk's scale to the d the device q8_1 quantizer stores, so the
-/// numbers match the 3060's native expert path.  `gu_type`: 22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M; anything
-/// else refuses.  The FF image (faq/fasc/fahx) is bit-identical to the S2 path's, so the down stage
-/// consumes it unchanged.
+/// numbers match the 3060's native expert path.  `gu_type`: 22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M, 18 IQ3_XXS,
+/// 21 IQ3_S, 23 IQ4_XS; anything else refuses.  The FF image (faq/fasc/fahx) is bit-identical to the S2
+/// path's, so the down stage consumes it unchanged.
 void iq_expert_maxwell_gup_quant_batch_async(int gu_type, const uint8_t* d_blobs, size_t blob_stride,
                                              const int32_t* d_jobs, int njobs, const uint8_t* acts_base,
                                              size_t o_gate, size_t o_up, size_t gu_row,

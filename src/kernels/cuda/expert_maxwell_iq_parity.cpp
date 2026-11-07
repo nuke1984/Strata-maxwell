@@ -4,7 +4,11 @@
 //     build/maxwell_iq_parity <shard1.gguf> [layer ...]    real rows (default layers 0, 1, 8: the IQ2_XS
 //                                                          file's three gate/up encodings - IQ2_S, IQ2_XXS,
 //                                                          IQ1_M; down is Q2_0 everywhere)
-//     build/maxwell_iq_parity --synthetic <gu>/<down> ...   random weights quantized by ggml (e.g. iq2_s/q2_0)
+//     build/maxwell_iq_parity --synthetic <gu>/<down> ...   random weights quantized by ggml (e.g. iq3_s/q2_0)
+//
+// The IQ3_S file's gate/up encodings (18 IQ3_XXS, 21 IQ3_S, 23 IQ4_XS) are checked the same way.  Its
+// layers 12, 20, 30 (18/42) and 21 (21/42) are real rows this tool reads; layer 47 is 23/20 and the
+// down IQ4_NL is Iteration 3, so 23 is checked on synthetic weights only.
 //
 // The tool finds BOTH cards it needs and refuses when either is missing: a Maxwell (compute capability 5.0,
 // the M10) for the kernel under test, and a Turing-or-newer card (the 3060, sm_86 - this build's
@@ -354,10 +358,10 @@ int main(int argc, char** argv) {
             const size_t slash = arg.find('/');
             const int gu = slash == std::string::npos ? -1 : type_of(arg.substr(0, slash));
             const int dn = slash == std::string::npos ? -1 : type_of(arg.substr(slash + 1));
-            // the tier's kernels: an i-quant gate/up of {22, 16, 29} over the S2 (Q2_0) down
-            if (gu != 22 && gu != 16 && gu != 29) {
+            // the tier's kernels: an i-quant gate/up of {22, 16, 29, 18, 21, 23} over the S2 (Q2_0) down
+            if (gu != 22 && gu != 16 && gu != 29 && gu != 18 && gu != 21 && gu != 23) {
                 std::printf("%s: gate/up ggml type %d is not one the Maxwell IQ kernels take "
-                            "(22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M)\n", arg.c_str(), gu);
+                            "(22 IQ2_S, 16 IQ2_XXS, 29 IQ1_M, 18 IQ3_XXS, 21 IQ3_S, 23 IQ4_XS)\n", arg.c_str(), gu);
                 ++failures;
                 continue;
             }
@@ -398,7 +402,8 @@ int main(int argc, char** argv) {
             cpu::NativeFmt f;
             std::string err;
             if (!cpu::native_fmt((int) t[0]->type, (int) t[2]->type, H, FF, f, err) ||
-                (f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29)) {
+                (f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29 &&
+                 f.gu_type != 18 && f.gu_type != 21 && f.gu_type != 23)) {
                 std::printf("layer %d: gate/up ggml type %d is not one the Maxwell IQ kernels take\n", l,
                             (int) t[0]->type);
                 ++failures;
