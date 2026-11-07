@@ -118,6 +118,9 @@ class Failures(unittest.TestCase):
             def read(self):
                 return b'{"error": "CUDA out of memory"}'
 
+            def close(self):
+                pass
+
         orig = B.urllib.request.urlopen
 
         def fake(*_a, **_k):
