@@ -1383,3 +1383,224 @@ Nota operativa: `/root/aer.sh` **non esisteva**; è stato creato in preparazione
 `aer_dev_correctable` e stampa una riga per device, più le classi non nulle delle GPU). È read-only.
 
 ---
+
+## Iterazione 6 — diagnosi misurata (finestra 2026-11-07, cache 988)
+
+Finestra eseguita con l'OK dell'operatore, che ha **escluso 1600** («lo dimostra già l'aritmetica») e
+ha chiesto **solo 988**. Ordine: potenza+profilo con IQ3_S auto, poi IQ3_S a 988, poi IQ2_XS di
+riferimento, poi ripristino. **I limiti di potenza non sono stati toccati**: M10 a 30 W e 3060 a
+120 W prima, durante e dopo.
+
+### Due bug nei miei tool, trovati e corretti in finestra
+
+Vanno registrati perché la prima misura di potenza è andata persa:
+
+1. **`iq3_power.py` passava `-lms 1000` come un solo argv.** Il driver risponde
+   `Option -lms 1000 is not recognized`, esce, e il sampler riporta **0 campioni** — che sembrava
+   «macchina ferma». Ora sono due argv (`"-lms", "1000"`), e **zero campioni è un errore esplicito**
+   (exit 2 con lo stderr del driver), non un riassunto silenzioso.
+2. **`iq3_profile.py` stampava una riga per finestra**: 496 righe per scheda, illeggibile. Ora
+   aggrega per scheda e per tipo di down, pesando sui layer-span.
+
+Il banco della prima esecuzione resta valido (è misura del motore); la potenza è stata rimisurata.
+I test sono passati da 30 a **34**, con due casi che avrebbero colto entrambi i bug.
+
+**Nota metodologica.** `STRATA_MW_LAYERPROF=1` **costa il 4,7% di decode** (confronto diretto con la
+finestra 5, stessa config: 46,8 → 44,6 sulla media città+codice). Non è gratis: i numeri di questa
+finestra vanno letti *contro il riferimento IQ2_XS misurato nella stessa finestra*, non contro la
+finestra 5. Il costo viene da 15.621 righe di `MWPROF` scritte su stderr durante il banco.
+
+### 1. Potenza — le M10 sono in `SwPowerCap`, ma non sono limitate dal clock
+
+Campioni, solo a GPU attive (bit `GpuIdle` escluso), intervallo 1 s:
+
+| fase | M10 attive | draw medio | % del limite | `SwPowerCap` | clock SM medio | max |
+|---|---|---|---|---|---|---|
+| banco auto | 820 | 22,2 W | 74% | **95%** | 1007 MHz | 1032 |
+| soak auto | 4.881 | 23,3 W | 78% | **99%** | 1027 MHz | 1032 |
+| banco 988 | 874 | 22,2 W | 74% | **94%** | 997 MHz | 1032 |
+| IQ2_XS | 714 | 21,0 W | 70% | **93%** | 994 MHz | 1032 |
+
+**Il dato che conta: il clock massimo reale delle M10 è 1202 MHz, e sotto carico stavano a
+994–1027 MHz — l'83–85% del tetto, non il 100%.** Quindi il bit `SwPowerCap` è *acceso* ma le schede
+**non sono inchiodate al clock minimo**: c'è ~175–200 MHz di margine teorico, e soprattutto il draw è
+21–23 W su 30 W.
+
+E c'è un controllo che toglie valore al bit come spiegazione: **`SwPowerCap` è al 93% anche con
+l'IQ2_XS, che fa 57,2 tok/s e passa il criterio.** Lo stesso bit, allo stesso clock, con la stessa
+potenza: se fosse il collo di bottiglia, anche l'IQ2_XS sarebbe lento. **Il bit non discrimina** — è
+la gestione di potenza media delle M10 che si accende appena il die lavora.
+
+Conseguenza per la decisione dell'operatore: **alzare il limite a 35 W non è garantito che dia
+clock**, perché a 30 W le schede stanno al 70–78% del limite e il bit di throttle è acceso anche
+sulla configurazione che va bene. Se il limite fosse la variabile vincolante, il draw sarebbe a 30 W
+pieni. Il guadagno misurato altrove (3% con 4 M10) resta l'unico dato reale, e **non è stato
+replicato con 8 die**. Il wattmetro dell'operatore resta lo strumento giusto: questa finestra
+**non dimostra** che 35 W aiuterebbe, e il fatto che il crollo banco→soak esista anche senza
+profilazione (§4) lo rende improbabile.
+
+Il **3060** è l'altra storia: `HwSlowdown` sull'**81%** dei campioni attivi al banco e sull'**89%**
+nello soak, 103 W medi (max 119,3) al banco e 112 W (max 119,9) nello soak **su 120 W di limite**,
+1795–1810 MHz su 2100 max. Lì il tetto morde davvero: è la scheda che paga il prezzo, non le M10.
+(Il riepilogo del sampler dà percentuali più basse — 53% e 83% — perché le calcola su *tutti* i
+campioni, idle compresi; i valori qui sopra sono sui soli campioni attivi, coerenti con la tabella.)
+
+### 2. Profilo — il down IQ4_NL è il costo, e il gate/up dell'IQ3_S è *più veloce*
+
+Span misurato dalla scheda (eventi CUDA sulla sua stream), per layer, mediato sulle 8 schede:
+
+| | IQ3_S | IQ2_XS | rapporto |
+|---|---|---|---|
+| kernel totale | **403 µs/L** | 282 µs/L | **1,43×** |
+| gate/up | **140 µs/L** | 151 µs/L | **0,93×** (IQ3_S più veloce) |
+| down | **263 µs/L** | 131 µs/L | **2,01×** |
+| MB/L | 4,10 | 3,10 | 1,32× |
+| sync-wait host | 63 µs/L | 39 µs/L | 1,62× |
+
+(Medie pesate sui layer-span di tutte e 8 le schede, non i soli layer down-20: quelli sono nella
+tabella seguente.)
+
+Separando per tipo di down **dentro l'IQ3_S**:
+
+| down | layer | MB/L | kernel | gate/up | down | sync |
+|---|---|---|---|---|---|---|
+| **20 (IQ4_NL)** | 39 | 4,286 | **437 µs/L** | 140 | **296** | 69 |
+| **42 (Q2_0)** | 9 | 3,286 | **258 µs/L** | 141 | **117** | 36 |
+
+**Il gate/up è identico (140 vs 141 µs/L): la differenza è tutta nel down.** A parità di byte il
+down IQ4_NL costa **1,94×** il Q2_0 (296/4,286 = 69 µs per MB contro 117/3,286 = 36 µs per MB).
+Questo risponde alla domanda dell'operatore: **non è l'IQ3 del gate/up, è il down IQ4_NL**.
+
+Il confronto col riferimento IQ2_XS va letto con attenzione: anche l'IQ2_XS ha un down (Q2_0), ma
+il suo gate/up è Q2_0/IQ2_XXS, più lento del gate/up IQ3_S. Il vantaggio dell'IQ3_S sul gate/up
+(−7%) è **reale ma piccolo**; il costo del down (**+101%**, 263 contro 131 µs/L) lo mangia. Il
+residuo è la parte che l'IQ2_XS paga sul gate/up e che l'IQ3_S non paga.
+
+`MWPROF layer` / `vlayer` (lato host, medie su 567 finestre): dispatch `run` 429 µs/layer, span 551;
+verifier `ring` 65, **`pool` 551**, `post` 1,5. `pool` è la finestra in cui il verifier attende le
+M10, e vale **quanto l'intero span di dispatch** (100,1%): dentro il dispatch il tempo è attesa delle
+schede, non lavoro host. Il `ring` (copia in/out) è il 12% dello span. Lo span host (551) supera
+quello misurato sulla scheda (403) di ~148 µs/L, e `sync-wait` (63 µs/L, misurato per scheda) non lo
+spiega da solo: **non ho separato queste due quote in questa finestra**, quindi non attribuisco il
+residuo all'host né alla sincronizzazione.
+
+### 3. VRAM — 988 centra l'obiettivo, e il costo in velocità è 4,3%
+
+Il modello preparato prima della finestra è stato **confermato al byte** dal motore:
+
+| | auto (1357 unità) | **988 unità** |
+|---|---|---|
+| slot veri | 1749 | **1267** |
+| cache | 3,36 GiB | **2,45 GiB** |
+| esperti/die | 2853–2854 | **2913–2914** |
+| GiB/die | 5,43–5,45 | **5.54–5.56** |
+| **3060 libera al load** | 397 MiB | **1333 MiB** |
+| **3060 libera in generazione** | **95 MiB** | **1029 MiB** |
+
+Previsione: 1267 slot, 2,448 GiB, 2914/die, 5,54–5,56 GiB/die. Misura: identica. E la partizione è
+confermata: 22.827 + 1.749 = 24.576 (auto), 23.309 + 1.267 = 24.576 (988) — **sempre il pool intero**
+(`Maxwell pairs in the 3060 cache: 0 of 23309`).
+
+**Obiettivo «≥1 GB libero» raggiunto: 1029 MiB durante la generazione**, contro 95 MiB. Le M10
+assorbono +60 esperti/die (+~118 MiB) senza OOM, con 2,28–2,30 GiB ancora liberi per die.
+
+**Il costo:** 44,6 → **42,7 tok/s** sulla media città+codice (**−4,3%**). Meno di quanto si potesse
+temere, ma non gratis.
+
+**64k di controllo a 988:** prompt 62.703 token, prefill 176,7 tok/s, decode 49,9 tok/s,
+**needle FOUND**, 1027 MiB liberi. Il contesto lungo tiene anche con la cache ridotta. Il testo della
+risposta è ragionamento troncato (`We need answer user's request: ...`) perché questo controllo è
+stato eseguito **senza** `--no-thinking`, come nella finestra 5: il needle è stato trovato, quindi il
+contesto è stato letto, ma il testo non è una risposta pulita. Non è un problema del motore.
+
+I risultati grezzi di questa finestra sono in `docs/iq3/results/21-…` – `35-…` (15 file, 910 KiB):
+banchi, soak, campionamenti di potenza, testi di qualità e profili dei due motori.
+
+### 4. Velocità — il criterio resta FAIL, e il divario è strutturale
+
+| | media città+codice | mediana | primo run | criterio ≥55 |
+|---|---|---|---|---|
+| IQ3_S auto (profilo) | 44,6 | 44,8 | 40,4 | **FAIL** |
+| IQ3_S 988 (profilo) | 42,7 | 42,1 | 40,1 | **FAIL** |
+| **IQ2_XS riferimento** | **57,2** | **57,2** | 51,2 | **PASS** |
+
+**IQ3_S è il 22,0% più lento dell'IQ2_XS** a parità di profilazione (44,6 vs 57,2). Coerente con
+l'Iterazione 5 (−19,7%): la differenza di 2,3 punti è compatibile col rumore e col fatto che i due
+motori scrivono un numero diverso di righe di profilo (l'IQ3_S ha due bucket `m10type` per scheda,
+l'IQ2_XS uno solo). Non è un peggioramento del motore, ma **non posso dimostrarlo con questa
+finestra**: servirebbe un banco senza profilo, che l'operatore non ha chiesto.
+
+Soak: IQ3_S **35,2 tok/s** (68 run, mediana 35,1, drift −0,9) contro 37,5 dell'Iterazione 5. Il −6%
+è **compatibile** col −4,7% di costo della profilazione misurato sul banco (ipotesi: non ho uno soak
+senza profilo per dimostrarlo). Il punto strutturale resta un altro: **banco→soak scende di 9,4 tok/s**
+(44,6→35,2), come nella finestra 5 scendeva di 8,1 (46,8→37,5). **Il crollo banco→soak non è la
+potenza e non è il profilo**: nella finestra 5 non c'era profilazione e il crollo c'era lo stesso,
+con la stessa forma.
+
+Draft acceptance sostanzialmente identica (65,8% IQ3_S, 66,2% IQ2_XS): il divario è **costo per
+token accettato**, non qualità delle draft.
+
+### 5. Qualità — i testi ora sono risposte, non ragionamento troncato
+
+Con `--no-thinking` entrambi i motori producono testi completi e corretti:
+
+- **IQ3_S città**: prosa piena (Firenze, Medici, Brunelleschi, Uffizi, Ponte Vecchio). 238 token.
+- **IQ3_S codice**: `merge_intervals` completa, type hint, docstring, **due casi di test**, e la
+  logica tratta correttamente l'adiacenza (`current[0] <= last[1]`). 432 token.
+- **IQ2_XS città**: equivalente per contenuto, struttura simile.
+- **IQ2_XS codice**: equivalente, con esempi nel docstring invece che come assert.
+
+**Nessuna differenza di qualità osservabile a occhio nei due testi.** Il che è coerente col fatto che
+il divario è di *costo*, non di capacità — ma un confronto di qualità serio richiederebbe un banco
+di valutazione, che questa iterazione non ha.
+
+### 6. AER — solo il bridge, le GPU tutte a 0
+
+| momento | bridge `0000:09:11.0` | GPU |
+|---|---|---|
+| prima della finestra | 8 | tutte 0 |
+| dopo fase 1 (IQ3_S auto) | 10 | tutte 0 |
+| dopo fase 2 (IQ3_S 988) | 10 | tutte 0 |
+| dopo fase 3 (IQ2_XS) | **11** | tutte 0 |
+| dopo fase 4 (produzione) | 11 | tutte 0 |
+
+Il contatore è salito **+3** in finestra: 8→10 durante la fase 1 (due load IQ3_S: auto e 988), poi
+10→11 durante la fase 3 (load IQ2_XS da HDD). Sempre `RxErr` sul bridge PLX 8747, **mai su una GPU**.
+Il pattern resta «sale durante i load», non durante il calcolo. Da seguire, non da spiegare qui.
+
+### Ripristino produzione — verificato
+
+| controllo | esito |
+|---|---|
+| servizio | `active`, `NRestarts=0`, health OK |
+| tier | **8** Maxwell: GPU 1–6 a **2838** esperti, GPU 7–8 a **2837** |
+| cache | **1874 slot**, 2,53 GiB |
+| gate | **8/8 PASSED** (worst rel 1,12e-02 – 1,26e-02) |
+| 3060 libera | **2247 MiB** |
+| M10 libere | 4068–4084 MiB per die |
+| limiti di potenza | **M10 30 W, 3060 120 W — invariati** |
+| AER | bridge 11, GPU tutte 0 |
+
+### Conclusione dell'iterazione
+
+**La diagnosi ha una risposta netta e una condizione.**
+
+1. **Il costo dell'IQ3_S è nel down IQ4_NL**, non nel gate/up (che è addirittura più veloce
+   dell'IQ2_XS). Nei layer down-20 il down costa **296 µs/L** contro **117** dei layer Q2_0, a parità
+   di byte **1,94×** (69 contro 36 µs/MB). Sull'intero modello il down pesa 263 µs/L contro 131
+   dell'IQ2_XS. Questo è il punto su cui un'eventuale Iterazione 7 dovrebbe lavorare, **se** si vuole
+   insistere sull'IQ3_S.
+2. **Il margine VRAM si compra**: 988 porta la 3060 da 95 a 1029 MiB liberi, tiene 64k, e costa il
+   4,3%. È un trade-off **difendibile** — ma non cambia il criterio: a 988 l'IQ3_S fa 42,7 contro
+   57,2 dell'IQ2_XS, ed è **FAIL**.
+3. **La potenza non è la leva che sembrava.** Le M10 segnalano `SwPowerCap` al 93–99%, ma stanno a
+   994–1027 MHz su un tetto di **1202** e a 21–23 W su 30 W — e **lo stesso bit è al 93% anche
+   sull'IQ2_XS che fa 57,2 tok/s**. Il bit non discrimina fra lento e veloce, quindi non spiega il
+   divario. Il crollo banco→soak esiste anche senza profilazione (finestra 5) e non è attribuibile
+   al tetto di potenza.
+
+**IQ3_S non viene promosso.** La produzione resta su IQ2_XS, ripristinata e verificata. La sola
+strada con un numero a favore è il down IQ4_NL; qualsiasi altra (potenza, cache, contesto) o non
+sposta il criterio o lo peggiora.
+
+---

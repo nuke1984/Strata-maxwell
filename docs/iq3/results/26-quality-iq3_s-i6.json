@@ -1,0 +1,40 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 0,
+   "read": 34,
+   "prefill_ms": 735,
+   "prefill_tps": 46.2,
+   "generated": 238,
+   "decode_ms": 7616,
+   "decode_tps": 31.3,
+   "drafts_accepted": 100,
+   "drafts_total": 218
+  },
+  "seconds": 8.36,
+  "generated": 238,
+  "client_tps": 28.5,
+  "text": "Firenze, culla del Rinascimento italiano, è una città dove storia e arte si fondono in modo armonioso. Fondata dai Romani come *Florentia*, ha raggiunto il suo apice nel XV secolo sotto la guida della famiglia Medici, diventando un centro nevralgico per intellettuali, artisti e scienziati. Qui hanno lavorato geni assoluti come Leonardo da Vinci, Michelangelo e Botticelli, lasciando un patrimonio artistico inestimabile.\n\nPer visitare Firenze, è imperativo iniziare dalla maestosa Cattedrale di Santa Maria del Fiore con la sua iconica cupola brunelleschiana. Proseguite verso Piazza della Signoria, dominata dal Palazzo Vecchio e dalle statue rinascimentali, per poi raggiungere gli Uffizi, uno dei musei più importanti al mondo. Non dimenticate il Ponte Vecchio, unico ponte medievale sopravvissuto alla guerra, e la Galleria dell'Accademia per ammirare il David di Michelangelo. Passeggiare tra le sue strade significa immergersi in un museo a cielo aperto, dove ogni angolo racconta secoli di bellezza senza tempo."
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 77,
+   "reused": 0,
+   "read": 77,
+   "prefill_ms": 817,
+   "prefill_tps": 94.3,
+   "generated": 432,
+   "decode_ms": 8452,
+   "decode_tps": 51.1,
+   "drafts_accepted": 332,
+   "drafts_total": 476
+  },
+  "seconds": 9.27,
+  "generated": 432,
+  "client_tps": 46.6,
+  "text": "```python\nfrom typing import List\n\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"\n    Merge overlapping or adjacent intervals and return the sorted list of merged intervals.\n\n    Args:\n        intervals: A list of intervals, each represented as [start, end].\n\n    Returns:\n        A list of non-overlapping, non-adjacent merged intervals, sorted by start time.\n    \"\"\"\n    if not intervals:\n        return []\n\n    # Sort intervals by start time\n    sorted_intervals = sorted(intervals, key=lambda x: x[0])\n\n    merged: List[List[int]] = [sorted_intervals[0][:]]\n\n    for current in sorted_intervals[1:]:\n        last = merged[-1]\n        # If the current interval overlaps or is adjacent to the last merged interval\n        if current[0] <= last[1]:\n            # Extend the end of the last merged interval if needed\n            last[1] = max(last[1], current[1])\n        else:\n            merged.append(current[:])\n\n    return merged\n\n\n# Test cases\nif __name__ == \"__main__\":\n    # Test case 1: Overlapping intervals\n    intervals1 = [[1, 3], [2, 6], [8, 10], [15, 18]]\n    result1 = merge_intervals(intervals1)\n    assert result1 == [[1, 6], [8, 10], [15, 18]], f\"Test case 1 failed: {result1}\"\n\n    # Test case 2: Adjacent intervals and unsorted input\n    intervals2 = [[4, 7], [1, 3], [3, 4], [6, 9]]\n    result2 = merge_intervals(intervals2)\n    assert result2 == [[1, 9]], f\"Test case 2 failed: {result2}\"\n\n    print(\"All test cases passed!\")\n```"
+ }
+]

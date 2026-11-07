@@ -1,0 +1,1294 @@
+[
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 363,
+   "prefill_tps": 13.8,
+   "generated": 300,
+   "decode_ms": 8675,
+   "decode_tps": 34.6,
+   "drafts_accepted": 148,
+   "drafts_total": 310
+  },
+  "seconds": 9.04,
+  "generated": 300,
+  "client_tps": 33.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, poi centro del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un equilibrio raro tra monumenti, palazzi e vita quotidiana. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Palazzo Vecchio, Ponte Vecchio, gli Uffizi e la Galleria dell’Accademia con il David di Michelangelo. Non mancano Santa Croce, Santa Maria Novella, Palazzo Pitti e i giardini di Boboli. Firenze è un museo a cielo aperto, dove storia, arte e bellezza convivono in ogni angolo.\"\n\nCount words: Firenze1, capitale2 della"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 225,
+   "prefill_tps": 22.2,
+   "generated": 300,
+   "decode_ms": 7948,
+   "decode_tps": 37.7,
+   "drafts_accepted": 160,
+   "drafts_total": 268
+  },
+  "seconds": 8.18,
+  "generated": 300,
+  "client_tps": 36.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, culla del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Dante, Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo, lasciando capolavori che ancora definiscono l’arte europea.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e umanità: un museo a cielo aperto dove ogni pietra racconta secoli di bellezza, potere e genio creativo.\"\n\nCount words? Firenze(1) capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 plasmato10 la11 civiltà12 occidentale13 Nata14"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8564,
+   "decode_tps": 35.0,
+   "drafts_accepted": 156,
+   "drafts_total": 312
+  },
+  "seconds": 8.77,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come municipio romano e poi libero Comune medievale, nel Rinascimento divenne il centro europeo di arte, letteratura e pensiero, grazie alla famiglia Medici e a figure come Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo e Leonardo. La sua arte si respira ovunque: dalle cupole di Brunelleschi alle sculture di Donatello, dai capolavori di Botticelli agli affreschi di Masaccio. Da visitare: il Duomo con il Battistero e il Campanile di Giotto, gli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce, Santa Maria Novella e Piazzale Michelangelo. Passeggiare tra le sue strade significa entrare in un museo a cielo aperto, dove storia, bellezza e cultura convivono in modo unico.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 plasm"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8704,
+   "decode_tps": 34.5,
+   "drafts_accepted": 150,
+   "drafts_total": 290
+  },
+  "seconds": 8.91,
+  "generated": 300,
+  "client_tps": 33.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d'Europa grazie alla famiglia Medici, che promossero artisti, letterati e scienziati. Qui lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo, e Dante, Petrarca e Boccaccio ne fecero una capitale della lingua italiana.\n\nL'arte si respira ovunque: il Duomo con la cupola di Brunelleschi, la Galleria degli Uffizi con capolavori rinascimentali, Palazzo Pitti, la Galleria dell'Accademia con il David di Michelangelo e la Basilica di Santa Croce. Passeggiando tra Ponte Vecchio, Piazza della Signoria e il quartiere di Oltrarno, si scopre una città viva, elegante e piena di botteghe, chiese e musei. Firenze è un museo a cielo aperto, ideale per chi ama storia, arte e bellezza.\"\n\nCount words: Firenze(1) capitale"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8534,
+   "decode_tps": 35.2,
+   "drafts_accepted": 149,
+   "drafts_total": 292
+  },
+  "seconds": 8.74,
+  "generated": 300,
+  "client_tps": 34.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che incarna il Rinascimento. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, poi centro culturale sotto i Medici. Qui nacquero o lavorarono Dante, Giotto, Brunelleschi, Michelangelo e Leonardo, trasformando l’arte europea. Passeggiando tra le sue strade si respira storia: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto e la Galleria degli Uffizi, con capolavori di Botticelli e Caravaggio. Da non perdere anche Palazzo Pitti, il Giardino di Boboli, Ponte Vecchio e Piazza della Signoria, dominata da Palazzo Vecchio. Firenze è anche artigianato, gastronomia e panorami: salite a Piazzale Michelangelo per una vista indimenticabile. È una meta ideale per chi ama arte, storia e bellezza.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8679,
+   "decode_tps": 34.6,
+   "drafts_accepted": 149,
+   "drafts_total": 309
+  },
+  "seconds": 8.89,
+  "generated": 300,
+  "client_tps": 33.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come colonia romana, nel Medioevo divenne un ricco comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Giotto, Brunelleschi, Michelangelo e Leonardo. La sua arte si respira ovunque: nella cupola del Duomo, nel Battistero, in Santa Croce e negli Uffizi, che custodiscono capolavori di Botticelli, Caravaggio e Tiziano. Da visitare anche Palazzo Pitti, il Giardino di Boboli, Ponte Vecchio e Piazzale Michelangelo, da cui si ammira il panorama. Passeggiare tra le sue strade significa attraversare secoli di storia, bellezza e cultura.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 segnato10 la11 storia"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8590,
+   "decode_tps": 34.9,
+   "drafts_accepted": 147,
+   "drafts_total": 294
+  },
+  "seconds": 8.8,
+  "generated": 300,
+  "client_tps": 34.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Brunelleschi, Michelangelo, Leonardo, Botticelli e Dante, lasciando capolavori che ancora definiscono l’arte europea. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazza della Signoria. Passeggiare lungo l’Arno, salire a Piazzale Michelangelo e attraversare i vicoli del centro storico significa respirare storia, arte e vita quotidiana. Firenze è piccola, densa e armoniosa: un museo a cielo aperto dove ogni pietra racconta secoli di bellezza, potere e creatività.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8195,
+   "decode_tps": 36.6,
+   "drafts_accepted": 157,
+   "drafts_total": 293
+  },
+  "seconds": 8.4,
+  "generated": 300,
+  "client_tps": 35.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nel Medioevo e nel Rinascimento fu un potente centro commerciale e politico, dominato da famiglie come i Medici, che promossero un’epoca straordinaria di cultura e innovazione. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: dalla cupola del Duomo al Campanile di Giotto, dal Battistero con i mosaici e le porte di Ghiberti e Pisano, a Palazzo Vecchio e Ponte Vecchio. Da non perdere gli Uffizi, con capolavori di Botticelli e Caravaggio, la Galleria dell’Accademia, con il David di Michelangelo, e Palazzo Pitti con i giardini di Boboli. Passeggiare tra le sue piazze significa immergersi in storia, bellezza e umanità.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8345,
+   "decode_tps": 35.9,
+   "drafts_accepted": 156,
+   "drafts_total": 298
+  },
+  "seconds": 8.55,
+  "generated": 300,
+  "client_tps": 35.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d'Europa grazie ai Medici, a Dante, Giotto, Brunelleschi, Michelangelo e Leonardo. Qui nacquero idee, linguaggi artistici e modelli politici che influenzarono il mondo moderno.\n\nL'arte è ovunque: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi con Botticelli e Caravaggio, Palazzo Pitti, la Galleria dell'Accademia con il David di Michelangelo. Da visitare anche Ponte Vecchio, Piazza della Signoria, Santa Croce, il Giardino di Boboli e le colline di Fiesole. Passeggiando tra vicoli, chiese e palazzi, Firenze offre un viaggio unico tra storia, bellezza e cultura.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8706,
+   "decode_tps": 34.5,
+   "drafts_accepted": 150,
+   "drafts_total": 320
+  },
+  "seconds": 8.92,
+  "generated": 300,
+  "client_tps": 33.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana e cresciuta nel Medioevo come repubblica mercantile, divenne nel Rinascimento il cuore europeo di arte, letteratura e pensiero, grazie a famiglie come i Medici e a figure come Dante, Petrarca, Boccaccio, Michelangelo e Leonardo. Il suo centro storico, patrimonio UNESCO, conserva monumenti straordinari: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, il Palazzo Vecchio, Ponte Vecchio e la Basilica di Santa Croce. Passeggiando tra le sue strade si incontrano chiese, palazzi rinascimentali, piazze e botteghe artigiane. Firenze è anche gastronomia, vino e vita culturale: una meta ideale per chi ama storia, bellezza e atmosfera autentica.\"\n\nCount words? Let's count manually.\nFirenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 pl"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 9007,
+   "decode_tps": 33.3,
+   "drafts_accepted": 151,
+   "drafts_total": 321
+  },
+  "seconds": 9.22,
+  "generated": 300,
+  "client_tps": 32.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, poi centro del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un’atmosfera unica: il Duomo di Santa Maria del Fiore, con la cupola del Brunelleschi, domina il centro storico; accanto sorgono il Battistero, il Campanile di Giotto e il Museo dell’Opera. Da non perdere anche la Galleria degli Uffizi, il Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Firenze è un museo a cielo aperto, dove storia, arte e bellezza convivono in ogni angolo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8638,
+   "decode_tps": 34.7,
+   "drafts_accepted": 150,
+   "drafts_total": 308
+  },
+  "seconds": 8.85,
+  "generated": 300,
+  "client_tps": 33.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che incarna il Rinascimento. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, arricchito dalle famiglie dei Medici, dei banchieri e degli artigiani. Qui nacquero Dante, Petrarca e Boccaccio, e la città ospitò artisti come Brunelleschi, Michelangelo, Botticelli e Leonardo. La sua arte si respira ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa immergersi in secoli di storia, bellezza e cultura, tra mercati, giardini e botteghe artigiane. Firenze resta una meta essenziale per chi ama l’arte, la storia e la bellezza italiana.\"\n\nCount words? Let's count"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.3,
+   "generated": 300,
+   "decode_ms": 8466,
+   "decode_tps": 35.4,
+   "drafts_accepted": 162,
+   "drafts_total": 330
+  },
+  "seconds": 8.68,
+  "generated": 300,
+  "client_tps": 34.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e bellezza in ogni angolo.\"\n\nCount words: Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea.13 Fondata"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8897,
+   "decode_tps": 33.7,
+   "drafts_accepted": 144,
+   "drafts_total": 309
+  },
+  "seconds": 9.1,
+  "generated": 300,
+  "client_tps": 33.0,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Quattro e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un’atmosfera unica: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Ponte Vecchio, Palazzo Vecchio e la Galleria degli Uffizi, con capolavori dal Medioevo al Rinascimento. Da non perdere anche Piazza Santa Croce, la Basilica di San Lorenzo, il David di Michelangelo all’Accademia e una vista panoramica da Piazzale Michelangelo. Firenze è un museo a cielo aperto, dove storia, arte e bellezza convivono in"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8428,
+   "decode_tps": 35.6,
+   "drafts_accepted": 163,
+   "drafts_total": 314
+  },
+  "seconds": 8.63,
+  "generated": 300,
+  "client_tps": 34.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il centro del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono artisti come Brunelleschi, Michelangelo, Botticelli e Leonardo.\n\nIl suo patrimonio artistico è straordinario: la Cattedrale di Santa Maria del Fiore con la cupola del Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, il Duomo, Ponte Vecchio, Palazzo Pitti e il Giardino di Boboli. Da non perdere anche Piazza della Signoria, il David di Michelangelo all’Accademia e la Basilica di Santa Croce. Passeggiare tra i suoi vicoli significa respirare storia, arte e bellezza.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8528,
+   "decode_tps": 35.2,
+   "drafts_accepted": 151,
+   "drafts_total": 304
+  },
+  "seconds": 8.74,
+  "generated": 300,
+  "client_tps": 34.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio romano e poi comune medievale, nel Rinascimento divenne il centro culturale d'Europa grazie alla famiglia Medici, che promossero artisti, letterati e scienziati. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo.\n\nL'arte si respira ovunque: il Duomo con la cupola di Brunelleschi, la Galleria degli Uffizi con capolavori rinascimentali, Palazzo Pitti, Ponte Vecchio e la Galleria dell'Accademia, dove si trova il David di Michelangelo. Da visitare anche Piazza della Signoria, Santa Croce, Santa Maria Novella e il Giardino di Boboli. Passeggiando tra vicoli, chiese e palazzi, Firenze offre un viaggio unico nella bellezza, nella storia e nell'ingegno umano.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8368,
+   "decode_tps": 35.9,
+   "drafts_accepted": 156,
+   "drafts_total": 308
+  },
+  "seconds": 8.58,
+  "generated": 300,
+  "client_tps": 35.0,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e scienza. Qui nacquero Dante, Petrarca e Boccaccio, mentre Brunelleschi, Michelangelo, Botticelli e Leonardo trasformarono la città in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, bellezza e umanità. Firenze non è solo una meta turistica: è un luogo dell’anima, dove ogni pietra racconta secoli di genio, potere e creatività.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8581,
+   "decode_tps": 35.0,
+   "drafts_accepted": 151,
+   "drafts_total": 282
+  },
+  "seconds": 8.79,
+  "generated": 300,
+  "client_tps": 34.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d’Europa grazie alla famiglia Medici, che promossero artisti, letterati e scienziati. Qui nacquero idee, banche e forme di governo che influenzarono il mondo moderno.\n\nL’arte è ovunque: Brunelleschi, Giotto, Botticelli, Michelangelo e Leonardo hanno lasciato capolavori indimenticabili. La Galleria degli Uffizi conserva opere fondamentali del Rinascimento, mentre Palazzo Pitti e il Museo di San Marco raccontano altri aspetti della storia fiorentina.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, Ponte Vecchio, Piazza della Signoria, Palazzo Vecchio e la Galleria degli Uffizi. Una passeggiata lungo l’Arno o verso Piazzale Michelangelo regala panorami unici su una città che unisce storia, arte e bellezza.\"\n\nCount words: Firenze"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8422,
+   "decode_tps": 35.6,
+   "drafts_accepted": 153,
+   "drafts_total": 296
+  },
+  "seconds": 8.63,
+  "generated": 300,
+  "client_tps": 34.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, culla del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Dante, Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo, lasciando capolavori che hanno rivoluzionato arte e pensiero.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Galleria dell’Accademia, dove si trova il David di Michelangelo. Passeggiare tra le sue strade significa respirare storia, bellezza e cultura in ogni angolo.\"\n\nCount words? Firenze1, capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13."
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8476,
+   "decode_tps": 35.4,
+   "drafts_accepted": 149,
+   "drafts_total": 295
+  },
+  "seconds": 8.68,
+  "generated": 300,
+  "client_tps": 34.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: chiese, palazzi, piazze e musei custodiscono capolavori assoluti. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa immergersi in secoli di storia, bellezza e cultura, tra mercati, giardini e botteghe artigiane. Firenze resta una meta imprescindibile per chi ama l’arte, la storia e la vita"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8216,
+   "decode_tps": 36.5,
+   "drafts_accepted": 156,
+   "drafts_total": 291
+  },
+  "seconds": 8.42,
+  "generated": 300,
+  "client_tps": 35.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un ricco comune mercantile e, tra Quattro e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Donatello, Michelangelo e Leonardo, trasformando l’arte, la letteratura e la scienza.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Galleria dell’Accademia, dove si trova il David di Michelangelo. Passeggiare tra le sue strade significa respirare secoli di storia, bellezza e cultura.\"\n\nCount words: Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 segnato10 la"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 207,
+   "prefill_tps": 24.1,
+   "generated": 300,
+   "decode_ms": 8243,
+   "decode_tps": 36.4,
+   "drafts_accepted": 160,
+   "drafts_total": 300
+  },
+  "seconds": 8.45,
+  "generated": 300,
+  "client_tps": 35.5,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian ~150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come municipio romano e poi libero Comune medievale, nel Rinascimento divenne il centro culturale d’Europa grazie ai Medici, a Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo e Leonardo. La sua arte è ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, il Giardino di Boboli, Ponte Vecchio, Piazza della Signoria con Palazzo Vecchio e la Loggia dei Lanzi, Santa Croce e la Basilica di San Lorenzo. Passeggiare tra le sue strade significa respirare storia, bellezza e umanismo, tra mercati, caffè storici e panorami da Piazzale Michelangelo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 plasmato10 la11"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8510,
+   "decode_tps": 35.3,
+   "drafts_accepted": 152,
+   "drafts_total": 291
+  },
+  "seconds": 8.72,
+  "generated": 300,
+  "client_tps": 34.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà europea. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento fu il cuore del mecenatismo mediceo, attirando geni come Leonardo, Michelangelo e Brunelleschi. La sua arte è ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo all’Accademia, Ponte Vecchio, Palazzo Pitti e i Giardini di Boboli. Passeggiare tra il centro storico e le colline di Fiesole regala panorami indimenticabili. Firenze non è solo un museo a cielo aperto: è anche cucina, artigianato e vita culturale, capace di unire passato e presente in un equilibrio raro.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8715,
+   "decode_tps": 34.4,
+   "drafts_accepted": 144,
+   "drafts_total": 296
+  },
+  "seconds": 8.92,
+  "generated": 300,
+  "client_tps": 33.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia d’Italia e d’Europa. Nata come colonia romana, nel Medioevo divenne un ricco comune mercantile, poi culla del Rinascimento grazie alla famiglia Medici e a geni come Dante, Giotto, Brunelleschi, Michelangelo e Leonardo. La sua arte si respira ovunque: chiese, palazzi, piazze e musei custodiscono capolavori assoluti. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazza della Signoria. Passeggiare tra le sue strade significa ammirare affreschi, sculture e architetture che hanno cambiato il gusto europeo. Firenze è anche vita quotidiana, mercati, giardini e colline, un equilibrio raro tra memoria, bellezza e cultura viva.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8786,
+   "decode_tps": 34.1,
+   "drafts_accepted": 149,
+   "drafts_total": 288
+  },
+  "seconds": 8.99,
+  "generated": 300,
+  "client_tps": 33.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d’Europa grazie alla famiglia Medici, che promossero artisti, letterati e scienziati. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo.\n\nLa sua arte si ammira ovunque: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi con la Venere di Botticelli, Palazzo Pitti, Ponte Vecchio e la Galleria dell’Accademia, dove si trova il David di Michelangelo. Passeggiando tra le sue strade si respira un’atmosfera unica, fatta di storia, bellezza e cultura. Firenze è una meta essenziale per chi ama l’arte, il Rinascimento e l’Italia più autentica.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8214,
+   "decode_tps": 36.5,
+   "drafts_accepted": 156,
+   "drafts_total": 288
+  },
+  "seconds": 8.42,
+  "generated": 300,
+  "client_tps": 35.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e scienza. Qui nacquero Dante, Petrarca e Boccaccio, mentre Brunelleschi, Michelangelo, Botticelli e Leonardo trasformarono la città in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, bellezza e umanità. Firenze non è solo una meta turistica: è un invito a guardare il mondo con occhi nuovi, tra marmo, luce e memoria.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8347,
+   "decode_tps": 35.9,
+   "drafts_accepted": 156,
+   "drafts_total": 302
+  },
+  "seconds": 8.55,
+  "generated": 300,
+  "client_tps": 35.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\nFirenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile, arricchito da banchieri e mercanti. Nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e scienza: qui operarono Brunelleschi, Donatello, Botticelli, Michelangelo e Leonardo, mentre Dante, Petrarca e Boccaccio segnarono la letteratura italiana.\n\nIl centro storico, patrimonio UNESCO, conserva capolavori ovunque. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e bellezza senza tempo.\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 plasmato10 la11 civiltà12"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8064,
+   "decode_tps": 37.2,
+   "drafts_accepted": 162,
+   "drafts_total": 287
+  },
+  "seconds": 8.27,
+  "generated": 300,
+  "client_tps": 36.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Dante, Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo, trasformando Firenze in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare lungo l’Arno, salire a Piazzale Michelangelo per il tramonto e perdersi tra botteghe, mercati e chiese rende il viaggio indimenticabile. Firenze è storia, arte e bellezza in ogni pietra.\"\n\nCount words? Let's count.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8337,
+   "decode_tps": 36.0,
+   "drafts_accepted": 146,
+   "drafts_total": 262
+  },
+  "seconds": 8.54,
+  "generated": 300,
+  "client_tps": 35.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che respira storia e arte. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune e, sotto i Medici, culla del Rinascimento. Qui hanno lavorato Dante, Giotto, Brunelleschi, Michelangelo e Leonardo, lasciando un patrimonio straordinario. Il centro storico, patrimonio UNESCO, si gira a piedi: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Palazzo Vecchio e la Galleria degli Uffizi, con capolavori di Botticelli, Caravaggio e Leonardo. Da non perdere Ponte Vecchio, Santa Croce, Santa Maria Novella e Piazzale Michelangelo, da cui si ammira il panorama. Passeggiare tra le sue strade significa entrare in un museo a cielo aperto, tra chiese, palazzi, piazze e botteghe artigiane. Firenze è eleganza, memoria e bellezza senza tempo.\"\n\nCount words: Firenze(1), capitale2 della3"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8202,
+   "decode_tps": 36.6,
+   "drafts_accepted": 156,
+   "drafts_total": 283
+  },
+  "seconds": 8.41,
+  "generated": 300,
+  "client_tps": 35.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e scienza. Qui nacquero Dante, Petrarca e Boccaccio, mentre Brunelleschi, Michelangelo, Leonardo e Botticelli trasformarono la città in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo all’Accademia, Ponte Vecchio, Palazzo Pitti e i giardini di Boboli. Passeggiare tra le sue strade significa respirare storia, bellezza e umanità. Firenze non è solo una meta turistica: è un luogo dell’anima, dove ogni pietra racconta secoli di genio, potere e creatività.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 201,
+   "prefill_tps": 24.9,
+   "generated": 300,
+   "decode_ms": 8457,
+   "decode_tps": 35.5,
+   "drafts_accepted": 146,
+   "drafts_total": 275
+  },
+  "seconds": 8.66,
+  "generated": 300,
+  "client_tps": 34.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e pensiero. Qui nacquero Dante, Petrarca e Boccaccio, mentre Brunelleschi, Michelangelo, Botticelli e Leonardo trasformarono la città in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo all’Accademia, Ponte Vecchio, Palazzo Pitti e i Giardini di Boboli. Passeggiando tra le sue strade, si respira ancora l’atmosfera di una repubblica fiorentina, tra piazze, chiese e palazzi rinascimentali. Firenze è piccola, elegante e densa di storia: un luogo dove ogni pietra racconta secoli di bellezza, potere e creatività.\"\n\nCount words:"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8912,
+   "decode_tps": 33.7,
+   "drafts_accepted": 145,
+   "drafts_total": 298
+  },
+  "seconds": 9.12,
+  "generated": 300,
+  "client_tps": 32.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, culla del Rinascimento. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Donatello, Michelangelo e Leonardo, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un equilibrio raro tra passato e presente. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo. La città offre anche mercati, giardini e una cucina semplice e gustosa. Firenze non è solo un museo a cielo aperto: è un luogo vivo, dove storia, arte e bellezza quotidiana si intrecciano in modo indimenticabile.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8531,
+   "decode_tps": 35.2,
+   "drafts_accepted": 153,
+   "drafts_total": 313
+  },
+  "seconds": 8.74,
+  "generated": 300,
+  "client_tps": 34.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Botticelli e Leonardo, trasformando l’arte in un linguaggio nuovo.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazza della Signoria. Passeggiando tra vicoli, chiese e palazzi, si respira un’atmosfera unica, dove storia, arte e vita quotidiana convivono armoniosamente. Firenze è un museo a cielo aperto, ideale per chi ama cultura, bellezza e tradizione.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8436,
+   "decode_tps": 35.6,
+   "drafts_accepted": 152,
+   "drafts_total": 291
+  },
+  "seconds": 8.64,
+  "generated": 300,
+  "client_tps": 34.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d'Europa grazie ai Medici, a Dante, Giotto, Brunelleschi, Michelangelo e Leonardo. La sua arte è ovunque: chiese, palazzi, piazze e musei custodiscono capolavori assoluti. Da visitare il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo all'Accademia, Ponte Vecchio, Palazzo Pitti e il Giardino di Boboli. Passeggiando tra il centro storico e le colline di Fiesole, si respira un'atmosfera unica, fatta di pietra serena, luce dorata e memoria. Firenze non è solo una città d'arte: è un luogo dove storia, bellezza e vita quotidiana convivono in equilibrio perfetto.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 8574,
+   "decode_tps": 35.0,
+   "drafts_accepted": 144,
+   "drafts_total": 282
+  },
+  "seconds": 8.78,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, culla del Rinascimento. Qui hanno lavorato artisti come Brunelleschi, Michelangelo, Botticelli e Leonardo, lasciando capolavori che ancora definiscono la bellezza.\n\nIl centro storico, patrimonio UNESCO, invita a passeggiare tra piazze e palazzi. Da non perdere il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Palazzo Vecchio e la Galleria degli Uffizi. Meritano anche Ponte Vecchio, Santa Croce, Palazzo Pitti e i Giardini di Boboli.\n\nFirenze è storia, arte e vita quotidiana: caffè, mercati, lungarni e colline. Visitata lentamente, regala scorci indimenticabili e un dialogo continuo tra passato e presente.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 250,
+   "prefill_tps": 20.0,
+   "generated": 300,
+   "decode_ms": 8588,
+   "decode_tps": 34.9,
+   "drafts_accepted": 159,
+   "drafts_total": 332
+  },
+  "seconds": 8.84,
+  "generated": 300,
+  "client_tps": 33.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e bellezza in ogni angolo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13. Fondata"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 201,
+   "prefill_tps": 24.9,
+   "generated": 300,
+   "decode_ms": 8560,
+   "decode_tps": 35.0,
+   "drafts_accepted": 150,
+   "drafts_total": 300
+  },
+  "seconds": 8.77,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria con Palazzo Vecchio e la Galleria dell'Accademia, dove si trova il David di Michelangelo. Passeggiare tra le sue strade significa immergersi in secoli di bellezza, cultura e innovazione.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 9077,
+   "decode_tps": 33.1,
+   "drafts_accepted": 143,
+   "drafts_total": 307
+  },
+  "seconds": 9.28,
+  "generated": 300,
+  "client_tps": 32.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: chiese, palazzi, piazze e musei custodiscono capolavori assoluti. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa attraversare secoli di storia, bellezza e cultura, in un centro patrimonio UNESCO che resta una delle mete più affascinanti d'Italia.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 201,
+   "prefill_tps": 24.9,
+   "generated": 300,
+   "decode_ms": 8793,
+   "decode_tps": 34.1,
+   "drafts_accepted": 144,
+   "drafts_total": 303
+  },
+  "seconds": 9.0,
+  "generated": 300,
+  "client_tps": 33.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un’atmosfera unica: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Ponte Vecchio e Palazzo Vecchio raccontano secoli di potere, fede e bellezza. Da non perdere anche gli Uffizi, con capolavori di Botticelli e Caravaggio, e Galleria dell’Accademia, dove si ammira il David di Michelangelo. Firenze è un museo a cielo aperto, ideale per arte, storia e passeggiate.\"\n\nCount words: Firenze1, capitale2 della"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 207,
+   "prefill_tps": 24.2,
+   "generated": 300,
+   "decode_ms": 8812,
+   "decode_tps": 34.0,
+   "drafts_accepted": 149,
+   "drafts_total": 317
+  },
+  "seconds": 9.02,
+  "generated": 300,
+  "client_tps": 33.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa incontrare secoli di storia, bellezza e cultura, in un centro patrimonio UNESCO che resta uno dei simboli più alti dell'identità italiana.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 207,
+   "prefill_tps": 24.1,
+   "generated": 300,
+   "decode_ms": 7859,
+   "decode_tps": 38.2,
+   "drafts_accepted": 163,
+   "drafts_total": 284
+  },
+  "seconds": 8.07,
+  "generated": 300,
+  "client_tps": 37.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come municipio romano e poi comune medievale, nel Rinascimento divenne il centro europeo di arte, letteratura e pensiero, grazie alla famiglia Medici e a figure come Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo e Leonardo. Passeggiare per il centro storico significa immergersi in una galleria a cielo aperto: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Palazzo Vecchio, Ponte Vecchio e la Galleria degli Uffizi, che custodisce capolavori di Botticelli, Caravaggio e Tiziano. Da non perdere anche Palazzo Pitti, i Giardini di Boboli, Santa Maria Novella e la Galleria dell’Accademia, con il David di Michelangelo. Firenze è storia, arte e bellezza.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 pl"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 206,
+   "prefill_tps": 24.3,
+   "generated": 300,
+   "decode_ms": 8612,
+   "decode_tps": 34.8,
+   "drafts_accepted": 148,
+   "drafts_total": 299
+  },
+  "seconds": 8.82,
+  "generated": 300,
+  "client_tps": 34.0,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, culla del Rinascimento. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo. Passeggiare a Firenze significa ammirare il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, il David di Michelangelo, Ponte Vecchio e Palazzo Pitti. Il centro storico, patrimonio UNESCO, unisce chiese, palazzi, piazze e botteghe. Tra una visita e l’altra, si può gustare la bistecca fiorentina, il lampredotto e i vini toscani, respirando un’atmosfera che mescola memoria, bellezza e vita quotidiana.\"\n\nCount words"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 206,
+   "prefill_tps": 24.3,
+   "generated": 300,
+   "decode_ms": 8552,
+   "decode_tps": 35.1,
+   "drafts_accepted": 153,
+   "drafts_total": 314
+  },
+  "seconds": 8.76,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, culla del Rinascimento. Qui hanno lavorato Brunelleschi, Giotto, Michelangelo, Botticelli e Leonardo, lasciando capolavori che ancora definiscono l’arte europea. Il centro storico, patrimonio UNESCO, si visita a piedi: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Palazzo Vecchio e la Galleria degli Uffizi, con la Venere di Botticelli. Da non perdere anche Ponte Vecchio, Santa Croce, la Basilica di San Lorenzo e il Giardino di Boboli. Passeggiare tra le sue strade significa respirare storia, arte e bellezza in ogni angolo.\"\n\nCount words: Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 plasmato10 la"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 206,
+   "prefill_tps": 24.2,
+   "generated": 300,
+   "decode_ms": 8640,
+   "decode_tps": 34.7,
+   "drafts_accepted": 153,
+   "drafts_total": 319
+  },
+  "seconds": 8.85,
+  "generated": 300,
+  "client_tps": 33.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: nella cupola del Duomo, nel Campanile di Giotto, nel Battistero e nei capolavori degli Uffizi, come la Venere di Botticelli e il David di Michelangelo, custodito all'Accademia. Da visitare anche Ponte Vecchio, Palazzo Pitti, Piazza della Signoria, Santa Croce e il giardino di Boboli. Firenze unisce storia, bellezza e cultura in un centro patrimonio UNESCO, perfetto per passeggiare tra chiese, musei, mercati e panorami dal Piazzale Michelangelo.\"\n\nCount words:"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8043,
+   "decode_tps": 37.3,
+   "drafts_accepted": 167,
+   "drafts_total": 277
+  },
+  "seconds": 8.25,
+  "generated": 300,
+  "client_tps": 36.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nel Medioevo e nel Rinascimento fu un potente comune mercantile, culla di banchieri, umanisti e artisti, con i Medici protagonisti della sua età d'oro. Qui nacquero Dante, Petrarca e Boccaccio, e il fiorentino divenne base dell'italiano moderno.\n\nL'arte è ovunque: Brunelleschi, Giotto, Botticelli, Michelangelo e Leonardo hanno lasciato capolavori indimenticabili. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria, Santa Croce e il David di Michelangelo. Passeggiare tra le sue strade significa respirare storia, bellezza e cultura, in un centro patrimonio UNESCO.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8555,
+   "decode_tps": 35.1,
+   "drafts_accepted": 152,
+   "drafts_total": 307
+  },
+  "seconds": 8.76,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente centro commerciale e bancario, grazie a famiglie come i Medici, che promossero cultura e politica. Qui nacque il Rinascimento: Dante, Petrarca e Boccaccio rinnovarono la letteratura, mentre Brunelleschi, Michelangelo, Botticelli e Leonardo trasformarono arte e architettura. Il centro storico, patrimonio UNESCO, conserva monumenti straordinari: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio e Piazza della Signoria. Passeggiando tra chiese, palazzi e botteghe, si respira un’atmosfera unica, fatta di bellezza, memoria e creatività. Firenze è una meta ideale per chi ama storia, arte e paesaggi, tra colline, giardini e il fiume Arno.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è5 una6"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 204,
+   "prefill_tps": 24.5,
+   "generated": 300,
+   "decode_ms": 8743,
+   "decode_tps": 34.3,
+   "drafts_accepted": 141,
+   "drafts_total": 283
+  },
+  "seconds": 8.95,
+  "generated": 300,
+  "client_tps": 33.5,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, poi centro del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira un equilibrio raro tra passato e vita quotidiana. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo. Non mancano il Mercato Centrale, i lungarni e i quartieri artigianali. Firenze è piccola ma densa: un museo a cielo aperto dove storia, arte e paesaggio si intrecciano in modo armonioso.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8273,
+   "decode_tps": 36.3,
+   "drafts_accepted": 158,
+   "drafts_total": 302
+  },
+  "seconds": 8.48,
+  "generated": 300,
+  "client_tps": 35.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che incarna il Rinascimento. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, arricchito dalle famiglie dei Medici, dei Bardi e dei Peruzzi. Qui nacquero Dante, Petrarca e Boccaccio, e la lingua italiana trovò una delle sue radici.\n\nL’arte è ovunque: Brunelleschi, Giotto, Botticelli, Michelangelo e Leonardo hanno lasciato capolavori indimenticabili. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, bellezza e cultura in ogni angolo.\"\n\nCount words? Let's count. Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 incarna9 il10 Rinascimento.11 Fondata12"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8281,
+   "decode_tps": 36.2,
+   "drafts_accepted": 155,
+   "drafts_total": 289
+  },
+  "seconds": 8.49,
+  "generated": 300,
+  "client_tps": 35.3,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure roughly 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile, e nel Rinascimento, sotto i Medici, fu culla di arte, letteratura e pensiero. Qui nacquero Dante, Petrarca e Boccaccio, mentre Brunelleschi, Michelangelo, Botticelli e Leonardo trasformarono la città in un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, bellezza e umanità. Firenze non è solo una meta turistica: è un invito a guardare il mondo con occhi nuovi, tra marmo, colore e memoria.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8463,
+   "decode_tps": 35.4,
+   "drafts_accepted": 150,
+   "drafts_total": 288
+  },
+  "seconds": 8.67,
+  "generated": 300,
+  "client_tps": 34.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come municipio romano, nel Medioevo divenne un potente comune mercantile, poi culla del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Dante, Giotto, Brunelleschi, Michelangelo e Leonardo, trasformando l’arte in un linguaggio nuovo. Passeggiando tra le sue strade si respira storia: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo, Ponte Vecchio e Palazzo Pitti. Non mancano piazze, chiese e musei, dal Bargello a Santa Croce. Firenze è anche cucina, artigianato e vita lenta: un luogo dove ogni angolo racconta secoli di bellezza, cultura e genio creativo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 plasmato10 la11 civiltà12 occidentale13. Nata14 come"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8381,
+   "decode_tps": 35.8,
+   "drafts_accepted": 153,
+   "drafts_total": 298
+  },
+  "seconds": 8.59,
+  "generated": 300,
+  "client_tps": 34.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Giotto, Brunelleschi, Botticelli, Michelangelo e Leonardo. La sua arte si respira ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa immergersi in secoli di storia, bellezza e cultura, tra mercati, giardini e botteghe artigiane.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8786,
+   "decode_tps": 34.1,
+   "drafts_accepted": 156,
+   "drafts_total": 323
+  },
+  "seconds": 8.99,
+  "generated": 300,
+  "client_tps": 33.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come colonia romana Florentia, nel Medioevo divenne un ricco comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Botticelli e Leonardo, trasformando l’arte, la letteratura e la scienza.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, bellezza e cultura in ogni angolo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13. Nata14 come1"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8722,
+   "decode_tps": 34.4,
+   "drafts_accepted": 145,
+   "drafts_total": 296
+  },
+  "seconds": 8.93,
+  "generated": 300,
+  "client_tps": 33.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Quattro e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo. La sua arte si respira ovunque: dalla cupola del Duomo al David di Michelangelo, dagli Uffizi con Botticelli e Caravaggio a Palazzo Pitti e alla Galleria dell'Accademia. Da visitare: il centro storico patrimonio UNESCO, Ponte Vecchio, Piazza della Signoria, Santa Croce, Santa Maria Novella e il Giardino di Boboli. Passeggiare tra vicoli, chiese e palazzi significa entrare in un museo a cielo aperto, dove storia, arte e vita quotidiana convivono in modo armonioso.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 300,
+   "decode_ms": 7934,
+   "decode_tps": 37.8,
+   "drafts_accepted": 159,
+   "drafts_total": 268
+  },
+  "seconds": 8.14,
+  "generated": 300,
+  "client_tps": 36.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come municipio romano e poi comune medievale, nel Rinascimento divenne il centro europeo di arte, letteratura e pensiero, grazie alla famiglia Medici e a figure come Dante, Petrarca, Boccaccio, Michelangelo, Leonardo e Brunelleschi. Passeggiando tra le sue strade si respira storia: il Duomo di Santa Maria del Fiore, con la cupola del Brunelleschi, il Battistero, il Campanile di Giotto e la Galleria degli Uffizi, che custodisce capolavori di Botticelli, Caravaggio e Leonardo. Da visitare anche Palazzo Pitti, il Giardino di Boboli, Ponte Vecchio, Santa Croce e Piazzale Michelangelo, per ammirare il panorama. Firenze è un museo a cielo aperto, dove ogni piazza, chiesa e palazzo racconta secoli di bellezza, potere e creatività.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 plasmato10 la1"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8556,
+   "decode_tps": 35.1,
+   "drafts_accepted": 157,
+   "drafts_total": 325
+  },
+  "seconds": 8.76,
+  "generated": 300,
+  "client_tps": 34.2,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Donatello, Botticelli e Michelangelo. La sua arte si respira ovunque: nella cupola del Duomo, nel Battistero, in Palazzo Vecchio e negli Uffizi, che custodiscono capolavori di Giotto, Leonardo e Caravaggio. Da visitare anche Ponte Vecchio, Santa Croce, Santa Maria Novella, Palazzo Pitti e i giardini di Boboli. Passeggiando tra le sue piazze, Firenze offre storia, bellezza e un’atmosfera senza tempo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 segnato10"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8391,
+   "decode_tps": 35.8,
+   "drafts_accepted": 161,
+   "drafts_total": 333
+  },
+  "seconds": 8.6,
+  "generated": 300,
+  "client_tps": 34.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli, trasformando l’arte in un linguaggio nuovo.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e bellezza in ogni angolo.\"\n\nCount words? Let's count. Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea.13 Fon"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8364,
+   "decode_tps": 35.9,
+   "drafts_accepted": 159,
+   "drafts_total": 305
+  },
+  "seconds": 8.57,
+  "generated": 300,
+  "client_tps": 35.0,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian ~150 words.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana e cresciuta nel Medioevo come libero Comune, nel Rinascimento divenne il centro europeo di arte, letteratura e pensiero, grazie alla famiglia Medici e a figure come Dante, Petrarca, Boccaccio, Michelangelo, Leonardo e Brunelleschi. Passeggiare per il centro storico significa immergersi in una galleria a cielo aperto: il Duomo con la cupola del Brunelleschi, il Battistero, il Campanile di Giotto, Ponte Vecchio, Palazzo Vecchio e Piazza della Signoria. Da non perdere gli Uffizi, con Botticelli e Caravaggio, la Galleria dell’Accademia con il David di Michelangelo, Palazzo Pitti e i Giardini di Boboli. Firenze unisce storia, arte e vita quotidiana, tra mercati, chiese e panorami dal Piazzale Michelangelo.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8935,
+   "decode_tps": 33.6,
+   "drafts_accepted": 138,
+   "drafts_total": 299
+  },
+  "seconds": 9.14,
+  "generated": 300,
+  "client_tps": 32.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, culla del Rinascimento. Qui nacquero idee, banche e mecenatismo che trasformarono l'Europa. L'arte è ovunque: Brunelleschi, Giotto, Donatello, Michelangelo e Botticelli hanno lasciato capolavori indimenticabili. Da visitare il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo all'Accademia, Palazzo Vecchio, Ponte Vecchio e Santa Croce. Passeggiando tra vicoli, piazze e lungarni, si respira un'atmosfera unica, fatta di storia, bellezza e cultura. Firenze è una città da vivere lentamente, tra mostre, mercati, giardini e panorami da Piazzale Michelangelo.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è5 una6 città"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8484,
+   "decode_tps": 35.4,
+   "drafts_accepted": 157,
+   "drafts_total": 300
+  },
+  "seconds": 8.69,
+  "generated": 300,
+  "client_tps": 34.5,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile e, sotto i Medici, il cuore del Rinascimento. Qui nacquero idee, banche e mecenatismo che trasformarono l'Europa.\n\nL'arte è ovunque: Brunelleschi, Giotto, Botticelli, Michelangelo e Leonardo hanno lasciato capolavori indimenticabili. Il centro storico, patrimonio UNESCO, sembra un museo a cielo aperto.\n\nDa visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per il panorama. Passeggiare tra le sue strade significa respirare storia, bellezza e genio creativo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 plasmato10 la11 civiltà12"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8860,
+   "decode_tps": 33.9,
+   "drafts_accepted": 146,
+   "drafts_total": 320
+  },
+  "seconds": 9.07,
+  "generated": 300,
+  "client_tps": 33.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo, Leonardo e Botticelli. La sua arte si respira ovunque: nelle chiese, nei palazzi, nelle piazze e nei musei. Da visitare: il Duomo con la cupola del Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria con Palazzo Vecchio e la Galleria dell'Accademia, dove si trova il David di Michelangelo. Passeggiare tra le sue strade significa immergersi in secoli di bellezza, cultura e innovazione.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8934,
+   "decode_tps": 33.6,
+   "drafts_accepted": 142,
+   "drafts_total": 314
+  },
+  "seconds": 9.14,
+  "generated": 300,
+  "client_tps": 32.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come municipio medievale, nel Rinascimento divenne il centro culturale d'Europa grazie alla famiglia Medici, che promossero artisti, letterati e scienziati. Qui lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo, e Dante, Petrarca e Boccaccio ne fecero una capitale della lingua italiana.\n\nL'arte si respira ovunque: il Duomo con la cupola di Brunelleschi, la Galleria degli Uffizi con la Venere di Botticelli, Palazzo Pitti, Ponte Vecchio e la Galleria dell'Accademia, dove si trova il David di Michelangelo. Da visitare anche Piazza della Signoria, Santa Croce, il Battistero e i giardini di Boboli. Passeggiare tra i suoi vicoli significa immergersi in un museo a cielo aperto, tra chiese, palazzi e panorami sul Arno.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8188,
+   "decode_tps": 36.6,
+   "drafts_accepted": 164,
+   "drafts_total": 311
+  },
+  "seconds": 8.39,
+  "generated": 300,
+  "client_tps": 35.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che incarna il Rinascimento. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, arricchito da banchieri e mercanti. Sotto i Medici, soprattutto Lorenzo il Magnifico, trasformò la città in un centro europeo di arte, letteratura e pensiero. Qui lavorarono Brunelleschi, Giotto, Botticelli, Michelangelo e Leonardo, lasciando capolavori che ancora definiscono la sua identità. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare tra le sue strade significa respirare storia, arte e bellezza in ogni angolo.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 incarna9 il10 Rinascimento11. Fondata12 dai13"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 9014,
+   "decode_tps": 33.3,
+   "drafts_accepted": 144,
+   "drafts_total": 328
+  },
+  "seconds": 9.22,
+  "generated": 300,
+  "client_tps": 32.5,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Botticelli, Michelangelo e Leonardo. La sua arte si respira ovunque: chiese, palazzi, piazze e musei custodiscono capolavori assoluti. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per una vista panoramica. Passeggiare tra le sue strade significa attraversare secoli di storia, bellezza e cultura, in un centro storico patrimonio UNESCO che resta uno dei simboli più alti dell'identità italiana.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8705,
+   "decode_tps": 34.5,
+   "drafts_accepted": 151,
+   "drafts_total": 330
+  },
+  "seconds": 8.91,
+  "generated": 300,
+  "client_tps": 33.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Quattro e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Donatello, Botticelli e Michelangelo. La sua arte si respira ovunque: nella cupola del Duomo, nel Battistero, in Palazzo Vecchio e negli Uffizi, che custodiscono capolavori di Giotto, Leonardo e Caravaggio. Da visitare anche Ponte Vecchio, Santa Croce, Piazza della Signoria, il David di Michelangelo all’Accademia e il Giardino di Boboli. Passeggiando tra vicoli, chiese e palazzi, Firenze offre un viaggio unico tra storia, bellezza e cultura.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 205,
+   "prefill_tps": 24.4,
+   "generated": 300,
+   "decode_ms": 8683,
+   "decode_tps": 34.5,
+   "drafts_accepted": 150,
+   "drafts_total": 318
+  },
+  "seconds": 8.89,
+  "generated": 300,
+  "client_tps": 33.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, poi centro del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Brunelleschi, Donatello, Michelangelo e Leonardo, trasformando l’arte e il pensiero occidentale. Passeggiare a Firenze significa ammirare il Duomo di Santa Maria del Fiore con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto e la Galleria degli Uffizi, ricca di capolavori. Da non perdere anche Ponte Vecchio, Palazzo Pitti, il Giardino di Boboli, Piazza della Signoria con Palazzo Vecchio e la Galleria dell’Accademia, dove si trova il David di Michelangelo. Tra vicoli, chiese e mercati, Firenze resta un museo a cielo aperto.\"\n\nCount words: Firenze1, capitale2 della3 Toscana4, è"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 208,
+   "prefill_tps": 24.0,
+   "generated": 300,
+   "decode_ms": 9219,
+   "decode_tps": 32.5,
+   "drafts_accepted": 143,
+   "drafts_total": 313
+  },
+  "seconds": 9.43,
+  "generated": 300,
+  "client_tps": 31.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città dove storia, arte e bellezza si intrecciano. Nata come colonia romana Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui hanno lavorato Dante, Giotto, Brunelleschi, Michelangelo e Leonardo, lasciando capolavori che hanno cambiato la cultura europea. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il David di Michelangelo in Galleria dell'Accademia, Ponte Vecchio, Palazzo Pitti e i giardini di Boboli. Passeggiare tra le sue strade significa ammirare chiese, palazzi e piazze cariche di memoria. Firenze è anche cibo, artigianato e panorami: da Piazzale Michelangelo si vede il centro storico, patrimonio UNESCO, che invita a perdersi lentamente.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.7,
+   "generated": 300,
+   "decode_ms": 8395,
+   "decode_tps": 35.7,
+   "drafts_accepted": 156,
+   "drafts_total": 310
+  },
+  "seconds": 8.6,
+  "generated": 300,
+  "client_tps": 34.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha plasmato la civiltà occidentale. Nata come colonia romana e cresciuta nel Medioevo come repubblica mercantile, nel Rinascimento divenne il cuore europeo di arte, letteratura e pensiero, grazie alla famiglia Medici e a figure come Dante, Petrarca, Boccaccio, Brunelleschi, Michelangelo e Leonardo. Passeggiare per il centro storico significa immergersi in una galleria a cielo aperto: il Duomo con la cupola di Brunelleschi, il Battistero, il Campanile di Giotto, Ponte Vecchio, Palazzo Vecchio e Piazza della Signoria. Da non perdere gli Uffizi, con Botticelli e Caravaggio, la Galleria dell’Accademia, con il David di Michelangelo, e Palazzo Pitti con i suoi giardini. Firenze unisce storia, arte e vita quotidiana, tra mercati, caffè storici e colline che abbracciano il fiume Arno.\"\n\nCount words? Let's count manually.\nFire"
+ },
+ {
+  "label": "soak",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 203,
+   "prefill_tps": 24.6,
+   "generated": 300,
+   "decode_ms": 8908,
+   "decode_tps": 33.7,
+   "drafts_accepted": 149,
+   "drafts_total": 327
+  },
+  "seconds": 9.12,
+  "generated": 300,
+  "client_tps": 32.9,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero o lavorarono Dante, Petrarca, Boccaccio, Michelangelo, Leonardo e Brunelleschi, rendendola un centro mondiale di arte, letteratura e pensiero.\n\nDa visitare: il Duomo con la cupola del Brunelleschi, il Battistero, il Campanile di Giotto, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Piazza della Signoria e la Basilica di Santa Croce. Passeggiare lungo l’Arno, salire a Piazzale Michelangelo e scoprire i quartieri storici completa l’esperienza. Firenze è un museo a cielo aperto, dove storia, arte e bellezza convivono in ogni angolo.\"\n\nCount words? Let's count manually.\nFirenze,(1) capitale2 della"
+ }
+]
