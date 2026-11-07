@@ -74,6 +74,8 @@ systemctl stop strata
 
 # --- 1. aggiorna il branch ---
 cd /root/Strata-maxwell
+git status --short          # atteso: solo file non tracciati (nessuna modifica locale)
+git branch --show-current   # atteso: mw8
 git fetch https://github.com/BitMakerMan/Strata-maxwell iq3
 git checkout -B iq3 FETCH_HEAD
 git log --oneline -2          # atteso: 0283a48 maxwell: up to 8 devices..., 6175fa0 ...
@@ -90,43 +92,38 @@ cmake --build build-iq3 -j 8 --target strata
 mkdir -p engine-iq3 && cp build-iq3/strata build-iq3/libstrata_kq.so engine-iq3/
 
 # --- 3. config di test per IQ2_XS (resta sul server: contiene api_key, NON va committato) ---
-# Individua il config di produzione IQ2_XS usato dal servizio:
-systemctl cat strata | grep -E 'ExecStart|--config'
-# Poi impostane il percorso qui:
-CFG_IN=/root/Strata-maxwell/strata-maxwell.json        # <-- correggere se il nome è diverso
-python3 - "$CFG_IN" <<'PY'
-import json, sys
+CFG_IN=/root/Strata-maxwell/strata-iq2_xs-8mw-hdd.json    # produzione attuale
+/root/Strata-maxwell/.venv/bin/python - "$CFG_IN" <<'PY'
+import json, os, sys
 src, dst = sys.argv[1], "/root/Strata-maxwell/strata-iq2-xs-baseline.json"
 c = json.load(open(src))
-c["exe"] = "engine-iq3/strata"
+c["exe"] = "/root/Strata-maxwell/engine-iq3/strata"
 c["log"] = "strata-iq2-xs-baseline.log"
-with open(dst, "w") as f:
+fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
     json.dump(c, f, indent=2)
 print("wrote", dst)
 print("exe:", c["exe"])
 print("maxwell:", [a for a in c["args"] if a.startswith("--maxwell")])
+print("env:", c["env"])
 PY
-# Atteso: exe engine-iq3/strata e --maxwell-devices 1,2,3,4,5,6,7,8
+# Atteso: exe /root/Strata-maxwell/engine-iq3/strata, --maxwell-devices 1,2,3,4,5,6,7,8,
+# e in c["env"] CUDA_DEVICE_ORDER/CUDA_VISIBLE_DEVICES, STRATA_EMBED_VRAM e i sei STRATA_MW_*.
 
 # --- 4. avvia il motore nuovo in tmux (NON usare il servizio systemd) ---
 tmux new -s iq3-baseline
 cd /root/Strata-maxwell
-export CUDA_DEVICE_ORDER=PCI_BUS_ID
-export CUDA_VISIBLE_DEVICES=4,0,1,2,3,5,6,7,8
-export STRATA_EMBED_VRAM=1
-export STRATA_MW_MT=1
-export STRATA_MW_MT_T=256x4
-export STRATA_MW_NTM=256
-export STRATA_MW_TWOPHASE=1
-export STRATA_MW_AD2H=1
-# NON impostare STRATA_MW_FASTCOMPLETE in questa baseline (è l'esperimento 0b)
-python3 serve/server.py --engine strata --config strata-iq2-xs-baseline.json --port 8088
+# Nessun export: il config ha già "env" con CUDA_DEVICE_ORDER/CUDA_VISIBLE_DEVICES,
+# STRATA_EMBED_VRAM e i sei STRATA_MW_*; il server li applica al motore.
+/root/Strata-maxwell/.venv/bin/python serve/server.py --engine strata \
+  --config strata-iq2-xs-baseline.json --port 8080
 ```
 
-Da un'altra shell, attendere il caricamento (4–6 minuti dall'SSD) e verificare il tier:
+Da un'altra shell, attendere il caricamento (~13 minuti: IQ2_XS shard 1 e pack sono sull'HDD) e
+verificare il tier:
 
 ```sh
-curl -sf http://127.0.0.1:8088/health && echo " health OK"
+curl -sf http://127.0.0.1:8080/health && echo " health OK"
 grep -E "Maxwell GPU|round-trip|expert cache|Maxwell tier" \
   /root/Strata-maxwell/strata-iq2-xs-baseline.log | tail -40
 ```
@@ -185,16 +182,32 @@ note:
 può cambiare. I gate di qualità e il round-trip devono restare identici: le righe delle carte sono
 disgiunte e i thread si uniscono prima dell'upload.
 
-**Modifiche.** Nessuna al codice: solo la variabile d'ambiente nel lancio.
+**Modifiche.** Nessuna al codice: solo una chiave in più nel dizionario `"env"` della copia del
+config.
 
-**Comandi per aidrogen.** Ripetere il passo 4 dell'iterazione 0 aggiungendo:
+**Comandi per aidrogen.** Creare una copia del config 0a con `STRATA_MW_FASTCOMPLETE=1` nel suo
+`"env"`, con nome file e log distinti, poi lanciarla sulla stessa porta 8080:
 
 ```sh
-export STRATA_MW_FASTCOMPLETE=1
+/root/Strata-maxwell/.venv/bin/python - <<'PY'
+import json, os
+src = "/root/Strata-maxwell/strata-iq2-xs-baseline.json"
+dst = "/root/Strata-maxwell/strata-iq2-xs-baseline-fastc.json"
+c = json.load(open(src))
+c["env"]["STRATA_MW_FASTCOMPLETE"] = "1"
+c["log"] = "strata-iq2-xs-baseline-fastc.log"
+fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(c, f, indent=2)
+print("wrote", dst)
+print("env:", c["env"])
+PY
+cd /root/Strata-maxwell
+/root/Strata-maxwell/.venv/bin/python serve/server.py --engine strata \
+  --config strata-iq2-xs-baseline-fastc.json --port 8080
 ```
 
-e usare un nome di log distinto, per esempio `strata-iq2-xs-baseline-fastc.log`. Stesse misure,
-stesso protocollo, poi salvare in `docs/iq3/results/00b-fastcomplete.txt`.
+Stesse misure, stesso protocollo, poi salvare in `docs/iq3/results/00b-fastcomplete.txt`.
 
 **Risultato atteso / criterio di successo.** Decode ≥ baseline 0a; prefill e gate invariati. Se il
 decode peggiora o un gate cambia, la variabile non entra nella produzione.
