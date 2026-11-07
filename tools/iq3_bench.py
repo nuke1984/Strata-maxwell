@@ -99,9 +99,12 @@ def read_log_tail(path: str, mark: int) -> tuple[dict | None, int]:
     return last, end
 
 
-def ask(url: str, key: str, prompt: str, max_tokens: int, timeout: float) -> tuple[dict, float]:
+def ask(url: str, key: str, prompt: str, max_tokens: int, timeout: float,
+        thinking: bool = True) -> tuple[dict, float]:
     body = {"model": "strata", "max_tokens": max_tokens, "temperature": 0,
             "messages": [{"role": "user", "content": prompt}]}
+    if not thinking:
+        body["chat_template_kwargs"] = {"enable_thinking": False}
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = "Bearer " + key
@@ -226,6 +229,8 @@ def main() -> int:
     ap.add_argument("--texts-out", default="", help="write the city and code texts here (markdown)")
     ap.add_argument("--long-context", default="", help="e.g. 32k,64k: haystack prompts instead of the fixed bench")
     ap.add_argument("--soak-minutes", type=float, default=0, help="run city prompts back to back for this long")
+    ap.add_argument("--no-thinking", action="store_true",
+                    help="disable the model's reasoning (quality texts need this at 600 tokens)")
     ap.add_argument("--json", default="", help="write every row here as JSON")
     a = ap.parse_args()
 
@@ -236,7 +241,7 @@ def main() -> int:
     def run_one(label: str, prompt: str, max_tokens: int) -> dict:
         nonlocal mark
         try:
-            out, secs = ask(a.url, key, prompt, max_tokens, a.timeout)
+            out, secs = ask(a.url, key, prompt, max_tokens, a.timeout, thinking=not a.no_thinking)
         except BenchFailure as exc:
             low = str(exc).lower()
             kind = "OOM" if any(h in low for h in OOM_HINTS) else "ERROR"

@@ -52,10 +52,16 @@ Confronto a parita di prompt (media):
   prose  IQ3_S 43.3 vs IQ2_XS 49.6  -> -12.7%
   citta+codice  IQ3_S 46.8 vs IQ2_XS 58.3  -> -19.7%
 
-2. QUALITA - testi salvati
----------------------------
+2. QUALITA - testi salvati (CAVEAT: ragionamento troncato)
+------------------------------------------------------------
   results/10-quality-iq2_xs.md   (citta + codice, primo run, temperatura 0)
   results/11-quality-iq3_s.md    (citta + codice, primo run, temperatura 0)
+
+  ATTENZIONE: con max_tokens 600 entrambi i modelli hanno speso tutti i 600 token nel
+  ragionamento; il campo content e' vuoto e nei file non c'e' alcuna risposta finale.
+  I testi sono ragionamento troncato, non risposte: non sono confrontabili come qualita'.
+  Il banco resta valido (600 generated registrati dal motore in ogni run). Per il
+  confronto di qualita' serve una raccolta con enable_thinking=false o un tetto piu' alto.
 
 3. CONTESTO LUNGO - IQ3_S
 --------------------------

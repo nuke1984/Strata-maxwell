@@ -8,6 +8,7 @@ city+code and nothing else.
 """
 from __future__ import annotations
 
+import json
 import statistics
 import sys
 import tempfile
@@ -134,6 +135,42 @@ class Failures(unittest.TestCase):
             B.urllib.request.urlopen = orig
         self.assertIn("HTTP 500", str(ctx.exception))
         self.assertIn("CUDA out of memory", str(ctx.exception))
+
+
+class Thinking(unittest.TestCase):
+    """The quality texts need enable_thinking off: at 600 tokens the reasoning eats the whole budget."""
+
+    def body_for(self, thinking: bool) -> dict:
+        captured = {}
+
+        class Reply:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"choices": [{"message": {"content": "ok"}}]}'
+
+        def fake(req, timeout=None):
+            captured["body"] = json.loads(req.data)
+            return Reply()
+
+        orig = B.urllib.request.urlopen
+        B.urllib.request.urlopen = fake
+        try:
+            out, _ = B.ask("http://127.0.0.1:9", "", "x", 8, 5, thinking=thinking)
+        finally:
+            B.urllib.request.urlopen = orig
+        self.assertEqual(out["choices"][0]["message"]["content"], "ok")
+        return captured["body"]
+
+    def test_default_sends_no_thinking_override(self):
+        self.assertNotIn("chat_template_kwargs", self.body_for(True))
+
+    def test_no_thinking_disables_the_reasoning(self):
+        self.assertEqual(self.body_for(False)["chat_template_kwargs"], {"enable_thinking": False})
 
 
 if __name__ == "__main__":

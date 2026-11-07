@@ -1064,10 +1064,28 @@ Il primo run è a freddo su entrambi i motori, e su città è il più lento in e
 44.1 per IQ3_S; 53.5 vs 56.8 per IQ2_XS). La distanza fra i due motori non è un effetto del primo
 run: resta su tutte e tre le categorie.
 
-### Qualità — testi per l'operatore
+### Qualità — testi per l'operatore, con un caveat
 
 `results/10-quality-iq2_xs.md` e `results/11-quality-iq3_s.md`: risposte città e codice del primo
 run, temperatura 0, testo integrale (thinking + risposta).
+
+**Caveat misurato, non previsto dal protocollo.** Con `max_tokens 600` **entrambi** i modelli hanno
+speso tutti i 600 token nel ragionamento e non hanno prodotto la risposta finale: il campo
+`content` è vuoto in tutte e quattro le risposte salvate (nessun separatore `---` nei file). I testi
+sono quindi **ragionamento troncato**, non risposte finite: non sono confrontabili come qualità
+della risposta. Non inficia il banco — `600 generated` è registrato dal motore in ogni run, e i
+tok/s misurano il costo per token generato — ma per il confronto di qualità serve una raccolta
+separata con `chat_template_kwargs.enable_thinking = false` (o un tetto più alto), che richiede di
+ricaricare l'IQ3_S e non è stata fatta in questa finestra senza l'OK dell'operatore.
+
+Per la raccolta corretta il tool ha ora `--no-thinking` (12 test offline, verde): manda
+`chat_template_kwargs: {enable_thinking: false}` e lascia il ragionamento fuori dalla richiesta.
+Il comando, da eseguire su entrambi i motori in una finestra successiva:
+
+```sh
+$PY tools/iq3_bench.py --label iq3_s --no-thinking --runs 1 --labels city,code \
+  --engine-log ... --api-key-json ... --texts-out docs/iq3/results/11-quality-iq3_s.md
+```
 
 ### Contesto lungo — IQ3_S, nessun OOM
 
