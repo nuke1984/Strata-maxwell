@@ -115,10 +115,12 @@ def sample(label: str, minutes: float, out_path: str, interval_ms: int) -> int:
     if shutil.which("nvidia-smi") is None:
         print("no nvidia-smi on this machine: nothing to sample", file=sys.stderr)
         return 2
-    cmd = ["nvidia-smi", f"--query-gpu={QUERY}", "--format=csv,noheader", f"-lms {interval_ms}"]
+    # -lms takes its value as a SEPARATE argv ("-lms", "1000"): as one string the driver answers
+    # "Option -lms 1000 is not recognized", exits, and the sampler would report a silent 0 samples.
+    cmd = ["nvidia-smi", f"--query-gpu={QUERY}", "--format=csv,noheader", "-lms", str(interval_ms)]
     print(f"# power sampling, {label}, {minutes} min, one poll every {interval_ms} ms")
     print("  " + " ".join(cmd))
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True, bufsize=1)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
     rows: list[dict] = []
     lines: list[str] = [f"# {label}, query {QUERY}, interval {interval_ms} ms"]
     t0 = time.time()
@@ -142,9 +144,23 @@ def sample(label: str, minutes: float, out_path: str, interval_ms: int) -> int:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+    err_text = ""
+    if proc.stderr is not None:
+        try:
+            err_text = proc.stderr.read().strip()
+        except (OSError, ValueError):
+            err_text = ""
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print()
+    if not rows:
+        # A sampler that collected nothing is a broken measurement, not an idle machine: say why and
+        # fail, so a bench never goes into the report with a power column that was never sampled.
+        print("*** the sampler collected NO samples: the measurement did not happen", file=sys.stderr)
+        if err_text:
+            print("--- nvidia-smi said ---", file=sys.stderr)
+            print(err_text, file=sys.stderr)
+        return 2
     print(summarize(rows))
     print(f"\n{len(rows)} samples over {time.time() - t0:.0f} s, CSV at {out_path}")
     return 0

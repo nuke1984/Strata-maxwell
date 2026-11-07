@@ -71,6 +71,22 @@ class Throttle(unittest.TestCase):
         self.assertEqual(P.throttle_names("0x0000000000000000"), [])
 
 
+class Sampler(unittest.TestCase):
+    def test_lms_is_two_argv(self):
+        """-lms takes a separate argv: as one string nvidia-smi exits and the sampler reads nothing."""
+        cmd = ["nvidia-smi", "--query-gpu=x", "--format=csv,noheader", "-lms", "1000"]
+        self.assertEqual(cmd[-2:], ["-lms", "1000"])
+        self.assertNotIn("-lms 1000", cmd)
+        src = (ROOT / "tools" / "iq3_power.py").read_text(encoding="utf-8")
+        self.assertIn('"-lms", str(interval_ms)', src)
+        self.assertNotIn('f"-lms {interval_ms}"', src)
+
+    def test_empty_run_is_not_a_measurement(self):
+        """A sampler with 0 rows must fail loudly, never summarize as if the cards were idle."""
+        src = (ROOT / "tools" / "iq3_power.py").read_text(encoding="utf-8")
+        self.assertIn("the sampler collected NO samples", src)
+
+
 class Summary(unittest.TestCase):
     def rows(self, mask: str, n: int, draw: float = 29.5) -> list[dict]:
         return [{"gpu": 0, "draw_w": draw, "limit_w": 30.0, "sm_mhz": 1100.0, "mem_mhz": 810.0,

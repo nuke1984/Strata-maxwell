@@ -84,6 +84,42 @@ def pack_share() -> str:
             f"# down-20 layers: {DOWN20}\n# down-42 layers: {DOWN42}")
 
 
+def aggregate_by_card(rows: list[dict]) -> list[dict]:
+    """One row per card, weighted over the windows it printed (the engine prints every 1440 layers)."""
+    by_gpu: dict[int, list[dict]] = {}
+    for r in rows:
+        by_gpu.setdefault(r["gpu"], []).append(r)
+    out = []
+    for gpu in sorted(by_gpu):
+        rs = by_gpu[gpu]
+        n = sum(r["layers"] for r in rs)
+        if n <= 0:
+            continue
+        w = lambda key: sum(r[key] * r["layers"] for r in rs) / n  # noqa: E731
+        out.append({"gpu": gpu, "windows": len(rs), "layers": n,
+                    "jobs": w("jobs"), "distinct": w("distinct"), "mb": w("mb"),
+                    "ideal": w("ideal"), "kernel": w("kernel"), "slack": w("slack"),
+                    "gup": w("gup"), "down": w("down"), "sync": w("sync")})
+    return out
+
+
+def aggregate_by_type(rows: list[dict]) -> list[dict]:
+    """One row per (card, down type), weighted over that card's windows."""
+    by_key: dict[tuple[int, str], list[dict]] = {}
+    for r in rows:
+        by_key.setdefault((r["gpu"], r["tag"]), []).append(r)
+    out = []
+    for (gpu, tag), rs in sorted(by_key.items()):
+        n = sum(r["layers"] for r in rs)
+        if n <= 0:
+            continue
+        w = lambda key: sum(r[key] * r["layers"] for r in rs) / n  # noqa: E731
+        out.append({"gpu": gpu, "tag": tag, "windows": len(rs), "layers": n,
+                    "mb": w("mb"), "kernel": w("kernel"), "gup": w("gup"),
+                    "down": w("down"), "sync": w("sync")})
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--log", default="", help="engine log (with STRATA_MW_LAYERPROF=1)")
@@ -104,14 +140,15 @@ def main() -> int:
           f"{len(layers)} layer lines, {len(vlayers)} vlayer lines")
 
     if m10:
-        print("\n## per card (MWPROF m10)")
-        print(f"{'card':>5} {'layers':>7} {'jobs/L':>7} {'dist/L':>7} {'MB/L':>7} {'ideal':>7} "
+        cards = aggregate_by_card(m10)
+        print("\n## per card (MWPROF m10), weighted over the windows each card printed")
+        print(f"{'card':>5} {'windows':>8} {'layers':>7} {'jobs/L':>7} {'dist/L':>7} {'MB/L':>7} {'ideal':>7} "
               f"{'kernel':>7} {'slack':>6} {'gup':>7} {'down':>7} {'sync':>7}")
-        for r in m10:
-            print(f"{r['gpu']:>5} {r['layers']:>7.0f} {r['jobs']:>7.2f} {r['distinct']:>7.2f} {r['mb']:>7.3f} "
-                  f"{r['ideal']:>7.0f} {r['kernel']:>7.0f} {r['slack']:>6.2f} {r['gup']:>7.0f} "
-                  f"{r['down']:>7.0f} {r['sync']:>7.0f}")
-        avg = lambda key: sum(r[key] for r in m10) / len(m10)  # noqa: E731
+        for r in cards:
+            print(f"{r['gpu']:>5} {r['windows']:>8} {r['layers']:>7.0f} {r['jobs']:>7.2f} {r['distinct']:>7.2f} "
+                  f"{r['mb']:>7.3f} {r['ideal']:>7.0f} {r['kernel']:>7.0f} {r['slack']:>6.2f} "
+                  f"{r['gup']:>7.0f} {r['down']:>7.0f} {r['sync']:>7.0f}")
+        avg = lambda key: sum(r[key] for r in cards) / len(cards)  # noqa: E731
         krn, gup, down, sync = avg("kernel"), avg("gup"), avg("down"), avg("sync")
         print(f"\nmean over the cards: kernel {krn:.0f} us/L = gup {gup:.0f} + down {down:.0f}; "
               f"sync-wait {sync:.0f} us/L")
@@ -121,15 +158,16 @@ def main() -> int:
         print(f"  the host waits {sync:.0f} us/L beyond the card's own span")
 
     if m10type:
-        print("\n## per card, split by down type (MWPROF m10type)")
-        print(f"{'card':>5} {'down':>7} {'layers':>7} {'MB/L':>7} {'kernel':>7} {'gup':>7} "
+        cards = aggregate_by_type(m10type)
+        print("\n## per card, split by down type (MWPROF m10type), weighted over the windows")
+        print(f"{'card':>5} {'down':>7} {'windows':>8} {'layers':>7} {'MB/L':>7} {'kernel':>7} {'gup':>7} "
               f"{'down us':>7} {'sync':>7}")
-        for r in m10type:
-            print(f"{r['gpu']:>5} {r['tag']:>7} {r['layers']:>7.0f} {r['mb']:>7.3f} {r['kernel']:>7.0f} "
-                  f"{r['gup']:>7.0f} {r['down']:>7.0f} {r['sync']:>7.0f}")
+        for r in cards:
+            print(f"{r['gpu']:>5} {r['tag']:>7} {r['windows']:>8} {r['layers']:>7.0f} {r['mb']:>7.3f} "
+                  f"{r['kernel']:>7.0f} {r['gup']:>7.0f} {r['down']:>7.0f} {r['sync']:>7.0f}")
         # The comparison that answers the question: the same span, per layer, on the two down types.
         for tag in ("down20", "down42"):
-            rs = [r for r in m10type if r["tag"] == tag]
+            rs = [r for r in cards if r["tag"] == tag]
             if not rs:
                 continue
             n = sum(r["layers"] for r in rs)
@@ -141,7 +179,7 @@ def main() -> int:
             print(f"  {tag}: weighted over {n:.0f} layer-spans and {len(rs)} cards -> "
                   f"{mb:.3f} MB/L, kernel {krn:.0f} us/L (gup {gup:.0f} + down {dn:.0f}), "
                   f"sync-wait {sy:.0f} us/L")
-        both = {t: [r for r in m10type if r["tag"] == t] for t in ("down20", "down42")}
+        both = {t: [r for r in cards if r["tag"] == t] for t in ("down20", "down42")}
         if both["down20"] and both["down42"]:
             def wavg(tag, key):
                 rs = both[tag]

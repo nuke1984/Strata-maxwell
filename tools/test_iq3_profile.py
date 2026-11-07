@@ -29,6 +29,34 @@ LAYER = "MWPROF layer 1920: plan 10.5 actq 22.3 jobs 4.8 run 60.1 us/layer (disp
 VLAYER = "MWPROF vlayer 1920: ring 3.2 pool 1.4 post 8.9 us/layer"
 
 
+class Aggregate(unittest.TestCase):
+    def test_windows_collapse_to_one_row_per_card(self):
+        """The engine prints a window every 1440 layers: 496 raw rows must become 8 cards, not 496 lines."""
+        rows = [{"gpu": 1, "layers": 1440.0, "jobs": 3.0, "distinct": 2.0, "mb": 4.0, "ideal": 50.0,
+                 "kernel": 300.0, "slack": 6.0, "gup": 150.0, "down": 150.0, "sync": 100.0},
+                {"gpu": 1, "layers": 1440.0, "jobs": 5.0, "distinct": 4.0, "mb": 6.0, "ideal": 70.0,
+                 "kernel": 500.0, "slack": 8.0, "gup": 250.0, "down": 250.0, "sync": 200.0},
+                {"gpu": 2, "layers": 1440.0, "jobs": 1.0, "distinct": 1.0, "mb": 2.0, "ideal": 20.0,
+                 "kernel": 100.0, "slack": 5.0, "gup": 50.0, "down": 50.0, "sync": 10.0}]
+        cards = PR.aggregate_by_card(rows)
+        self.assertEqual(len(cards), 2)
+        self.assertEqual(cards[0]["gpu"], 1)
+        self.assertEqual(cards[0]["windows"], 2)
+        self.assertAlmostEqual(cards[0]["kernel"], 400.0)       # mean of 300 and 500
+        self.assertAlmostEqual(cards[0]["mb"], 5.0)
+        self.assertAlmostEqual(cards[1]["kernel"], 100.0)
+
+    def test_by_type_keeps_the_two_buckets_apart(self):
+        rows = [{"gpu": 1, "tag": "down20", "layers": 1166.0, "mb": 4.8, "kernel": 344.0,
+                 "gup": 159.0, "down": 185.0, "sync": 286.0},
+                {"gpu": 1, "tag": "down42", "layers": 274.0, "mb": 3.8, "kernel": 226.0,
+                 "gup": 167.0, "down": 59.0, "sync": 164.0}]
+        out = PR.aggregate_by_type(rows)
+        self.assertEqual([r["tag"] for r in out], ["down20", "down42"])
+        self.assertAlmostEqual(out[0]["down"], 185.0)
+        self.assertAlmostEqual(out[1]["down"], 59.0)
+
+
 class Map(unittest.TestCase):
     def test_counts_match_the_pack(self):
         self.assertEqual(len(PR.DOWN20), 39)
