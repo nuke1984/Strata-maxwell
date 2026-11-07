@@ -871,7 +871,10 @@ usato.
 
 **Passo 4 — produzione ripristinata.** `systemctl start strata`, 651 s fino a `/health`, servizio
 `active` (PID 17340), `model qwen3.8-flash-next-iq2_xs`, **8 tier** con gate PASSED, 1874 slot,
-**2246 MiB** liberi — gli stessi valori di prima della finestra.
+**2246 MiB** liberi — gli stessi valori di prima della finestra. Controllo finale sul log della
+produzione riavviata: le sue 24 righe di gate sono **identiche alla baseline 0.1.51** (stesso
+`diff` pulito), quindi il motore 0.1.47 in produzione non è stato toccato da nulla di questa
+iterazione.
 
 **AER.** `results/08-window-aer.txt`. Sole `0000:09:11.0` (bridge PLX 8747, non una GPU) a **3**
 prima, durante e dopo; tutte le GPU `0000:03:00.0`–`0d:00.0` a **0** in ogni istante. Il contatore
