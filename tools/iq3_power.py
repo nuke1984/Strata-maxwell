@@ -30,11 +30,31 @@ QUERY = ("index,power.draw,power.limit,clocks.sm,clocks.mem,temperature.gpu,"
          "clocks_throttle_reasons.active")
 FIELDS = QUERY.split(",")
 
-# the driver's bit names for clocks_throttle_reasons.active
+# The 3060 asks a second question: WHICH throttle reason.  Its `active` mask says HwSlowdown, but that is
+# one bit for several mechanisms, so the causes are sampled both ways - the aggregate mask AND the
+# individual reason fields, plus the two inputs a thermal answer needs (memory temperature, fan speed).
+# Kept as a separate query so the default CSV format the earlier windows wrote stays parseable.
+DEEP_QUERY = ("index,power.draw,power.limit,clocks.sm,clocks.mem,temperature.gpu,temperature.memory,"
+              "fan.speed,clocks_throttle_reasons.active,clocks_throttle_reasons.hw_slowdown,"
+              "clocks_throttle_reasons.hw_power_brake_slowdown,"
+              "clocks_throttle_reasons.hw_thermal_slowdown,"
+              "clocks_throttle_reasons.sw_power_cap,"
+              "clocks_throttle_reasons.sw_thermal_slowdown")
+DEEP_FIELDS = DEEP_QUERY.split(",")
+# the individual reasons, in the order DEEP_QUERY asks them (field index in the row)
+DEEP_REASONS = [(9, "HwSlowdown"), (10, "HwPowerBrake"), (11, "HwThermal"), (13, "SwThermal"),
+                (12, "SwPowerCap")]
+
+# The driver's bit names for clocks_throttle_reasons.active (NVML's frozen nvmlClocksThrottleReason
+# enum).  This table was WRONG until iteration 7 and every report before it inherited the error: bits
+# from 0x2 up were shifted by one, so an M10's ApplicationsClocksSetting read as "SwPowerCap" and the
+# 3060's real SwPowerCap read as "HwSlowdown".  The mapping below is pinned by observation, not by
+# memory: at the same instant the 3060 reports mask 0x4 with sw_power_cap Active, and an M10 reports
+# 0x2 with applications_clocks_setting Active (see test_iq3_power.BitMap).
 THROTTLE = {
-    0x1: "GpuIdle", 0x2: "SwPowerCap", 0x4: "HwSlowdown", 0x8: "SyncBoost",
-    0x10: "SwThermalSlowdown", 0x20: "HwThermalSlowdown", 0x40: "HwPowerBrakeSlowdown",
-    0x80: "DisplayClockSetting",
+    0x001: "GpuIdle", 0x002: "ApplicationsClocksSetting", 0x004: "SwPowerCap", 0x008: "HwSlowdown",
+    0x010: "SyncBoost", 0x020: "SwThermalSlowdown", 0x040: "HwThermalSlowdown",
+    0x080: "HwPowerBrakeSlowdown", 0x100: "DisplayClockSetting",
 }
 
 
@@ -63,6 +83,26 @@ def parse_row(line: str) -> dict | None:
     return row
 
 
+def parse_deep_row(line: str) -> dict | None:
+    """A DEEP_QUERY row: the same fields plus memory temp, fan and each throttle reason on its own."""
+    parts = [p.strip() for p in line.split(",")]
+    if len(parts) != len(DEEP_FIELDS) or not parts[0].lstrip("-").isdigit():
+        return None
+    row = {
+        "gpu": int(parts[0]),
+        "draw_w": num(parts[1]),
+        "limit_w": num(parts[2]),
+        "sm_mhz": num(parts[3]),
+        "mem_mhz": num(parts[4]),
+        "temp_c": num(parts[5]),
+        "temp_mem_c": num(parts[6]),
+        "fan_pct": num(parts[7]),
+        "throttle": parts[8],
+        "reasons": {name: parts[i] for i, name in DEEP_REASONS},
+    }
+    return row
+
+
 def throttle_names(mask: str) -> list[str]:
     try:
         bits = int(mask, 16)
@@ -71,6 +111,49 @@ def throttle_names(mask: str) -> list[str]:
     if bits == 0:
         return []
     return [name for bit, name in THROTTLE.items() if bits & bit]
+
+
+def summarize_deep(rows: list[dict], active_only: bool = False) -> str:
+    """Which throttle REASON, per card: shares of the samples where the card is not GpuIdle.
+
+    `active_only` is the reading that matters for a cause: a card at 135 MHz is not thermally throttled,
+    it is asleep, and counting its idle samples in the denominator dilutes every reason.
+    """
+    if not rows:
+        return "no samples"
+    by_gpu: dict[int, list[dict]] = {}
+    for r in rows:
+        by_gpu.setdefault(r["gpu"], []).append(r)
+    out = []
+    for gpu in sorted(by_gpu):
+        rs = by_gpu[gpu]
+        sel = [r for r in rs if not (int(r["throttle"], 16) & 0x1)] if active_only else rs
+        if not sel:
+            out.append(f"GPU {gpu}: no {'active ' if active_only else ''}samples")
+            continue
+        n = len(sel)
+        head = (f"GPU {gpu}: {n} samples" + (" (GpuIdle excluded)" if active_only else ""))
+        out.append(head)
+        for _, name in DEEP_REASONS:
+            cnt = sum(1 for r in sel if r["reasons"].get(name) == "Active")
+            out.append(f"    {name:<14} {100.0 * cnt / n:5.0f}%" if cnt else
+                       f"    {name:<14} {0.0:5.0f}%")
+        # the inputs a thermal answer needs: they must be present to be read
+        for key, label, unit in (("temp_c", "temp gpu", "C"), ("temp_mem_c", "temp mem", "C"),
+                                 ("fan_pct", "fan", "%")):
+            vals = [r[key] for r in sel if r.get(key) is not None]
+            if vals:
+                out.append(f"    {label:<14} mean {statistics.fmean(vals):5.1f} max {max(vals):5.1f} {unit}"
+                           + (f"  ({n - len(vals)} N/A)" if len(vals) < n else ""))
+            else:
+                out.append(f"    {label:<14} not exposed by this driver (N/A on every sample)")
+        masks: dict[str, int] = {}
+        for r in sel:
+            masks[r["throttle"]] = masks.get(r["throttle"], 0) + 1
+        agg = ", ".join(f"{'+'.join(throttle_names(m)) or 'none'} {100.0 * c / n:.0f}%"
+                        for m, c in sorted(masks.items(), key=lambda kv: -kv[1]))
+        out.append(f"    aggregate mask: {agg}")
+    return "\n".join(out)
 
 
 def summarize(rows: list[dict]) -> str:
@@ -111,18 +194,21 @@ def summarize(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
-def sample(label: str, minutes: float, out_path: str, interval_ms: int) -> int:
+def sample(label: str, minutes: float, out_path: str, interval_ms: int, deep: bool = False) -> int:
     if shutil.which("nvidia-smi") is None:
         print("no nvidia-smi on this machine: nothing to sample", file=sys.stderr)
         return 2
+    query = DEEP_QUERY if deep else QUERY
+    parse = parse_deep_row if deep else parse_row
     # -lms takes its value as a SEPARATE argv ("-lms", "1000"): as one string the driver answers
     # "Option -lms 1000 is not recognized", exits, and the sampler would report a silent 0 samples.
-    cmd = ["nvidia-smi", f"--query-gpu={QUERY}", "--format=csv,noheader", "-lms", str(interval_ms)]
-    print(f"# power sampling, {label}, {minutes} min, one poll every {interval_ms} ms")
+    cmd = ["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader", "-lms", str(interval_ms)]
+    print(f"# power sampling, {label}, {minutes} min, one poll every {interval_ms} ms"
+          + (", DEEP (per-reason throttle bits)" if deep else ""))
     print("  " + " ".join(cmd))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
     rows: list[dict] = []
-    lines: list[str] = [f"# {label}, query {QUERY}, interval {interval_ms} ms"]
+    lines: list[str] = [f"# {label}, query {query}, interval {interval_ms} ms"]
     t0 = time.time()
     deadline = t0 + minutes * 60
     try:
@@ -131,7 +217,7 @@ def sample(label: str, minutes: float, out_path: str, interval_ms: int) -> int:
             line = proc.stdout.readline()
             if not line:
                 break
-            r = parse_row(line)
+            r = parse(line)
             if r is None:
                 continue
             elapsed = time.time() - t0
@@ -161,26 +247,42 @@ def sample(label: str, minutes: float, out_path: str, interval_ms: int) -> int:
             print("--- nvidia-smi said ---", file=sys.stderr)
             print(err_text, file=sys.stderr)
         return 2
-    print(summarize(rows))
+    print(summarize(rows) if not deep else summarize_deep(rows))
+    if deep:
+        print("\n--- the same, GpuIdle excluded (the reading that answers 'which cause') ---")
+        print(summarize_deep(rows, active_only=True))
     print(f"\n{len(rows)} samples over {time.time() - t0:.0f} s, CSV at {out_path}")
     return 0
 
 
 def parse_file(path: str) -> int:
     rows = []
+    deep_rows = []
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("#") or not line.strip():
             continue
         # A raw nvidia-smi line parses as-is; sample()'s own CSV prepends the elapsed seconds, which
         # makes the first field non-integer.  Try the line unchanged FIRST: stripping the first field
         # from a raw line would silently drop the GPU index (and 8.08 would look like a GPU number).
-        r = parse_row(line)
-        if r is None and "," in line:
-            r = parse_row(line.split(",", 1)[1])
-        if r is not None:
-            rows.append(r)
-    print(f"# {path}: {len(rows)} samples")
-    print(summarize(rows))
+        for attempt in (line, line.split(",", 1)[1] if "," in line else None):
+            if attempt is None:
+                continue
+            rd = parse_deep_row(attempt)
+            if rd is not None:
+                deep_rows.append(rd)
+                break
+            r = parse_row(attempt)
+            if r is not None:
+                rows.append(r)
+                break
+    print(f"# {path}: {len(rows)} plain samples, {len(deep_rows)} deep samples")
+    if rows:
+        print(summarize(rows))
+    if deep_rows:
+        print()
+        print(summarize_deep(deep_rows))
+        print("\n--- the same, GpuIdle excluded ---")
+        print(summarize_deep(deep_rows, active_only=True))
     return 0
 
 
@@ -191,10 +293,12 @@ def main() -> int:
     ap.add_argument("--interval-ms", type=int, default=1000)
     ap.add_argument("--out", default="power.csv")
     ap.add_argument("--parse", default="", help="summarize an existing CSV instead of sampling")
+    ap.add_argument("--deep", action="store_true",
+                    help="also sample the individual throttle reasons, memory temperature and fan speed")
     a = ap.parse_args()
     if a.parse:
         return parse_file(a.parse)
-    return sample(a.label, a.minutes, a.out, a.interval_ms)
+    return sample(a.label, a.minutes, a.out, a.interval_ms, a.deep)
 
 
 if __name__ == "__main__":
