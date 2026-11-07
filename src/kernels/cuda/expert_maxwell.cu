@@ -1678,6 +1678,249 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
         blk_base, blks, d_row_stride, d_scale_stride);
 }
 
+// ---- IQ4_NL down (ggml type 20): the IQ3_S pack's down projection --------------------------------
+//
+// block_iq4_nl is QK = 32, 18 bytes { fp16 d; uint8_t qs[16] }, value j = kvalues_iq4nl[code].  The
+// pack stores the down RAW - no de-interleaving (the planar form is Q2_0's) - so a row is 20 blocks *
+// 18 B = 360 B, and a block's code bytes start at row + b*18 + 2: 2-byte aligned, NEVER 16.  Every
+// read of them therefore goes through get_int_b2, exactly as iq_kernels.cu's vec_dot_iq4_nl_q8_1 and
+// Split<20> do; a vector load would be a misaligned access.  (The S2 MT body can use int4 only
+// because ITS planar region is 16 bytes per block.)
+//
+// Integer part verbatim from the 3060's vecdot: two calls per block (iqs = 0 and 2, Fmt<20>'s
+// step = 2), each expanding get_int_b2(qs, iqs) / (qs, iqs + 1) through get_int_from_table_16 and
+// dotting the two halves against the activation's words iqs + l and iqs + l + 4.  Eight dp4a per
+// block, kept as the reference's two float tails ((d * s) * sumi for iqs = 0, then for iqs = 2).
+//
+// No hx term: kvalues_iq4nl is signed and centred on zero, so the Q2_0 form's corr = d * sum hx
+// (which compensates its biased codes) has nothing to compensate here.  The 3060's reference reads
+// only ds.d and never ds.s, and this kernel consumes faq + fasc only.
+//
+// The activation's scale is rounded to fp16 first (f2h_rn with the #606 clamp, then
+// fp16_to_fp32_dev): the policy the IQ gup arm already applies when it rebuilds its q8_1 blocks,
+// and what makes the 1e-5 parity against iq_mmvq(type 20) honest - fasc is fp32 on the M10 and
+// fp16 in the 3060's quantizer.
+constexpr int kIq4nlBlocks = FF / 32;                        // 20 IQ4_NL blocks per down row (one chunk each)
+constexpr int kIq4nlDownSmem = FF + (FF / 32) * 4 + 16 + 128 * (int) sizeof(float);
+
+// The 8 activation-word payloads of one IQ4_NL block: p[w] is expanded from the nibbles that the
+// reference dots against the activation's word w (see iq4nl_dot_block's pairing).
+__device__ __forceinline__ void iq4nl_load_block(const uint8_t* __restrict__ qs4,   // bq4->qs
+                                                 const int8_t* __restrict__ kvalues_sh, int (&p)[8]) {
+    const int2 v0 = get_int_from_table_16(get_int_b2(qs4, 0), kvalues_sh);
+    const int2 v1 = get_int_from_table_16(get_int_b2(qs4, 1), kvalues_sh);
+    const int2 v2 = get_int_from_table_16(get_int_b2(qs4, 2), kvalues_sh);
+    const int2 v3 = get_int_from_table_16(get_int_b2(qs4, 3), kvalues_sh);
+    p[0] = v0.x; p[4] = v0.y;
+    p[1] = v1.x; p[5] = v1.y;
+    p[2] = v2.x; p[6] = v2.y;
+    p[3] = v3.x; p[7] = v3.y;
+}
+// The block's two integer sums exactly as vec_dot_iq4_nl_q8_1 forms them: s0 = the iqs = 0 call,
+// s1 = the iqs = 2 call.  `q32` = the 32 int8 activations of this chunk (4-byte aligned).
+__device__ __forceinline__ void iq4nl_dot_block(const int (&p)[8], const int8_t* __restrict__ q32,
+                                                int& s0, int& s1) {
+    const int* q = (const int*) q32;
+    s0 = 0;
+    s0 = dp4a_s32(p[0], q[0], s0);
+    s0 = dp4a_s32(p[4], q[4], s0);
+    s0 = dp4a_s32(p[1], q[1], s0);
+    s0 = dp4a_s32(p[5], q[5], s0);
+    s1 = 0;
+    s1 = dp4a_s32(p[2], q[2], s1);
+    s1 = dp4a_s32(p[6], q[6], s1);
+    s1 = dp4a_s32(p[3], q[3], s1);
+    s1 = dp4a_s32(p[7], q[7], s1);
+}
+// Stage the entry's FF-wide activation chunk by chunk.  ssc[b] = fp16(fasc[b]) as fp32.
+__device__ __forceinline__ void iq4nl_stage_act(int8_t* __restrict__ sq, float* __restrict__ ssc,
+                                                int8_t* __restrict__ shl, const int8_t* __restrict__ faq_j,
+                                                const float* __restrict__ fasc_j, int tid, int nthr) {
+    const int4* srcq = (const int4*) faq_j;
+    int4* dstq = (int4*) sq;
+    for (int i = tid; i < FF / 16; i += nthr) dstq[i] = srcq[i];
+    for (int i = tid; i < FF / 32; i += nthr) {
+        float s = fasc_j[i];
+        s = fabsf(s) > 65504.f ? copysignf(65504.f, s) : s;
+        ssc[i] = fp16_to_fp32_dev(f2h_rn(s));
+    }
+    if (tid < 16) shl[tid] = ((const int8_t*) kvalues_iq4nl)[tid];
+}
+
+// The batched body, one job per block pass (SPLIT threads per row, H / PER_BLOCK passes per job).
+template <int SPLIT, bool F16>
+__device__ __forceinline__ void iq4nl_down_body(const int vb, char* smem,
+                                                const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                                size_t d_codes_off, size_t d_row_stride,
+                                                const MaxJob* __restrict__ jobs, int njobs,
+                                                const int8_t* __restrict__ faq,
+                                                const float* __restrict__ fasc, float* __restrict__ out,
+                                                int blk_base, int blks) {
+    constexpr int PER_BLOCK = 128 / SPLIT;
+    static_assert(H % PER_BLOCK == 0, "the IQ4_NL down stages one job per block: H must be a multiple of PER_BLOCK");
+    int8_t* sq = (int8_t*) smem;                                      // FF
+    float* ssc = (float*) (smem + FF);                                // FF/32
+    int8_t* shl = (int8_t*) (smem + FF + (FF / 32) * 4);               // 16: kvalues_iq4nl
+    float* sh = (float*) (smem + FF + (FF / 32) * 4 + 16);            // 128
+    const int row0 = vb * PER_BLOCK;
+    if (row0 >= njobs * H) return;
+    const int j = row0 / H;
+    const MaxJob jd = jobs[j];
+    const uint8_t* blob = blobs + (size_t) jd.slot * blob_stride;
+    iq4nl_stage_act(sq, ssc, shl, faq + (size_t) j * FF, fasc + (size_t) j * (FF / 32),
+                    (int) threadIdx.x, 128);
+    __syncthreads();
+    const int idx = row0 + (int) (threadIdx.x / SPLIT);
+    if (idx >= njobs * H) return;
+    const int row = idx - j * H;
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    float acc = 0.f;
+    for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
+        const uint8_t* blk = dc + (size_t) (b - blk_base) * 18;
+        int p[8];
+        iq4nl_load_block(blk + 2, shl, p);            // +2: past the fp16 d; qs is 2-byte aligned
+        int s0 = 0, s1 = 0;
+        iq4nl_dot_block(p, sq + (size_t) b * 32, s0, s1);
+        const float dd = read_scale(blk, 0) * ssc[b];
+        acc += dd * (float) s0;
+        acc += dd * (float) s1;
+    }
+    sh[threadIdx.x] = acc;
+    __syncthreads();
+    if (part == 0) {
+        float a0 = 0.f;
+        for (int s = 0; s < SPLIT; ++s) a0 += sh[threadIdx.x + s];
+        if (F16) ((uint16_t*) out)[(size_t) jd.dst * H + row] = f2h_rn(a0);
+        else     out[(size_t) jd.dst * H + row] = a0;
+    }
+}
+
+template <int SPLIT, bool F16 = false>
+__global__ void expert_iq4nl_down_batch(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                        size_t d_codes_off, size_t d_row_stride,
+                                        const MaxJob* __restrict__ jobs, int njobs,
+                                        const int8_t* __restrict__ faq, const float* __restrict__ fasc,
+                                        float* __restrict__ out, int blk_base, int blks) {
+    __shared__ __align__(16) char smem[kIq4nlDownSmem];
+    iq4nl_down_body<SPLIT, F16>((int) blockIdx.x, smem, blobs, blob_stride, d_codes_off, d_row_stride,
+                                jobs, njobs, faq, fasc, out, blk_base, blks);
+}
+
+// STRATA_MW_MT: a RUN (one expert, up to E_MAX adjacent entries) per block-group; each (row, block)'s
+// code bytes load + table-expand ONCE and are dotted against every entry's staged faq row.  Same
+// arithmetic and reduction order as the batch body (s0/s1 per entry, two float tails), so every
+// (expert, token) row is bit-identical to the batched launch.  E_MAX MUST match the gup TABLE's and
+// the host's run-width cap (all three are 4 today).
+template <int SPLIT = 2, int THREADS = 128, int E_MAX = 4>
+__global__ void expert_iq4nl_down_mt(const uint8_t* __restrict__ blobs, size_t blob_stride,
+                                     size_t d_codes_off, size_t d_row_stride,
+                                     const int32_t* __restrict__ runs,      // [nruns x 4]: slot, count, entries_off, unused
+                                     const int32_t* __restrict__ entries,   // [total x 2]: tok, sorted position
+                                     const MaxJob* __restrict__ jobs,
+                                     const int8_t* __restrict__ faq, const float* __restrict__ fasc,
+                                     float* __restrict__ out, int blk_base, int blks) {
+    constexpr int PER_BLOCK = THREADS / SPLIT;
+    static_assert(H % PER_BLOCK == 0, "the MT down stages one run's rows per block, as the v2 one");
+    __shared__ __align__(16) int8_t sq[E_MAX][FF];
+    __shared__ __align__(16) float ssc[E_MAX][FF / 32];
+    __shared__ __align__(16) int8_t shl[16];
+    __shared__ __align__(16) float sh[E_MAX][THREADS];
+    const int rpb = H / PER_BLOCK;                     // row-blocks per run
+    const int run = (int) (blockIdx.x / rpb);
+    const int vb = (int) (blockIdx.x % rpb);
+    const int slot = runs[run * 4 + 0];
+    const int E = runs[run * 4 + 1];
+    const int ent0 = runs[run * 4 + 2];
+    if (E <= 0 || E > E_MAX) return;
+    const uint8_t* blob = blobs + (size_t) slot * blob_stride;
+    {
+        if (threadIdx.x < 16) shl[threadIdx.x] = ((const int8_t*) kvalues_iq4nl)[threadIdx.x];
+        for (int e = 0; e < E; ++e) {
+            const int pos = entries[(ent0 + e) * 2 + 1];
+            iq4nl_stage_act(sq[e], ssc[e], shl, faq + (size_t) pos * FF, fasc + (size_t) pos * (FF / 32),
+                            (int) threadIdx.x, THREADS);
+        }
+    }
+    __syncthreads();
+    const int row = vb * PER_BLOCK + (int) (threadIdx.x / SPLIT);
+    const int part = (int) (threadIdx.x % SPLIT);
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    float acc[E_MAX];
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) acc[e] = 0.f;
+    for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
+        const uint8_t* blk = dc + (size_t) (b - blk_base) * 18;
+        int p[8];
+        iq4nl_load_block(blk + 2, shl, p);
+        const float dw = read_scale(blk, 0);
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            int s0 = 0, s1 = 0;
+            iq4nl_dot_block(p, sq[e] + (size_t) b * 32, s0, s1);
+            const float dd = dw * ssc[e][b];
+            acc[e] += dd * (float) s0;
+            acc[e] += dd * (float) s1;
+        }
+    }
+#pragma unroll
+    for (int e = 0; e < E_MAX; ++e) {
+        if (e >= E) break;
+        sh[e][threadIdx.x] = acc[e];
+    }
+    __syncthreads();
+    if (part == 0) {
+#pragma unroll
+        for (int e = 0; e < E_MAX; ++e) {
+            if (e >= E) break;
+            float a0 = 0.f;
+            for (int s = 0; s < SPLIT; ++s) a0 += sh[e][threadIdx.x + s];
+            const int pos = entries[(ent0 + e) * 2 + 1];
+            out[(size_t) jobs[pos].dst * H + row] = a0;
+        }
+    }
+}
+
+void iq4nl_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                           const int8_t* d_faq, const float* d_fasc, float* d_out,
+                                           size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                           cudaStream_t stream, int blk_base, int blks) {
+    if (njobs <= 0) return;
+    constexpr int SPLIT = 2, PER_BLOCK = 128 / SPLIT;
+    const int rows = njobs * H;
+    expert_iq4nl_down_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+        d_blobs, blob_stride, d_codes_off, d_row_stride, (const MaxJob*) d_jobs, njobs,
+        d_faq, d_fasc, d_out, blk_base, blks);
+}
+
+void iq4nl_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
+                                               const int8_t* d_faq, const float* d_fasc, uint16_t* d_out16,
+                                               size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                               cudaStream_t stream, int blk_base, int blks) {
+    if (njobs <= 0) return;
+    constexpr int SPLIT = 2, PER_BLOCK = 128 / SPLIT;
+    const int rows = njobs * H;
+    expert_iq4nl_down_batch<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
+        d_blobs, blob_stride, d_codes_off, d_row_stride, (const MaxJob*) d_jobs, njobs,
+        d_faq, d_fasc, (float*) d_out16, blk_base, blks);
+}
+
+void iq4nl_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride, size_t d_codes_off,
+                                        const int32_t* d_runs, const int32_t* d_entries, int nruns,
+                                        const int32_t* d_jobs,
+                                        const int8_t* d_faq, const float* d_fasc, float* d_out,
+                                        cudaStream_t stream, int blk_base, int blks) {
+    if (nruns <= 0) return;
+    constexpr int SPLIT = 2, THREADS = 128, PER_BLOCK = THREADS / SPLIT;
+    const int blocks = nruns * (H / PER_BLOCK);
+    // The row stride is fixed by the format (20 blocks * 18 B); the IQ4_NL blob cannot vary it.
+    const size_t d_row_stride = (size_t) kIq4nlBlocks * 18;
+    expert_iq4nl_down_mt<SPLIT, THREADS, 4><<<blocks, THREADS, 0, stream>>>(
+        d_blobs, blob_stride, d_codes_off, d_row_stride, d_runs, d_entries, (const MaxJob*) d_jobs,
+        d_faq, d_fasc, d_out, blk_base, blks);
+}
+
 void s2_expert_maxwell_gup_quant_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                              const uint8_t* acts_base, int8_t* d_faq, float* d_fasc,
                                              float* d_fahx, cudaStream_t stream) {

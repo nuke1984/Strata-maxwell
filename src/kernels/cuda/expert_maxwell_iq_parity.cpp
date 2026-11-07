@@ -96,6 +96,26 @@ uint16_t host_f2h(float x) {
     return h;
 }
 
+// f2h_rn's CONTRACT (expert_maxwell.cu) mirrored exactly: denormals FLUSH TO ZERO by design (Maxwell has
+// no fp16 arithmetic).  The f16-form comparison must use the same rule, or it would report the deliberate
+// flush as a kernel disagreement.  host_f2h above is the full IEEE conversion and stays what the act-image
+// check uses (there the device quantizer, not f2h_rn, sets the bits).
+uint16_t contract_f2h(float x) {
+    uint32_t b = 0;
+    std::memcpy(&b, &x, 4);
+    const uint32_t sign = (b >> 16) & 0x8000u;
+    const uint32_t ex = (b >> 23) & 0xFFu;
+    const uint32_t m = b & 0x7FFFFFu;
+    if (ex == 0xFFu) return (uint16_t) (sign | 0x7C00u | (m ? 0x200u : 0u));
+    const int32_t e = (int32_t) ex - 127 + 15;
+    if (e <= 0) return (uint16_t) sign;          // subnormal or zero -> signed zero
+    if (e >= 31) return (uint16_t) (sign | 0x7C00u);
+    uint32_t h = sign | ((uint32_t) e << 10) | (m >> 13);
+    const uint32_t rest = m & 0x1FFFu;
+    if (rest > 0x1000u || (rest == 0x1000u && (h & 1u))) ++h;
+    return (uint16_t) h;
+}
+
 double rel(const std::vector<float>& a, const std::vector<float>& b) {
     double n = 0, d = 0;
     for (size_t i = 0; i < a.size(); ++i) { n += std::fabs((double) a[i] - b[i]); d += std::fabs((double) b[i]); }
@@ -107,6 +127,174 @@ struct Q81Block { uint16_t d, s; int8_t q[32]; };
 static_assert(sizeof(Q81Block) == 36, "block_q8_1 is 36 bytes");
 
 int g_m10 = -1, g_ref = -1;   // the devices the two sides run on
+
+// The DOWN stage (IQ4_NL, ggml type 20): the M10's iq4nl kernel against the 3060's own production
+// dots (iq_mmvq type 20) on the SAME activation image (the faq/fasc the gup above produced), plus
+// the float reference.  This is the check the design promises: same faq/fasc, same fp16-rounded
+// activation scale, gate 1e-5.
+int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt,
+               const std::vector<int8_t>& h_faq, const std::vector<float>& h_fasc,
+               const std::string& label) {
+    int failures = 0;
+    const int nchunk = (int) (FF / 32);          // 20 chunks of 32 values per FF-wide activation
+    // the 3060's q8_1 blocks from that image: qs verbatim, d = fp16(scale), s = 0 (unused by type 20)
+    std::vector<Q81Block> xq((size_t) nt * nchunk);
+    for (int c = 0; c < nt; ++c)
+        for (int q = 0; q < nchunk; ++q) {
+            float d = h_fasc[(size_t) c * nchunk + q];
+            d = std::fabs(d) > 65504.f ? std::copysign(65504.f, d) : d;
+            Q81Block& b = xq[(size_t) c * nchunk + q];
+            b.d = host_f2h(d);
+            b.s = 0;
+            std::memcpy(b.q, h_faq.data() + (size_t) c * FF + (size_t) q * 32, 32);
+        }
+    // ---- the 3060: iq_mmvq, its production i-quant dot, over the raw IQ4_NL down rows
+    std::vector<float> refdot((size_t) nt * H);
+    {
+        cudaSetDevice(g_ref);
+        uint8_t* dw = nullptr;
+        Q81Block* dxq = nullptr;
+        float* dy = nullptr;
+        cudaMalloc(&dw, (size_t) H * f.d_row);
+        cudaMalloc(&dxq, xq.size() * sizeof(Q81Block));
+        cudaMalloc(&dy, refdot.size() * 4);
+        cudaMemcpy(dw, blob.data() + f.down_off, (size_t) H * f.d_row, cudaMemcpyHostToDevice);
+        cudaMemcpy(dxq, xq.data(), xq.size() * sizeof(Q81Block), cudaMemcpyHostToDevice);
+        k::iq_mmvq(f.d_type, dw, dxq, dy, (int) FF, (int) H, nt, nullptr);
+        const cudaError_t e = cudaDeviceSynchronize();
+        if (e != cudaSuccess) {
+            std::printf("%s: the 3060 down reference failed: %s\n", label.c_str(), cudaGetErrorString(e));
+            return 1;
+        }
+        cudaMemcpy(refdot.data(), dy, refdot.size() * 4, cudaMemcpyDeviceToHost);
+        cudaFree(dw); cudaFree(dxq); cudaFree(dy);
+    }
+    // ---- the M10: the tier's own iq4nl kernel, the same jobs the decode chain would launch
+    std::vector<float> got((size_t) nt * H);
+    {
+        cudaSetDevice(g_m10);
+        std::vector<int32_t> jobs((size_t) nt * 3);
+        for (int c = 0; c < nt; ++c) { jobs[c * 3] = 0; jobs[c * 3 + 1] = c; jobs[c * 3 + 2] = c; }
+        uint8_t* d_blob = nullptr;
+        int32_t* d_jobs = nullptr;
+        int8_t* d_faq = nullptr;
+        float* d_fasc = nullptr;
+        float* d_out = nullptr;
+        cudaMalloc(&d_blob, blob.size());
+        cudaMalloc(&d_jobs, jobs.size() * 4);
+        cudaMalloc(&d_faq, h_faq.size());
+        cudaMalloc(&d_fasc, h_fasc.size() * 4);
+        cudaMalloc(&d_out, got.size() * 4);
+        cudaMemcpy(d_blob, blob.data(), blob.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_jobs, jobs.data(), jobs.size() * 4, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_faq, h_faq.data(), h_faq.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_fasc, h_fasc.data(), h_fasc.size() * 4, cudaMemcpyHostToDevice);
+        strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_async(
+            d_blob, d_jobs, nt, d_faq, d_fasc, d_out, f.bytes, f.down_off, f.d_row, nullptr, 0, nchunk);
+        const cudaError_t e = cudaDeviceSynchronize();
+        if (e != cudaSuccess) {
+            std::printf("%s: the M10 iq4nl down failed: %s\n", label.c_str(), cudaGetErrorString(e));
+            cudaFree(d_blob); cudaFree(d_jobs); cudaFree(d_faq); cudaFree(d_fasc); cudaFree(d_out);
+            return ++failures;
+        }
+        cudaMemcpy(got.data(), d_out, got.size() * 4, cudaMemcpyDeviceToHost);
+        cudaFree(d_blob); cudaFree(d_jobs); cudaFree(d_faq); cudaFree(d_fasc); cudaFree(d_out);
+    }
+    const double r = rel(got, refdot);
+    std::printf("          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): "
+                "rel %.2e (gate 1e-5)\n", r);
+    if (r > 1e-5) {
+        std::printf("          *** DOWN MISMATCH vs the 3060's dots (rel %.2e > 1e-5) ***\n", r);
+        ++failures;
+    }
+    // ---- (4b) THE THREE FORMS: the f16 epilogue and the MT (run-table) launch, both against the
+    //          batch result.  Same arithmetic and reduction order by construction, so BIT-identical:
+    //          the f16 form only rounds its final row, the MT one hoists the weight block per run.
+    {
+        cudaSetDevice(g_m10);
+        std::vector<int32_t> jobs((size_t) nt * 3);
+        for (int c = 0; c < nt; ++c) { jobs[c * 3] = 0; jobs[c * 3 + 1] = c; jobs[c * 3 + 2] = c; }
+        // ONE run holding every entry (the widest shape E_MAX = 4 allows, nt = 3 today)
+        std::vector<int32_t> runs = {0, nt, 0, 0};
+        std::vector<int32_t> entries((size_t) nt * 2);
+        for (int c = 0; c < nt; ++c) { entries[c * 2] = c; entries[c * 2 + 1] = c; }
+        uint8_t* d_blob = nullptr;
+        int32_t* d_jobs = nullptr, * d_runs = nullptr, * d_ent = nullptr;
+        int8_t* d_faq = nullptr;
+        float* d_fasc = nullptr;
+        float* d_out = nullptr;
+        uint16_t* d_out16 = nullptr;
+        std::vector<float> mt((size_t) nt * H), f16back((size_t) nt * H);
+        cudaMalloc(&d_blob, blob.size());
+        cudaMalloc(&d_jobs, jobs.size() * 4);
+        cudaMalloc(&d_runs, runs.size() * 4);
+        cudaMalloc(&d_ent, entries.size() * 4);
+        cudaMalloc(&d_faq, h_faq.size());
+        cudaMalloc(&d_fasc, h_fasc.size() * 4);
+        cudaMalloc(&d_out, mt.size() * 4);
+        cudaMalloc(&d_out16, f16back.size() * 2);
+        cudaMemcpy(d_blob, blob.data(), blob.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_jobs, jobs.data(), jobs.size() * 4, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_runs, runs.data(), runs.size() * 4, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_ent, entries.data(), entries.size() * 4, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_faq, h_faq.data(), h_faq.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_fasc, h_fasc.data(), h_fasc.size() * 4, cudaMemcpyHostToDevice);
+        strata::kernels::cuda::iq4nl_expert_maxwell_down_mt_async(
+            d_blob, f.bytes, f.down_off, d_runs, d_ent, 1, d_jobs, d_faq, d_fasc, d_out, nullptr, 0, nchunk);
+        cudaError_t e = cudaDeviceSynchronize();
+        if (e != cudaSuccess) {
+            std::printf("%s: the M10 iq4nl MT down failed: %s\n", label.c_str(), cudaGetErrorString(e));
+            ++failures;
+        }
+        cudaMemcpy(mt.data(), d_out, mt.size() * 4, cudaMemcpyDeviceToHost);
+        strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_f16_async(
+            d_blob, d_jobs, nt, d_faq, d_fasc, d_out16, f.bytes, f.down_off, f.d_row, nullptr, 0, nchunk);
+        e = cudaDeviceSynchronize();
+        if (e != cudaSuccess) {
+            std::printf("%s: the M10 iq4nl f16 down failed: %s\n", label.c_str(), cudaGetErrorString(e));
+            ++failures;
+        }
+        std::vector<uint16_t> h16(f16back.size());
+        cudaMemcpy(h16.data(), d_out16, h16.size() * 2, cudaMemcpyDeviceToHost);
+        cudaFree(d_blob); cudaFree(d_jobs); cudaFree(d_runs); cudaFree(d_ent);
+        cudaFree(d_faq); cudaFree(d_fasc); cudaFree(d_out); cudaFree(d_out16);
+        // MT vs batch: bit for bit
+        size_t mtdiff = 0;
+        for (size_t i = 0; i < mt.size(); ++i)
+            if (std::memcmp(&mt[i], &got[i], 4) != 0) ++mtdiff;
+        // f16 vs batch: the batch value rounded by f2h_rn's own contract, bit for bit
+        size_t f16diff = 0;
+        for (size_t i = 0; i < h16.size(); ++i)
+            if (h16[i] != contract_f2h(got[i])) ++f16diff;
+        std::printf("          (4b) the three forms: MT vs batch %zu of %zu differ, f16 vs round(batch) "
+                    "%zu of %zu differ (both must be 0)\n", mtdiff, mt.size(), f16diff, h16.size());
+        if (mtdiff != 0 || f16diff != 0) {
+            std::printf("          *** THE FORMS DISAGREE: MT %zu, f16 %zu ***\n", mtdiff, f16diff);
+            ++failures;
+        }
+    }
+    // ---- (5) REPORTED: the float reference - ggml's to_float on the raw down, dotted in fp64 with
+    //          the SAME dequantised activation image (faq * fasc, no fp16 rounding on this side)
+    {
+        const auto* td = ggml_get_type_traits((ggml_type) f.d_type);
+        std::vector<float> D((size_t) H * FF);
+        for (int64_t r2 = 0; r2 < H; ++r2)
+            td->to_float(blob.data() + f.down_off + (size_t) r2 * f.d_row, D.data() + (size_t) r2 * FF, FF);
+        double n = 0, d = 0;
+        for (int c = 0; c < nt; ++c)
+            for (int64_t r2 = 0; r2 < H; ++r2) {
+                double o = 0;
+                for (int64_t i = 0; i < FF; ++i)
+                    o += (double) D[(size_t) r2 * FF + i] * (double) h_faq[(size_t) c * FF + i] *
+                         (double) h_fasc[(size_t) c * nchunk + i / 32];
+                n += std::fabs((double) got[(size_t) c * H + r2] - o);
+                d += std::fabs(o);
+            }
+        std::printf("          (5) down vs the float reference (raw acts, reported): rel %.2e\n",
+                    n / (d + 1e-30));
+    }
+    return failures;
+}
 
 // One blob's gate/up: the kernel on the M10 against the 3060's production dots; returns failed checks.
 int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int seed, const std::string& label) {
@@ -183,6 +371,9 @@ int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int se
             }
     }
     // ---- (1) the kernel under test, on the M10: the same packed ActQ staging begin_chain uploads
+    //          (h_faq/h_fasc outlive the block: the down check consumes the very image the gup made)
+    std::vector<int8_t> h_faq((size_t) NT * FF);
+    std::vector<float> h_fasc((size_t) NT * (FF / 32)), h_fahx((size_t) NT * (FF / 32));
     {
         cudaSetDevice(g_m10);
         const int as = (int) geo::ACTS_STRIDE;
@@ -199,8 +390,6 @@ int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int se
         int32_t* d_jobs = nullptr;
         int8_t* d_faq = nullptr;
         float* d_fasc = nullptr, * d_fahx = nullptr, * d_ff = nullptr;
-        std::vector<int8_t> h_faq((size_t) NT * FF);
-        std::vector<float> h_fasc((size_t) NT * (FF / 32)), h_fahx((size_t) NT * (FF / 32));
         cudaMalloc(&d_blob, blob.size());
         cudaMalloc(&d_acts, packed.size());
         cudaMalloc(&d_jobs, jobs.size() * 4);
@@ -298,6 +487,10 @@ int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int se
             }
         std::printf("          (3) vs the float reference (raw acts, reported): rel %.2e\n", n / (d + 1e-30));
     }
+    // ---- (4) + (5): the DOWN stage, when this layer keeps an IQ4_NL (ggml type 20) one.  Feed it the
+    //          faq/fasc the gup above produced: the design's chain - the tier's own activation image into
+    //          the tier's own down kernel, against the 3060's production dots on the same image.
+    if (f.d_type == 20) failures += check_down(f, blob, NT, h_faq, h_fasc, label);
     return failures;
 }
 
@@ -365,8 +558,9 @@ int main(int argc, char** argv) {
                 ++failures;
                 continue;
             }
-            if (dn != 42) {
-                std::printf("%s: down ggml type %d is not the S2 (Q2_0) form the tier converts\n", arg.c_str(), dn);
+            if (dn != 42 && dn != 20) {
+                std::printf("%s: down ggml type %d is not one the tier takes (42 Q2_0/S2, 20 IQ4_NL)\n",
+                            arg.c_str(), dn);
                 ++failures;
                 continue;
             }
@@ -394,8 +588,9 @@ int main(int argc, char** argv) {
                 if (t[r]) data[r] = model.shard(at).tensor_data(*t[r]);
             }
             if (!t[0] || !t[1] || !t[2]) { std::printf("layer %d: no expert tensors\n", l); ++failures; continue; }
-            if (t[2]->type != 42) {
-                std::printf("layer %d: down is ggml type %d, not the S2 (Q2_0) form\n", l, (int) t[2]->type);
+            if (t[2]->type != 42 && t[2]->type != 20) {
+                std::printf("layer %d: down is ggml type %d, neither Q2_0 (42) nor IQ4_NL (20)\n", l,
+                            (int) t[2]->type);
                 ++failures;
                 continue;
             }

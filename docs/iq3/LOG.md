@@ -481,17 +481,36 @@ Nome proposto `iq4nl_expert_maxwell_down_batch_async`, simmetrico a `s2_expert_m
   è **la stessa**, così il contratto di arrotondamento verso il chiamante non cambia.
 - **Ingresso**: `faq` + `fasc` prodotti dal gup (già bit-identici, verificato in Iterazione 2).
   **`fahx` è ignorato** (vedi sotto).
-- **Per ogni (riga, blocco)**: `int4` di 16 code byte → `get_int_from_table_16(q4, kvalues_sh)`,
-  poi `dp4a_s32` contro gli `int4` della riga di `faq` — esattamente `vec_dot_iq4_nl_q8_1`.
-  La mappatura del riferimento è `kbx = k/ipb`, `iqs = step*(k%ipb)` con `qk=32, ipb=2, step=2`
-  (`iq_kernels.cu`, `Fmt<20>`): `nb = 640/32 = 20` blocchi, e ogni blocco fa **due** chiamate con
-  `iqs = 0` e `iqs = 2` (16 valori ciascuna), contro un solo `block_q8_1` a `kbx`.
+- **Per ogni (riga, blocco)**: i 16 code byte si leggono **solo** con `get_int_b2(qs, i)`, mai con
+  una lettura `int4`/`int32` diretta: `block_iq4_nl` è 18 byte (fp16 + `qs[16]`), quindi `qs` è
+  allineato a **2 byte**, e un load vettoriale su un indirizzo dispari sarebbe un accesso
+  disallineato (fault o lettura sbagliata). È la stessa ragione per cui la 3060 usa
+  `get_int_b2(bq4->qs, ...)` in `vec_dot_iq4_nl_q8_1` e in `Split<20>::load` — e la stessa
+  convenzione vale per la variante MT (che quindi **non** può fare l'hoist `int4` dell'S2).
+  Poi `get_int_from_table_16(q4, kvalues_sh)` e `dp4a_s32` contro i word della riga di `faq` —
+  esattamente `vec_dot_iq4_nl_q8_1`. La mappatura del riferimento è `kbx = k/ipb`,
+  `iqs = step*(k%ipb)` con `qk=32, ipb=2, step=2` (`iq_kernels.cu`, `Fmt<20>`): `nb = 640/32 = 20`
+  blocchi, e ogni blocco fa **due** chiamate con `iqs = 0` e `iqs = 2` (16 valori ciascuna), contro
+  un solo `block_q8_1` a `kbx`. In concreto le due chiamate leggono `get_int_b2(qs, 0)`/`(qs, 1)`
+  (prima metà, word `0..3` di `faq`) e `get_int_b2(qs, 2)`/`(qs, 3)` (seconda metà, word `4..7`).
 - **Epilogo**: `out[row] = Σ_b d_b · ssc[chunk] · dot_b`, **senza** termine `corr`, con
   `ssc[chunk] = low2f_dev(f2h_rn(fasc[chunk]))` (punto 3).
 - **`kvalues_iq4nl` in shared**: 16 byte, staged una volta per blocco, come il gate/up 23.
 - **Multi-token**: la variante MT serve, perché la produzione ha `STRATA_MW_MT=1` e `TWOPHASE=1`
   (punto 5). Forma identica a `expert_s2_stage2_mt_batch`: un RUN per blocco, `faq` di ogni entry
-  staged in shared, i code byte caricati una volta sola e riusati su E entry.
+  staged in shared, i code byte caricati una volta sola e riusati su E entry. L'unica differenza
+  rispetto all'S2 è il load: qui i 16 code byte arrivano con **quattro** `get_int_b2(qs, 0..3)`
+  (2 byte per volta) invece di un `int4`, e vengono espansi con `get_int_from_table_16` in `W.v[0]`
+  (prima metà) e `W.v[1]` (seconda), poi applicati con la stessa sequenza `apply` del riferimento.
+
+**Perché il load non è un `int4` (verificato).** `struct block_iq4_nl { ggml_half d; uint8_t qs[16]; }`
+ha `sizeof = 18` e nessun `alignas`, quindi `qs = base + 2`: un `*(const int4*) qs` non è
+garantito allineato a 16 byte. `vec_dot_iq4_nl_q8_1` evita il problema con `get_int_b2`, e
+`Split<20>::load` fa lo stesso; il kernel del tier deve fare altrettanto. La versione MT dell'S2
+può permettersi `const int4 c4 = *(const int4*) (dc + lb * 16)` perché la sua regione down è
+de-interleaved **a 16 byte per blocco** (planare: solo i codici, solo per Q2_0). Il blob IQ4_NL
+invece è raw (18 byte per blocco), quindi la regola cambia: quattro `get_int_b2`, o equivalentemente
+`memcpy` di 16 byte — mai un cast vettoriale.
 
 ### Niente `corr`/`hx` (punto 2 della revisione)
 
@@ -619,6 +638,42 @@ non l'esattezza del kernel (quella la misura la parity a 1e-5). Con l'IQ4_NL il 
 `to_float` sul down raw e la stessa `x` dequantizzata, quindi il numero atteso resta nell'ordine di
 `8e-3`–`9e-3` come per gli altri formati.
 
+### Non regressione del gate su IQ2_XS (punto 2 della revisione dell'operatore)
+
+La dedup a `(gu_type, d_type)` cambia **quali** esperti il gate campiona. Per l'IQ2_XS questo è un
+rischio concreto: le combinazioni sono 16/42, 22/42 e 29/42, ognuna con lo stesso `d_type`, quindi
+passando alla chiave a due campi il primo esperto incontrato per ogni combinazione **dovrebbe** essere
+lo stesso di oggi (il gate itera `held_` nello stesso ordine e la chiave `d_type` è costante). Non
+basta supporlo: il test lo verifica.
+
+**Protocollo.** Nel load IQ2_XS si estraggono le righe
+
+```
+MaxwellExperts (CUDAk): round-trip gate layer L expert E (tipo): rel X
+```
+
+e si confrontano con quelle di `docs/iq3/results/00-baseline.txt`. Devono essere **identiche**
+(layer, expert, tipo) e la `rel` deve restare nello stesso ordine di grandezza. Una differenza nei
+layer esperti significa che la dedup ha cambiato il campione e il test va considerato rosso, anche se
+il gate è PASSED. Se il confronto non è possibile perché il baseline non contiene le righe per-layer
+(contiene solo le righe `PASSED` aggregate), il test si esegue **due volte** — prima con il codice
+all'HEAD dell'Iterazione 2, poi con quello nuovo — e si confrontano le due liste.
+
+**Scoperta durante l'implementazione (da correggere in questa iterazione).** Il guard di `open()`
+(~riga 172) accetta come gate/up solo `42, 22, 16, 29`: l'Iterazione 2 ha aggiunto i kernel 18/21/23
+ma **non** ha esteso il guard, quindi oggi un layer 18/20 verrebbe rifiutato per il gate/up prima
+ancora del down. La modifica corretta è quindi:
+
+```c
+if ((f.d_type != 42 && f.d_type != 20) ||
+    (f.gu_type != 42 && f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29 &&
+     f.gu_type != 18 && f.gu_type != 21 && f.gu_type != 23)) { ... }
+```
+
+Il ramo `d_type` è quello previsto dal design (42 → 42 && 20); il ramo `gu_type` è un **bug
+dell'Iterazione 2** che questa iterazione deve chiudere, altrimenti il pack IQ3_S non carica
+comunque. Il test SASS dell'Iterazione 2 non poteva vederlo: è una condizione host, non un kernel.
+
 ### Verifica prevista
 
 1. **Parity sintetica**, con il riferimento `iq_mmvq` tipo 20 della 3060 sugli stessi `faq`/`fasc`:
@@ -633,4 +688,119 @@ non l'esattezza del kernel (quella la misura la parity a 1e-5). Con l'IQ4_NL il 
 4. **Memoria**: nessuna crescita (i blob sono già IQ4_NL). Da misurare al load: GiB/die e numero di
    esperti residenti, che con ~5,4–5,9 GiB/die sarà più basso dei 2838 dell'IQ2_XS.
 
-→ **Nessun risultato: design in attesa di revisione.** L'Iterazione 3 non è iniziata.
+## Iterazione 3 — implementazione e verifiche di kernel (misurato, 2026-11-07)
+
+Stato: **codice completo e verde su parity sintetica, parity su pesi reali e SASS.** Restano la
+non-regressione IQ2_XS sul load completo e il primo load IQ3_S (sezione «Finestra operativa»).
+
+### Cosa è stato scritto
+
+| file | modifica |
+|---|---|
+| `include/strata/kernels/cuda/expert_maxwell.hpp` | 3 dichiarazioni: `iq4nl_expert_maxwell_down_{batch,batch_f16,mt}_async` |
+| `src/kernels/cuda/expert_maxwell.cu` | `kIq4nlBlocks`, `kIq4nlDownSmem`, `iq4nl_load_block`, `iq4nl_dot_block`, `iq4nl_stage_act`, `iq4nl_down_body`, `expert_iq4nl_down_batch`, `expert_iq4nl_down_mt`, 3 lanciatori |
+| `include/strata/core/maxwell_experts.hpp` | `LayerGeo::d_type` (default 42) |
+| `src/core/maxwell_experts.cpp` | guard esteso a `d_type 20`; rifiuto TP per il tipo 20; geometria raw (blob `memcpy` verbatim); dedup del gate a `(gu_type, d_type)`; dispatcher `mwdown`; nove punti di chiamata; rifiuti persist ed E1 |
+| `src/kernels/cuda/expert_maxwell_iq_parity.cpp` | `check_down()` + verifica delle tre forme; whitelist estese al 20 |
+
+### Parity sintetica — `results/03-down-iq4nl-synthetic.txt`
+
+`0 failures`. Gate (4), il kernel nuovo contro `iq_mmvq(type 20)` sugli stessi `faq`/`fasc`:
+
+| gate/up | (4) down rel | (1) gup rel | (4b) MT vs batch | (4b) f16 vs round(batch) |
+|---|---|---|---|---|
+| `iq3_s` | **9.71e-08** | 1.72e-07 | 0 / 7680 | 0 / 7680 |
+| `iq3_xxs` | **9.62e-08** | 1.69e-07 | 0 / 7680 | 0 / 7680 |
+| `iq2_s` | **9.27e-08** | 1.75e-07 | 0 / 7680 | 0 / 7680 |
+| `iq4_xs` | **1.00e-07** | 1.64e-07 | 0 / 7680 | 0 / 7680 |
+| `iq3_s/q2_0` (controllo) | — | 1.91e-07 | — | — |
+
+Il controllo `iq3_s/q2_0` non passa nemmeno dal kernel nuovo (nessun layer 20): la sua riga (1)
+resta identica all'Iterazione 2, come previsto.
+
+**Nota su (4b) f16.** Il primo tentativo dava 1 differenza su 7680. Non era un bug del kernel: il
+riferimento del tool (`host_f2h`) implementa l'IEEE completo, mentre il contratto di `f2h_rn` in
+`expert_maxwell.cu` (riga 45) **azzera i denormali** per scelta (`e <= 0 → sign`), documentata nel
+commento della funzione. Il valore in questione è un'uscita sotto 6.1e-5, che `f2h_rn` porta a zero
+con segno. Aggiunto `contract_f2h` al tool, che rispecchia quel contratto: 0 differenze. `host_f2h`
+resta per i controlli sull'immagine delle attivazioni, dove i bit li decide il quantizzatore del
+device, non `f2h_rn`.
+
+### Parity su pesi reali — `results/04-down-iq4nl-real.txt`
+
+`0 failures` su tutti e sette i layer. Il layer reale per ogni combinazione nuova, come richiesto
+dalla revisione:
+
+| layer | combinazione | (4) down rel | (1) gup rel | (4b) MT / f16 |
+|---|---|---|---|---|
+| 0 | 18/20 | 9.53e-08 | 1.66e-07 | 0 / 0 |
+| 17 | 21/20 | 9.12e-08 | 1.79e-07 | 0 / 0 |
+| 2 | 22/20 | 9.59e-08 | 1.65e-07 | 0 / 0 |
+| 47 | 23/20 | 9.46e-08 | 1.82e-07 | 0 / 0 |
+
+Controlli con down 42 (Iterazione 2, invariati): layer 12 (18/42) 1.76e-07, 21 (21/42) 1.73e-07,
+1 (22/42) 1.74e-07 sulla riga (1); nessun check (4) perché `d_type != 20`, come da progetto.
+
+### SASS — `results/05-down-iq4nl-sass.txt`
+
+Confronto HEAD (Iterazione 2, `6dcaa8e2`) contro worktree, stessi flag (`-O3 -DNDEBUG -std=c++20`,
+`sm_50`), `cuobjdump -sass`, normalizzando solo l'hash del namespace anonimo.
+
+```
+kernels: HEAD 150   NEW 153
+shared: 150   only in HEAD: 0   only in NEW: 3
+identical: 150   differing: 0
+```
+
+- **S2 (percorso di produzione IQ2_XS)**: `expert_s2_stage2_mt_batch` 1, `expert_s2_stage2_batch_v2`
+  5, `expert_s2_stage1` 7, `expert_s2_stage2` 8 istanze — tutte bit-identiche.
+- **gate/up i-quant**: `expert_iq_stage1_batch_v2q` 120, `expert_iq_stage1_mt_batch` 12,
+  `maxwell_persist_kernel` 1 — tutte bit-identiche.
+- **Nuove**: esattamente 3, tutte `expert_iq4nl_down_{batch<false>,batch<true>,mt}`; nessuna
+  istanza condivisa contiene `iq4nl`.
+- **Registri** (invariati): persist 96, S2 MT 55. I kernel nuovi: down MT 54, batch fp32 40, batch
+  f16 40.
+
+Il conteggio «66 istanze» del design era il numero di famiglie dell'Iterazione 2 (120 + 12 + 1
+kernel del gate/up, più le famiglie S2); il confronto per nome completo conferma che **nessuna**
+delle 150 condivise è cambiata, che è la proprietà che conta.
+
+### Difetti trovati e corretti durante l'implementazione
+
+1. **`g.tp_blks` = 10 non è il numero di blocchi IQ4_NL.** `SC_D` conta i blocchi Q2_0 da 64 valori;
+   IQ4_NL ne ha 20 da 32. Il dispatcher passava `g.tp_blks` (default 10) e avrebbe letto metà riga.
+   Corretto con `kDBlocksIq4nl = FF / 32` passato esplicitamente (il tipo 20 non è mai in TP: il
+   rifiuto in `open()` lo garantisce).
+2. **`LayerGeo` è un tipo annidato privato**: il dispatcher `mwdown` non può nominarlo a livello di
+   namespace. Risolto rendendo `batch`/`batch_f16`/`mt` template sul tipo della geometria (dedotto
+   dai nove punti di chiamata, tutti dentro la classe).
+3. **`contract_f2h`** nel tool di parity (vedi sopra).
+
+### Le tre forme richieste
+
+Tutte implementate e verificate, non solo la per-token:
+
+| forma | funzione | misurata |
+|---|---|---|
+| batch fp32 | `expert_iq4nl_down_batch<...,false>` | (4) su tutti i layer |
+| batch f16 | `expert_iq4nl_down_batch<...,true>` | (4b) 0/7680 su tutti |
+| MT | `expert_iq4nl_down_mt` | (4b) 0/7680 su tutti |
+
+### Punti di chiamata instradati
+
+Nove, tutti su `mwdown::{batch,batch_f16,mt}`: gate round-trip in `open()`; catena decode fp32;
+catena decode f16; catena TP f16; catena TP fp32; `prefill_launch_down` ramo MT; `prefill_launch_down`
+ramo batch; `finish` ramo MT; `finish` ramo batch. Il ramo `d_type == 42` chiama le funzioni S2 con
+gli stessi argomenti di prima, ed è ciò che il confronto SASS verifica.
+
+### Rifiuti espliciti (non silenziosi)
+
+- **PERSIST** (`STRATA_MW_PERSIST`): declinato se un layer ha `d_type == 20`, con messaggio su
+  stderr. Il kernel persistente esegue `s2_stage2_v2_body` fisso (planare Q2_0); armarlo su un down
+  raw leggerebbe blocchi da 18 B come planare.
+- **E1** (`STRATA_MW_GPUFLAG >= 1`): `open()` fallisce, perché i kernel IQ4_NL non portano la coda
+  di completion flag su cui il grafo della 3060 fa multi-wait. Non è in produzione (GPUFLAG=0).
+- **Tensor split**: rifiutato per un layer con `d_type == 20` (la geometria a blocchi è quella di
+  Q2_0).
+
+→ **Iterazione 3: kernel e parity chiusi. Restano non-regressione IQ2_XS e primo load IQ3_S.**

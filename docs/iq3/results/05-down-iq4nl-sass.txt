@@ -1,0 +1,62 @@
+# Iterazione 3 - confronto SASS: HEAD (Iterazione 2, 6dcaa8e2) vs worktree (Iterazione 3)
+# data: 2026-11-07T17:01:38Z  host: strata  kernel: 6.17.13-21-pve
+# nvcc 12.9, sm_50, stessi flag di CMake (-O3 -DNDEBUG -std=c++20 --generate-code arch=compute_50)
+# oggetti: /root/sass_cmp/i3_head/expert_maxwell.o  vs  /root/sass_cmp/i3_new/expert_maxwell.o
+# harness: /root/sass_cmp/sasscmp_i3.py
+
+kernels: HEAD 150   NEW 153
+
+shared: 150   only in HEAD: 0   only in NEW: 3
+identical: 150   differing: 0
+
+=== only in NEW ===
+    804 insn  20expert_iq4nl_down_mtILi2ELi128ELi4EEEvPKhmmmPKiS6_PKNS1_50ANON6MaxJobEPKaPKfPfii
+    540 insn  23expert_iq4nl_down_batchILi2ELb0EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+    564 insn  23expert_iq4nl_down_batchILi2ELb1EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+
+=== only in HEAD (must be empty) ===
+
+=== GATE: the S2 down kernels (production IQ2_XS path) ===
+  expert_s2_stage2_mt_batch            1 instantiations  bit-identical = True
+  expert_s2_stage2_batch_v2            5 instantiations  bit-identical = True
+  expert_s2_stage1                     7 instantiations  bit-identical = True
+  expert_s2_stage2                     8 instantiations  bit-identical = True
+
+=== GATE: the i-quant gate/up families ===
+  expert_iq_stage1_batch_v2q         120 instantiations  bit-identical = True
+  expert_iq_stage1_mt_batch           12 instantiations  bit-identical = True
+  maxwell_persist_kernel               1 instantiations  bit-identical = True
+  expert_iq                          132 instantiations  bit-identical = True
+
+=== GATE: every NEW kernel is IQ4_NL (type 20) ===
+  new kernels: 3   not-iq4nl: 0
+
+=== GATE: no type-20 instantiation of the SHARED kernels ===
+  shared kernels mentioning iq4nl: 0
+
+=== FULL LIST of only-in-NEW (demangled) ===
+  _ZN6strata7kernels4cuda20expert_iq4nl_down_mtILi2ELi128ELi4EEEvPKhmmmPKiS6_PKNS1_50ANON6MaxJobEPKaPKfPfii
+  _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb0EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+  _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb1EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+=== exit 0 ===
+
+## conteggi registri (cuobjdump -res-usage)
+### HEAD
+ Function _ZN6strata7kernels4cuda50_GLOBAL__N__d7d6a9e5_17_expert_maxwell_cu_6b6c1be022maxwell_persist_kernelILi4ELi128EEEvPKNS1_13PersistParamsEPNS1_10PersistCtlE:
+  REG:96 STACK:0 SHARED:11204 LOCAL:0 CONSTANT[2]:96 CONSTANT[0]:336 TEXTURE:0 SURFACE:0 SAMPLER:0
+--
+ Function _ZN6strata7kernels4cuda50_GLOBAL__N__d7d6a9e5_17_expert_maxwell_cu_6b6c1be025expert_s2_stage2_mt_batchILi2ELi128ELi4EEEvPKhmmmPKiS7_PKNS2_6MaxJobEPKaPKfSE_Pfiimm:
+  REG:55 STACK:0 SHARED:8320 LOCAL:0 CONSTANT[2]:16 CONSTANT[0]:432 TEXTURE:0 SURFACE:0 SAMPLER:0
+### NEW
+ Function _ZN6strata7kernels4cuda50_GLOBAL__N__5b1effd0_17_expert_maxwell_cu_6b6c1be022maxwell_persist_kernelILi4ELi128EEEvPKNS1_13PersistParamsEPNS1_10PersistCtlE:
+  REG:96 STACK:0 SHARED:11204 LOCAL:0 CONSTANT[2]:96 CONSTANT[0]:336 TEXTURE:0 SURFACE:0 SAMPLER:0
+--
+ Function _ZN6strata7kernels4cuda50_GLOBAL__N__5b1effd0_17_expert_maxwell_cu_6b6c1be025expert_s2_stage2_mt_batchILi2ELi128ELi4EEEvPKhmmmPKiS7_PKNS2_6MaxJobEPKaPKfSE_Pfiimm:
+  REG:55 STACK:0 SHARED:8320 LOCAL:0 CONSTANT[2]:16 CONSTANT[0]:432 TEXTURE:0 SURFACE:0 SAMPLER:0
+--
+ Function _ZN6strata7kernels4cuda20expert_iq4nl_down_mtILi2ELi128ELi4EEEvPKhmmmPKiS6_PKNS1_50_GLOBAL__N__5b1effd0_17_expert_maxwell_cu_6b6c1be06MaxJobEPKaPKfPfii:
+  REG:54 STACK:0 SHARED:4944 LOCAL:0 CONSTANT[2]:20 CONSTANT[0]:408 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb1EEEvPKhmmmPKNS1_50_GLOBAL__N__5b1effd0_17_expert_maxwell_cu_6b6c1be06MaxJobEiPKaPKfPfii:
+  REG:40 STACK:0 SHARED:1248 LOCAL:0 CONSTANT[2]:20 CONSTANT[0]:400 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb0EEEvPKhmmmPKNS1_50_GLOBAL__N__5b1effd0_17_expert_maxwell_cu_6b6c1be06MaxJobEiPKaPKfPfii:
+  REG:40 STACK:0 SHARED:1248 LOCAL:0 CONSTANT[2]:20 CONSTANT[0]:400 TEXTURE:0 SURFACE:0 SAMPLER:0

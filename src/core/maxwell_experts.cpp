@@ -45,6 +45,9 @@ using strata::kernels::cuda::s2_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_batch_async;
 using strata::kernels::cuda::iq_expert_maxwell_gup_quant_mt_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_mt_async;
+using strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_async;
+using strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_f16_async;
+using strata::kernels::cuda::iq4nl_expert_maxwell_down_mt_async;
 
 namespace {
 // E1: STRATA_MW_GPUFLAG - 0 off; 1 the GPU-raised tier flags + the graph's multi-wait (host sync kept);
@@ -60,6 +63,70 @@ using strata::kernels::cuda::mw_tp_raise_flag_async;
 
 constexpr int H = 2560;
 constexpr int FF = 640;
+
+// ---- the down stage's dispatch: ONE entry point for every call site -------------------------------
+// A native pack's down is Q2_0 (42, S2 planar, the shipped IQ2_XS path) or IQ4_NL (20, raw 18-byte
+// blocks, the IQ3_S pack).  The two families are separate kernels; this routes on the layer's own
+// d_type so each call site stays a single call and the Q2_0 branch is the same code it always was.
+// The namespaces of the two argument lists differ only by what the format actually uses:
+//   Q2_0 : d_scales_off, d_scale_stride, fahx, and (batch only) the E1 completion tail;
+//   IQ4_NL: d_codes_off/d_row_stride, no fahx, no scale plane, no E1 tail (refused at arming).
+namespace mwdown {
+struct Args {
+    const float* fahx = nullptr;
+    volatile uint32_t* mflag = nullptr;   // E1 tail (batch fp32 only)
+    uint32_t ring = 0;
+    uint32_t* ctr = nullptr;
+};
+
+// The geometry always comes from the layer (`g`): per-layer blob stride/offset, the TP slice's compact
+// strides and block range, and - for a canonical pack - the compile-time S2 defaults via geo_of().
+// The IQ4_NL block count is FF / 32 = 20, NOT SC_D (10): SC_D counts the Q2_0 64-value blocks.  The
+// tensor split refuses a type-20 down (open()), so its range is always the full one.
+// These are templates on the geometry type: LayerGeo is a private nested type of MaxwellExperts, so
+// naming it here would not compile - deduction from the call sites (all inside the class) does.
+constexpr int kDBlocksIq4nl = FF / 32;
+
+template <class G>
+inline void batch(const G& g, const uint8_t* blobs, const int32_t* jobs, int njobs, const int8_t* faq,
+                  const float* fasc, const Args& a, float* out, cudaStream_t s) {
+    if (g.d_type == 20)
+        iq4nl_expert_maxwell_down_batch_async(blobs + g.base, jobs, njobs, faq, fasc, out, g.blob_bytes,
+                                              g.d_codes_off, g.d_row_stride, s, 0, kDBlocksIq4nl);
+    else
+        s2_expert_maxwell_down_batch_async(blobs + g.base, jobs, njobs, faq, fasc, a.fahx, out,
+                                           g.blob_bytes, g.d_codes_off, g.d_scales_off, s,
+                                           a.mflag, a.ring, a.ctr, g.tp_blk_base, g.tp_blks,
+                                           g.d_row_stride, g.d_scale_stride);
+}
+
+template <class G>
+inline void batch_f16(const G& g, const uint8_t* blobs, const int32_t* jobs, int njobs,
+                      const int8_t* faq, const float* fasc, const Args& a, uint16_t* out16,
+                      cudaStream_t s) {
+    if (g.d_type == 20)
+        iq4nl_expert_maxwell_down_batch_f16_async(blobs + g.base, jobs, njobs, faq, fasc, out16,
+                                                  g.blob_bytes, g.d_codes_off, g.d_row_stride, s,
+                                                  0, kDBlocksIq4nl);
+    else
+        s2_expert_maxwell_down_batch_f16_async(blobs + g.base, jobs, njobs, faq, fasc, a.fahx, out16,
+                                               g.blob_bytes, g.d_codes_off, g.d_scales_off, s,
+                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+}
+
+template <class G>
+inline void mt(const G& g, const uint8_t* blobs, const int32_t* runs, const int32_t* entries,
+               int nruns, const int32_t* jobs, const int8_t* faq, const float* fasc, const Args& a,
+               float* out, cudaStream_t s) {
+    if (g.d_type == 20)
+        iq4nl_expert_maxwell_down_mt_async(blobs + g.base, g.blob_bytes, g.d_codes_off, runs, entries,
+                                           nruns, jobs, faq, fasc, out, s, 0, kDBlocksIq4nl);
+    else
+        s2_expert_maxwell_down_mt_async(blobs + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
+                                        runs, entries, nruns, jobs, faq, fasc, a.fahx, out, s,
+                                        g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+}
+}  // namespace mwdown
 
 // STRATA_MW_AD2H: the prefill completes' D2H rides the copy engine, enqueued right behind the down
 // at launch time (the four cards' copies then overlap the downs instead of running one-per-rank inside
@@ -159,36 +226,40 @@ bool MaxwellExperts::open(int device,
             std::fprintf(stderr, "strata maxwell: blocking sync refused on CUDA%d (%s); spinning stays\n",
                          device, cudaGetErrorString(f));
     }
-    // GUARD: this tier runs the expert encodings its kernels take - the Q2_0 (S2) form, and a native
-    // pack's IQ2_S / IQ2_XXS / IQ1_M gate/up over the Q2_0 down (the IQ2_XS file's layers; the down is
-    // converted to the S2 planar form at open()).  Anything else (an encoding a future pack may carry)
-    // would be read with the wrong geometry - plausible garbage rows, silently, never a fault.  Refuse
-    // instead, naming the first offending layer.  42 is ggml's Q2_0 (tools/gguf_reader.py).
+    // GUARD: this tier runs the expert encodings its kernels take - the Q2_0 (S2) form, a native
+    // pack's IQ2_S / IQ2_XXS / IQ1_M / IQ3_XXS / IQ3_S / IQ4_XS gate/up over a Q2_0 down (converted to
+    // the S2 planar form at open()), and the IQ3_S pack's IQ4_NL (20) down, which stays RAW.  Anything
+    // else (an encoding a future pack may carry) would be read with the wrong geometry - plausible
+    // garbage rows, silently, never a fault.  Refuse instead, naming the first offending layer.
+    // 42 is ggml's Q2_0, 20 its IQ4_NL (tools/gguf_reader.py).
     {
         const auto& lay = strata::kernels::cpu::expert_layout();
         if (lay.native) {
             for (size_t L = 0; L < lay.fmt.size(); ++L) {
                 const auto& f = lay.fmt[L];
-                if (f.d_type != 42 ||
-                    (f.gu_type != 42 && f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29)) {
+                if ((f.d_type != 42 && f.d_type != 20) ||
+                    (f.gu_type != 42 && f.gu_type != 22 && f.gu_type != 16 && f.gu_type != 29 &&
+                     f.gu_type != 18 && f.gu_type != 21 && f.gu_type != 23)) {
                     char buf[256];
                     std::snprintf(buf, sizeof(buf),
                                   "MaxwellExperts (CUDA%d): layer %zu keeps its experts as gate/up ggml type "
-                                  "%d and down type %d; this tier takes Q2_0 (42), and IQ2_S (22) / IQ2_XXS "
-                                  "(16) / IQ1_M (29) gate/up over a Q2_0 down",
+                                  "%d and down type %d; this tier takes Q2_0 (42) and IQ4_NL (20) down, and "
+                                  "IQ2_S (22) / IQ2_XXS (16) / IQ1_M (29) / IQ3_XXS (18) / IQ3_S (21) / "
+                                  "IQ4_XS (23) gate/up",
                                   device, L, f.gu_type, f.d_type);
                     err = buf;
                     return false;
                 }
                 // SPLIT_MODE_TENSOR: the shard builder and the sliced kernels cover the native i-quant
-                // gate/up path; an S2 (42) gate/up layer in tensor mode would silently take the full-range
-                // gup on every card.  Refuse it - the production IQ2_XS pack has none.
-                if (tp_cards_ > 1 && f.gu_type == 42) {
+                // gate/up path over a PLANAR Q2_0 down; an S2 (42) gate/up layer in tensor mode would
+                // silently take the full-range gup on every card, and an IQ4_NL (20) down is raw (no
+                // per-block split geometry) - the production 8-die tier is whole-expert.  Refuse both.
+                if (tp_cards_ > 1 && (f.gu_type == 42 || f.d_type == 20)) {
                     char buf[256];
                     std::snprintf(buf, sizeof(buf),
-                                  "MaxwellExperts (CUDA%d): layer %zu is S2 (42) gate/up; the tensor split "
-                                  "takes the native i-quant layers (IQ2_S/IQ2_XXS/IQ1_M)",
-                                  device, L);
+                                  "MaxwellExperts (CUDA%d): layer %zu has gate/up %d and down %d; the tensor "
+                                  "split takes the native i-quant layers over the planar Q2_0 down",
+                                  device, L, f.gu_type, f.d_type);
                     err = buf;
                     return false;
                 }
@@ -276,14 +347,21 @@ bool MaxwellExperts::open(int device,
             const auto& f = lay.fmt[(size_t) L];
             LayerGeo& g = geo_[(size_t) L];
             g.gu_type = f.gu_type;
+            g.d_type = f.d_type;
             g.base = off;
             g.blob_bytes = (size_t) f.bytes;
-            if (f.gu_type != 42) {   // the i-quant layer: raw GGUF gate/up rows, the down converted
+            if (f.gu_type != 42) {   // the i-quant layer: raw GGUF gate/up rows, the down raw or converted
                 g.o_gate = 0;
                 g.o_up = f.up_off;                       // gate rows first, up rows second (as the source)
                 g.gu_row = f.gu_row;
-                g.d_codes_off = f.down_off;               // the down region, de-interleaved to S2 planar
-                g.d_scales_off = f.down_off + (size_t) H * ROW_D;
+                g.d_codes_off = f.down_off;
+                if (f.d_type == 20) {
+                    // IQ4_NL: the pack's raw 18-byte blocks, no de-interleaving, 20 blocks per row of
+                    // FF = 640 values.  d_scales_off/d_scale_stride keep their defaults and are unused.
+                    g.d_row_stride = (size_t) 20 * 18;
+                } else {
+                    g.d_scales_off = f.down_off + (size_t) H * ROW_D;   // S2 planar: codes then scales
+                }
             }
             // SPLIT_MODE_TENSOR: this card's slice of the layer - the block range rotated by layer, the
             // matching gate/up row range (64 rows per block), and the COMPACT shard geometry that replaces
@@ -410,15 +488,20 @@ bool MaxwellExperts::open(int device,
                     }
                 } else {
                 std::memcpy(staging.data(), src, f.down_off);
-                for (int r = 0; r < H; ++r) {
-                    const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
-                    uint8_t* dcode = staging.data() + g.d_codes_off + (size_t) r * ROW_D;
-                    uint8_t* dscale = staging.data() + g.d_scales_off + (size_t) r * SC_D * 2;
-                    for (int b = 0; b < SC_D; ++b) {
-                        const uint8_t* blk = srow + (size_t) b * 18;
-                        dscale[b * 2] = blk[0];
-                        dscale[b * 2 + 1] = blk[1];
-                        std::memcpy(dcode + b * 16, blk + 2, 16);
+                if (f.d_type == 20) {
+                    // IQ4_NL down: RAW, verbatim - 2560 rows * 20 blocks * 18 B, no de-interleaving.
+                    std::memcpy(staging.data() + g.d_codes_off, src + f.down_off, (size_t) H * g.d_row_stride);
+                } else {
+                    for (int r = 0; r < H; ++r) {
+                        const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;
+                        uint8_t* dcode = staging.data() + g.d_codes_off + (size_t) r * ROW_D;
+                        uint8_t* dscale = staging.data() + g.d_scales_off + (size_t) r * SC_D * 2;
+                        for (int b = 0; b < SC_D; ++b) {
+                            const uint8_t* blk = srow + (size_t) b * 18;
+                            dscale[b * 2] = blk[0];
+                            dscale[b * 2 + 1] = blk[1];
+                            std::memcpy(dcode + b * 16, blk + 2, 16);
+                        }
                     }
                 }
                 }
@@ -435,6 +518,21 @@ bool MaxwellExperts::open(int device,
     }
     resident_ = (int64_t) mine.size();
     gib_ = (double) bytes / (1024.0 * 1024.0 * 1024.0);
+
+    // E1 (STRATA_MW_GPUFLAG >= 1): the decode down's LAST block raises the tier's doorbell, and the
+    // 3060's graph multi-waits on it.  Only the S2 batch kernel carries that completion tail; the
+    // IQ4_NL kernels do not (not designed, not needed: production runs GPUFLAG=0), so a pack with an
+    // IQ4_NL (20) down cannot honour the contract.  Refuse the arm rather than leave a flag that
+    // never rises - a deadlock in the graph, not a slow path.
+    if (gpuflag_mode() >= 1) {
+        for (const auto& g : geo_)
+            if (g.d_type == 20) {
+                err = "MaxwellExperts: STRATA_MW_GPUFLAG is on but this pack keeps an IQ4_NL (20) down, "
+                      "whose kernel carries no GPU-raised completion flag - unset STRATA_MW_GPUFLAG";
+                close();
+                return false;
+            }
+    }
 
     // activation buffers: int8 codes + fp32 scales + hx per chunk, for H-wide and FF-wide acts.
     // n_tok_max/cap_entries bound the window.  P3.1: 8 tokens was the decode window; the prefill feeds whole
@@ -545,23 +643,21 @@ bool MaxwellExperts::open(int device,
     // (~1e-2); a conversion bug is ~1.0 and cannot pass it.
     if (!geo_.empty()) {
         ggml_cpu_init();   // the to_float tables (idempotent; native_fmt already did this)
-        int seen[7] = {0, 0, 0, 0, 0, 0, 0};   // by gate/up type: 42, 22, 16, 29, 18, 21, 23
+        // One held expert per (gate/up, down) COMBINATION, not per gate/up type: the IQ3_S pack keeps
+        // 18/20 and 18/42 side by side, and an IQ4_NL down takes a different kernel from the planar
+        // Q2_0 one - a gate/up-only key would sample one of them and never exercise the other.  The
+        // 10 combinations the two packs carry: IQ3_S's 18/20, 18/42, 21/20, 21/42, 22/20, 22/42, 23/20
+        // and IQ2_XS's 16/42, 22/42, 29/42.  For IQ2_XS every layer has d_type 42, so the sampled
+        // (layer, expert) pairs are unchanged from the pre-Iteration-3 gate.
+        std::vector<std::pair<int, int>> seen;
         double worst = 0.0;
         for (const auto& pr : held_) {
             const int64_t L = pr.first, e = pr.second;
             const auto& f = lay.fmt[(size_t) L];
-            int ti = -1;   // a gate/up type this tier has no kernel for is not gated (the guard above refuses it)
-            switch (f.gu_type) {
-                case 42: ti = 0; break;
-                case 22: ti = 1; break;
-                case 16: ti = 2; break;
-                case 29: ti = 3; break;
-                case 18: ti = 4; break;
-                case 21: ti = 5; break;
-                case 23: ti = 6; break;
-            }
-            if (ti < 0 || seen[ti]) continue;
-            seen[ti] = 1;
+            bool sampled = false;
+            for (const auto& s : seen) sampled = sampled || (s.first == f.gu_type && s.second == f.d_type);
+            if (sampled) continue;
+            seen.emplace_back(f.gu_type, f.d_type);
             const uint8_t* src = src_blob(L, e, ctx);
             if (src == nullptr) {
                 err = "MaxwellExperts: the round-trip gate lost its source blob";
@@ -636,10 +732,9 @@ bool MaxwellExperts::open(int device,
                                                         d_faq_, d_fascale_, d_fahx_, nullptr, streams_[0],
                                                         g.tp_row_base, g.tp_rows);
             }
-            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, 1, d_faq_, d_fascale_, d_fahx_,
-                                               d_out_, g.blob_bytes, g.d_codes_off, g.d_scales_off,
-                                               streams_[0], nullptr, 0, nullptr,
-                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+            mwdown::Args da;
+            da.fahx = d_fahx_;
+            mwdown::batch(g, d_blobs_, d_jobs_, 1, d_faq_, d_fascale_, da, d_out_, streams_[0]);
             if (!check(cudaStreamSynchronize(streams_[0]), "round-trip sync", err)) { close(); return false; }
             if (!check(cudaMemcpy(h_out_, d_out_, (size_t) H * sizeof(float), cudaMemcpyDeviceToHost),
                        "round-trip download", err)) { close(); return false; }
@@ -701,6 +796,17 @@ bool MaxwellExperts::open(int device,
             for (const auto& g : geo_)
                 if (g.gu_type != 22 && g.gu_type != 16 && g.gu_type != 29 &&
                     g.gu_type != 18 && g.gu_type != 21 && g.gu_type != 23) { ok = false; break; }
+        // The resident kernel's down branch runs s2_stage2_v2_body, i.e. the PLANAR Q2_0 form.  An
+        // IQ4_NL (20) down has its own kernels with no persistent form; arming here would read raw
+        // 18-byte blocks as a planar layout - plausible garbage, never a fault.  Decline instead.
+        if (ok)
+            for (const auto& g : geo_)
+                if (g.d_type == 20) {
+                    std::fprintf(stderr, "strata maxwell (CUDA%d): PERSIST declined - the pack carries "
+                                         "an IQ4_NL (20) down, which the resident kernel does not run\n", device_);
+                    ok = false;
+                    break;
+                }
         if (!ok) {
             std::fprintf(stderr, "strata maxwell (CUDA%d): PERSIST declined (needs whole-expert, no "
                                  "zero-copy, an all-i-quant native pack, SPLIT 4 / 128 threads)\n", device_);
@@ -1162,9 +1268,9 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // the per-group destination offset stays whatever `w_dst_` already carries.  Half the bytes
             // cross the uplink; the verifier's row copy converts them back (its kind16 flags mark them).
             // (No tensor-split form: TP clears rows_f16 in begin().)
-            s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
-                                                   d_fascale_, d_fahx_, (uint16_t*) dst_rows, g.blob_bytes,
-                                                   g.d_codes_off, g.d_scales_off, streams_[0]);
+            mwdown::Args da; da.fahx = d_fahx_;
+            mwdown::batch_f16(g, d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_, da,
+                              (uint16_t*) dst_rows, streams_[0]);
         } else if (tp_cards_ > 1 && !dlt) {
             // SPLIT_MODE_TENSOR delivery: the down writes this card's PARTIAL rows to CARD-LOCAL VRAM -
             // no mapped stores from the kernel (four concurrent downs writing mapped host memory
@@ -1183,19 +1289,16 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             if (chunk < 1) chunk = 1;
             for (int j0 = 0, c = 0; j0 < njobs; j0 += chunk, ++c) {
                 const int nj = std::min(chunk, njobs - j0);
+                mwdown::Args da{};
+                da.fahx = d_fahx_ + (size_t) j0 * (FF / 32);   // this chunk's entries
                 if (tp_wire16_)
-                    s2_expert_maxwell_down_batch_f16_async(d_blobs_ + g.base, d_jobs_ + (size_t) j0 * 3, nj,
-                                                           d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32),
-                                                           d_fahx_ + (size_t) j0 * (FF / 32), (uint16_t*) d_out_,
-                                                           g.blob_bytes, g.d_codes_off, g.d_scales_off, streams_[0],
-                                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+                    mwdown::batch_f16(g, d_blobs_, d_jobs_ + (size_t) j0 * 3, nj,
+                                      d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32),
+                                      da, (uint16_t*) d_out_, streams_[0]);
                 else
-                    s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_ + (size_t) j0 * 3, nj,
-                                                       d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32),
-                                                       d_fahx_ + (size_t) j0 * (FF / 32), d_out_,
-                                                       g.blob_bytes, g.d_codes_off, g.d_scales_off, streams_[0],
-                                                       nullptr, 0, nullptr,
-                                                       g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+                    mwdown::batch(g, d_blobs_, d_jobs_ + (size_t) j0 * 3, nj,
+                                  d_faq_ + (size_t) j0 * FF, d_fascale_ + (size_t) j0 * (FF / 32), da,
+                                  d_out_, streams_[0]);
                 cudaEventRecord(ev_down_[c & 3], streams_[0]);
                 cudaStreamWaitEvent(streams_[1], ev_down_[c & 3], 0);
                 cudaMemcpyAsync((uint8_t*) w_dst_ + (size_t) j0 * row_b,
@@ -1208,11 +1311,13 @@ bool MaxwellExperts::begin_chain(std::string& err) {
                 comp_seq_ = ring;
             }
         } else {
-            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) jobs.size(), d_faq_,
-                                               d_fascale_, d_fahx_, dst_rows, g.blob_bytes, g.d_codes_off,
-                                               g.d_scales_off, streams_[0],
-                                               e1 ? comp_flag_ : nullptr, ring, e1 ? d_ctr_ : nullptr,
-                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+            mwdown::Args da;
+            da.fahx = d_fahx_;
+            da.mflag = e1 ? comp_flag_ : nullptr;
+            da.ring = ring;
+            da.ctr = e1 ? d_ctr_ : nullptr;
+            mwdown::batch(g, d_blobs_, d_jobs_, (int) jobs.size(), d_faq_, d_fascale_, da, dst_rows,
+                          streams_[0]);
         }
         if (e1 && tp_cards_ > 1 && !dlt) { /* the ring advanced with the raise above */ }
         else if (e1) comp_seq_ = ring;
@@ -1319,18 +1424,16 @@ bool MaxwellExperts::prefill_launch_down(std::string& err) {
         !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
     const LayerGeo& g = geo_of(w_layer_);
+    mwdown::Args da;
+    da.fahx = d_fahx_;
     if (mt_nruns_ > 0) {
         // STRATA_MW_MT: the run table drives the down too (same runs the gup consumed; the tables
         // are still in the device staging - the dst-fixup memcpy above rewrote the jobs region only)
-        s2_expert_maxwell_down_mt_async(d_blobs_ + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
-                                        d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_,
-                                        d_faq_, d_fascale_, d_fahx_, d_out_, streams_[0],
-                                        g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+        mwdown::mt(g, d_blobs_, d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_, d_faq_, d_fascale_, da,
+                   d_out_, streams_[0]);
     } else {
-        s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
-                                           d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
-                                           g.d_scales_off, streams_[0], nullptr, 0, nullptr,
-                                           g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+        mwdown::batch(g, d_blobs_, d_jobs_, (int) owned_row_.size(), d_faq_, d_fascale_, da, d_out_,
+                      streams_[0]);
     }
     down_launched_ = true;
     // STRATA_MW_AD2H: the D2H rides behind the down on this card's stream - the completes then only
@@ -1395,18 +1498,16 @@ bool MaxwellExperts::finish_chain(std::string& err) {
             !check(cudaMemcpyAsync(d_jobs_, h_jobs_, owned_row_.size() * 3 * sizeof(int32_t),
                                    cudaMemcpyHostToDevice, streams_[0]), "copy jobs dst", err)) return false;
         const LayerGeo& g = geo_of(w_layer_);
+        mwdown::Args da;
+        da.fahx = d_fahx_;
         if (mt_nruns_ > 0) {
             // STRATA_MW_MT: the run table drives the down too (same runs the gup consumed; the tables
             // are still in the device staging - the dst-fixup memcpy above rewrote the jobs region only)
-            s2_expert_maxwell_down_mt_async(d_blobs_ + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
-                                            d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_,
-                                            d_faq_, d_fascale_, d_fahx_, d_out_, streams_[0],
-                                            g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+            mwdown::mt(g, d_blobs_, d_runs_mt_, d_ent_mt_, mt_nruns_, d_jobs_, d_faq_, d_fascale_, da,
+                       d_out_, streams_[0]);
         } else {
-            s2_expert_maxwell_down_batch_async(d_blobs_ + g.base, d_jobs_, (int) owned_row_.size(), d_faq_,
-                                               d_fascale_, d_fahx_, d_out_, g.blob_bytes, g.d_codes_off,
-                                               g.d_scales_off, streams_[0], nullptr, 0, nullptr,
-                                               g.tp_blk_base, g.tp_blks, g.d_row_stride, g.d_scale_stride);
+            mwdown::batch(g, d_blobs_, d_jobs_, (int) owned_row_.size(), d_faq_, d_fascale_, da, d_out_,
+                          streams_[0]);
         }
     }
     // S0 (STRATA_MW_LAYERPROF): the span ends after the down launch, whichever path launched it; the
