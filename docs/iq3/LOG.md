@@ -19,6 +19,8 @@ Indice:
 - [Iterazione 5 — banco fisso e verifiche per la produzione (protocollo)](#iterazione-5--banco-fisso-e-verifiche-per-la-produzione-protocollo-prossima-finestra)
   — con le [misure](#iterazione-5--banco-fisso-contesto-lungo-e-soak-misurato-2026-11-07) in coda
 - [Iterazione 6 — diagnosi: potenza, profilo per-layer, margine VRAM (protocollo)](#iterazione-6--diagnosi-potenza-profilo-per-layer-margine-vram-protocollo-prossima-finestra)
+- [Iterazione 6b — diagnosi 3060: quale causa di throttle (misurato)](#iterazione-6b--diagnosi-3060-quale-causa-di-throttle-misurato)
+- [Iterazione 7 — design: down IQ4_NL planare](#iterazione-7--design-down-iq4_nl-planare-da-rivedere-prima-del-codice)
 
 ---
 
@@ -1410,40 +1412,47 @@ finestra 5, stessa config: 46,8 → 44,6 sulla media città+codice). Non è grat
 finestra vanno letti *contro il riferimento IQ2_XS misurato nella stessa finestra*, non contro la
 finestra 5. Il costo viene da 15.621 righe di `MWPROF` scritte su stderr durante il banco.
 
-### 1. Potenza — le M10 sono in `SwPowerCap`, ma non sono limitate dal clock
+### 1. Potenza — **corretto in Iterazione 7**: le M10 hanno un application clock, la 3060 è power-capped
+
+> **ERRATA (Iterazione 7).** Questa sezione, come tutto il LOG fino all'Iterazione 6, usava una
+> **tabella dei bit sbagliata** in `tools/iq3_power.py`: dal bit `0x2` in su i nomi erano sfalsati di
+> uno, quindi `ApplicationsClocksSetting` veniva letto come `SwPowerCap` e il vero `SwPowerCap` della
+> 3060 come `HwSlowdown`. La tabella è corretta e fissata da test che citano le letture sul campo
+> (`test_iq3_power.BitMap`). Le conclusioni che cambiano sono due, e sono a favore della chiarezza:
+> **le M10 non sono power-capped**, la 3060 sì. Sotto, i numeri ricalcolati dai CSV originali con la
+> mappa corretta.
 
 Campioni, solo a GPU attive (bit `GpuIdle` escluso), intervallo 1 s:
 
-| fase | M10 attive | draw medio | % del limite | `SwPowerCap` | clock SM medio | max |
+| fase | M10 attive | draw medio | % del limite | **`ApplicationsClocksSetting`** | clock SM medio | max |
 |---|---|---|---|---|---|---|
 | banco auto | 820 | 22,2 W | 74% | **95%** | 1007 MHz | 1032 |
 | soak auto | 4.881 | 23,3 W | 78% | **99%** | 1027 MHz | 1032 |
 | banco 988 | 874 | 22,2 W | 74% | **94%** | 997 MHz | 1032 |
 | IQ2_XS | 714 | 21,0 W | 70% | **93%** | 994 MHz | 1032 |
 
-**Il dato che conta: il clock massimo reale delle M10 è 1202 MHz, e sotto carico stavano a
-994–1027 MHz — l'83–85% del tetto, non il 100%.** Quindi il bit `SwPowerCap` è *acceso* ma le schede
-**non sono inchiodate al clock minimo**: c'è ~175–200 MHz di margine teorico, e soprattutto il draw è
-21–23 W su 30 W.
+**Il bit che le M10 accendono è `ApplicationsClocksSetting`, non `SwPowerCap`**: le schede stanno a
+**1032 MHz esatti e costanti** (il valore misurato è sempre 1032, mai un valore intermedio) contro un
+massimo NVML di 1202 MHz, e la maschera dice che è un *application clock*, cioè un clock configurato,
+non un tetto di potenza raggiunto. Il draw attivo è 21–23 W su 30 W (**70–78%**), e il contatore
+`SW Power Capping` della M10 **non è cresciuto di un microsecondo** durante un banco che ha fatto
+salire quello della 3060 di 7,5 s. Quindi: **le M10 non vengono mai limitate dalla potenza.** Il
+"crollo banco→soak" non è spiegabile con la potenza per questa ragione strutturale, non solo
+statistica.
 
-E c'è un controllo che toglie valore al bit come spiegazione: **`SwPowerCap` è al 93% anche con
-l'IQ2_XS, che fa 57,2 tok/s e passa il criterio.** Lo stesso bit, allo stesso clock, con la stessa
-potenza: se fosse il collo di bottiglia, anche l'IQ2_XS sarebbe lento. **Il bit non discrimina** — è
-la gestione di potenza media delle M10 che si accende appena il die lavora.
+Perché 1032 e non 1202: 1032 è l'ultimo scalino *sotto* il massimo nella tabella degli application
+clock (1306…1202) e il driver riporta `Applications Clocks: N/A` con `Clock Policy` non impostata —
+**non ho una spiegazione del perché quel valore sia attivo**. È un fatto misurato, non interpretato:
+va verificato con l'operatore, e potrebbe dipendere dal VBIOS delle M10 o da un profilo del driver.
+Di certo **non è il limite di 30 W**: alzarlo non tocchherebbe un application clock.
 
-Conseguenza per la decisione dell'operatore: **alzare il limite a 35 W non è garantito che dia
-clock**, perché a 30 W le schede stanno al 70–78% del limite e il bit di throttle è acceso anche
-sulla configurazione che va bene. Se il limite fosse la variabile vincolante, il draw sarebbe a 30 W
-pieni. Il guadagno misurato altrove (3% con 4 M10) resta l'unico dato reale, e **non è stato
-replicato con 8 die**. Il wattmetro dell'operatore resta lo strumento giusto: questa finestra
-**non dimostra** che 35 W aiuterebbe, e il fatto che il crollo banco→soak esista anche senza
-profilazione (§4) lo rende improbabile.
+Il **3060**, con la mappa corretta, è quello che il limite lo tocca davvero: **`SwPowerCap` sull'81%
+dei campioni attivi al banco e sull'89% nello soak**, 103 W medi (max 119,3) e 112 W (max 119,9) su
+120 W, 1795–1810 MHz su 2100 max, e il contatore cresciuto di 7,5 s in 30 s di banco. È **potenza**,
+non temperatura: i bit termici sono a 0 (vedi B, Iterazione 7).
 
-Il **3060** è l'altra storia: `HwSlowdown` sull'**81%** dei campioni attivi al banco e sull'**89%**
-nello soak, 103 W medi (max 119,3) al banco e 112 W (max 119,9) nello soak **su 120 W di limite**,
-1795–1810 MHz su 2100 max. Lì il tetto morde davvero: è la scheda che paga il prezzo, non le M10.
-(Il riepilogo del sampler dà percentuali più basse — 53% e 83% — perché le calcola su *tutti* i
-campioni, idle compresi; i valori qui sopra sono sui soli campioni attivi, coerenti con la tabella.)
+Nota di metodo: i bit termici/brake sono **0%** in tutte le fasi; il riepilogo del sampler dava
+percentuali più basse (53%/83%) perché le calcolava su *tutti* i campioni, idle compresi.
 
 ### 2. Profilo — il down IQ4_NL è il costo, e il gate/up dell'IQ3_S è *più veloce*
 
@@ -1593,14 +1602,325 @@ Il pattern resta «sale durante i load», non durante il calcolo. Da seguire, no
 2. **Il margine VRAM si compra**: 988 porta la 3060 da 95 a 1029 MiB liberi, tiene 64k, e costa il
    4,3%. È un trade-off **difendibile** — ma non cambia il criterio: a 988 l'IQ3_S fa 42,7 contro
    57,2 dell'IQ2_XS, ed è **FAIL**.
-3. **La potenza non è la leva che sembrava.** Le M10 segnalano `SwPowerCap` al 93–99%, ma stanno a
-   994–1027 MHz su un tetto di **1202** e a 21–23 W su 30 W — e **lo stesso bit è al 93% anche
-   sull'IQ2_XS che fa 57,2 tok/s**. Il bit non discrimina fra lento e veloce, quindi non spiega il
-   divario. Il crollo banco→soak esiste anche senza profilazione (finestra 5) e non è attribuibile
-   al tetto di potenza.
+3. **La potenza non è la leva** — e in Iterazione 7 si è scoperto *perché*, correggendo la mappa dei
+   bit di questo stesso LOG: quello che le M10 accendono è `ApplicationsClocksSetting` (stanno a
+   1032 MHz di application clock, 21–23 W su 30 W, contatore `SW Power Capping` fermo), **non**
+   `SwPowerCap`. Le M10 non sono limitate dalla potenza, quindi alzare il limite non dà clock. La
+   scheda che il limite lo tocca è la **3060** (`SwPowerCap` all'81–89%, bit termici a zero). Il
+   crollo banco→soak esiste anche senza profilazione (finestra 5) e non è attribuibile alla potenza.
 
 **IQ3_S non viene promosso.** La produzione resta su IQ2_XS, ripristinata e verificata. La sola
 strada con un numero a favore è il down IQ4_NL; qualsiasi altra (potenza, cache, contesto) o non
 sposta il criterio o lo peggiora.
+
+---
+
+## Iterazione 6b — diagnosi 3060: quale causa di throttle (misurato)
+
+**Obiettivo.** L'Iterazione 6 ha misurato `HwSlowdown` sull'81–89% dei campioni attivi della 3060.
+Quel bit però non dice *quale* meccanismo: termico, power-brake o potenza. L'operatore ha chiesto di
+distinguere la causa, **senza cambiare nulla** (ventole e cavi sono hardware: decide lui).
+
+**Come.** `tools/iq3_power.py --deep` è nuovo e campiona, oltre alla maschera aggregata, i singoli
+campi `clocks_throttle_reasons.{hw_slowdown, hw_power_brake_slowdown, hw_thermal_slowdown,
+sw_power_cap, sw_thermal_slowdown}`, più `temperature.gpu`, `temperature.memory`, `fan.speed`. La
+misura è stata fatta **sulla produzione**, senza fermarla: un banco città+codice contro l'endpoint IQ2_XS
+già attivo (2341 campioni, 500 ms), e i campioni sono riportati **solo a GPU attiva**, perché una
+scheda a 210 MHz non è in throttle termico, è addormentata.
+
+**Misura (3060, 139 campioni attivi):**
+
+| grandezza | valore |
+|---|---|
+| `HwThermalSlowdown` | **0%** |
+| `HwPowerBrakeSlowdown` | **0%** |
+| `SwThermalSlowdown` | **0%** |
+| `HwSlowdown` | **0%** |
+| **`SwPowerCap`** | **73%** |
+| temperatura GPU | media 58,6 °C, **max 67 °C** |
+| temperatura memoria | **non esposta** dal driver (`N/A` su ogni campione) |
+| ventola | media 36,8%, max 43% |
+| draw | media 100,4 W, **max 120,3 W** su 120 W |
+| clock SM | media 1789, max 1912 su 2100 |
+
+**Risposta: è potenza, non temperatura.** Nessun bit termico è mai attivo, la GPU sta a 67 °C massimi
+con la ventola al 43% (ha margine termico, non sta scaldando), e il draw tocca il limite di 120 W. Il
+throttle della 3060 è **`SwPowerCap`**, esattamente come per un limite di potenza raggiunto.
+
+**Ma la misura ha scoperto un errore più importante, che corregge l'Iterazione 6.** La maschera
+aggregata e i campi individuali si contraddicevano: `mask=0x4` con `sw_power_cap=Active`. La tabella
+dei bit in `tools/iq3_power.py` era **sfalsata di uno da `0x2` in su**, quindi:
+- quello che il LOG dell'Iterazione 6 chiamava `SwPowerCap` sulle M10 era in realtà
+  **`ApplicationsClocksSetting`** (bit `0x2`);
+- quello che chiamava `HwSlowdown` sulla 3060 era in realtà **`SwPowerCap`** (bit `0x4`).
+
+La mappa è ora corretta, fissata da test che citano le letture sul campo (`BitMap` in
+`tools/test_iq3_power.py`), e i CSV dell'Iterazione 6 sono stati **ricalcolati**. Le due conclusioni che
+cambiano sono nella §1 dell'Iterazione 6 (con errata) e qui: **le M10 non sono power-capped**, la 3060
+sì. Verifica indipendente: il contatore cumulativo `SW Power Capping` della M10 **non è cresciuto** in
+un banco in cui quello della 3060 è cresciuto di 7,5 s.
+
+**Cosa non dico.** Perché le M10 stiano a 1032 MHz (application clock) e non a 1202 non è spiegato da
+questa misura: il driver riporta `Applications Clocks: N/A` e nessuna `Clock Policy` impostata. È un
+fatto misurato, non interpretato. Non ho toccato né ventole, né limiti, né cavi.
+
+**Risultati:** `docs/iq3/results/36-power-iq2_xs-deep.csv`, `37-bench-iq2_xs-diag.json`. Il banco di
+controllo ha fatto **58,3 tok/s** (mediana 56,8), coerente con i 57,2 dell'Iterazione 6.
+
+---
+
+## Iterazione 7 — design: down IQ4_NL planare (da rivedere prima del codice)
+
+**Stato: design. Nessuna riga di codice scritta, nessun file toccato.** Come chiesto dall'operatore:
+prima il design, poi la revisione, poi l'implementazione.
+
+### Obiettivo
+
+Togliere al down IQ4_NL (ggml tipo 20) il difetto che gli impedisce di usare letture vettoriali: nel
+blob esso è **grezzo**, quindi i codici di ogni blocco cominciano a `+2` (dopo il `d` fp16) e sono
+allineati a **2 byte, mai a 16**. Al `open()` la regione down viene riorganizzata in forma
+**planare** — codici di ogni riga contigui e a 16 byte, scale fp16 in un piano separato — **con gli
+stessi byte, senza costo di VRAM, senza perdita di informazione**. Il kernel legge i codici con
+`int4` (128 bit).
+
+### La misura da battere
+
+Dal profilo dell'Iterazione 6 (`results/27-profile-iq3_s-i6.txt`), per layer per scheda:
+
+| gruppo | MB/L | kernel µs/L | gup | **down** | sync | down GB/s |
+|---|---|---|---|---|---|---|
+| down-20 (IQ4_NL, 39 layer) | 4,286 | 437 | 140 | **296** | 69 | **14,5** |
+| down-42 (Q2_0/S2, 9 layer) | 3,286 | 258 | 141 | **117** | 36 | **28,1** |
+
+Il confronto è onesto perché è lo stesso kernel-host, le stesse schede, la stessa finestra: **lo
+stesso lavoro per byte costa il doppio quando i codici sono a 2 byte invece che planari**. Il tetto
+teorico della M10 è ~83 GB/s (colonna `ideal` del profilo). Lo span down-20 per layer, comprese le
+fasi host, è **553,6 µs** (plan 3,5 + actq 107 + jobs 6 + run 437); quello down-42 è **374,6 µs**
+(run 258).
+
+### L'ipotesi, e il numero che serve
+
+Se il divario 14,5 vs 28,1 GB/s è **il disallineamento** (non i byte, che sono identici), il down-20
+deve avvicinarsi al tasso del Q2_0. Quanto serve per il criterio? L'IQ3_S a 988 fa **42,7 tok/s** e
+il criterio è **55**, cioè **+28,8%**, cioè **−22,4% di tempo per token**.
+
+Il conto, sulla sola misura (nessuna previsione, solo proporzioni):
+
+| grandezza | valore | fonte |
+|---|---|---|
+| tempo per token a 42,7 tok/s | **23.400 µs** | banco I6 |
+| down-20: 39 layer × 296 µs/L | **11.544 µs = 49,3% del tempo per token** | profilo I6 × calcolo |
+| down-42: 9 layer × 117 µs/L | 1.053 µs | profilo I6 × calcolo |
+
+Metà del tempo per token è il down IQ4_NL: **è la leva, e non ce n'è una seconda**. Togliendo `S` µs
+a ciascuno dei 39 layer down-20, `tok/s = 42,7 · 23.400 / (23.400 − 39·S)`. Per arrivare a 55:
+**S = 134 µs/L**, cioè il down-20 da **296 a 161 µs/L** (14,5 → **26,6 GB/s**).
+
+E qui il numero è scomodo, meglio dirlo adesso: 161 µs/L è il **106% del tasso del Q2_0** applicato
+ai byte del down-20 (152,5 µs a 28,1 GB/s). Il criterio chiede quindi **più di tutto** il dividendo
+della vettorializzazione — un **1,83×** sul down — non una parte:
+
+| down-20 µs/L | GB/s | tok/s attesi | criterio 55 |
+|---|---|---|---|
+| 296 (oggi) | 14,5 | 42,7 (misurato) | FAIL |
+| 250 | 17,1 | 46,2 | FAIL |
+| 220 | 19,5 | 48,9 | FAIL |
+| 182 | 23,5 | 52,7 | FAIL |
+| 161 | 26,6 | 55,1 | **PASS (limite)** |
+| 152,5 (= tasso Q2_0) | 28,1 | 56,1 | PASS |
+| 107 (se il tetto fosse 40 GB/s) | 40,1 | 62,3 | PASS con margine |
+
+Lettura per l'operatore: questa iterazione **non ha margine di sicurezza**. Se la vettorializzazione
+dà metà del dividendo (down ~224, ~19 GB/s) il modello resta intorno a 48 tok/s, sotto il criterio, e
+lo si saprà con un numero. È anche il motivo per cui la LUT in shared resta una variabile separata e
+pronta: potrebbe essere il pezzo che manca dopo questo.
+
+Una nota sulla decomposizione, perché i numeri vadano letti per quello che sono: la somma degli span
+per layer del profilo (39 × 553,6 + 9 × 374,6 = **24.962 µs**) è **6,6% sopra** il tempo per token
+misurato (23.400 µs). Le due cose non sono la stessa grandezza — lo span per scheda comprende attese
+che sul percorso si sovrappongono — quindi il conto qui sopra usa **la misura** come base e il
+profilo solo per la **quota** del down (49,3%). **Ma la sensibilità è alta, e va dichiarata**: sulla
+base del profilo lo stesso criterio chiederebbe **S = 174 µs/L**, cioè un down-20 a **122 µs/L**,
+sotto il tasso del Q2_0. In altre parole: **il criterio cade esattamente al bordo del massimo
+teorico di questa leva**, e se la base vera fosse quella del profilo questa leva da sola non
+basterebbe. È il motivo per cui la verifica (5) misura i µs/MB *prima* di promettere il banco: se il
+down non scende sotto ~160 µs/L, il banco non può dare 55 e non serve spenderlo.
+
+Labelled explicitly: **ipotesi** = il disallineamento è la causa e la vettorializzazione recupera il
+divario; **misura** = le due grandezze della prima tabella e il 42,7 tok/s, che vengono dal profilo e
+dal banco dell'Iterazione 6.
+
+### Il layout
+
+Per riga (FF = 640 valori = 20 blocchi da 32):
+
+| piano | contenuto | byte/riga | allineamento |
+|---|---|---|---|
+| codici | 20 × 16 B di nibble (gli stessi `qs` di oggi) | **320** | 16 B (320 % 16 == 0) |
+| scale | 20 × fp16 (gli stessi `d` di oggi) | **40** | 2 B |
+| **totale** | | **360** | **= 20 × 18, identico al grezzo** |
+
+Per esperto (H = 2560 righe): codici 2560 × 320 = **819.200 B (0,781 MiB)**, scale 2560 × 40 =
+**102.400 B (0,098 MiB)**, totale **921.600 B (0,879 MiB)** — **esattamente i byte di oggi**. Il blob
+non cambia dimensione: `f.bytes` resta valido e il controllo `f.bytes != blob` di
+`expert_layout_load` continua a passare.
+
+Dentro il blob, la regione down resta dove è oggi:
+
+```
+[ 0                    ] gate: 640 righe × gu_row, blocchi GGUF grezzi (INVARIATI)
+[ f.up_off             ] up:   640 righe × gu_row, blocchi GGUF grezzi (INVARIATI)
+[ f.down_off           ] codici: 2560 × 320 B          <- d_codes_off, d_row_stride = 320
+[ f.down_off + 819200  ] scale:  2560 × 40 B           <- d_scales_off, d_scale_stride = 40
+[ ... 921600 B totali  ] nessun padding, nessun byte aggiunto
+```
+
+**Perché i codici prima e le scale dopo** (e non il contrario): così `d_codes_off` resta
+`f.down_off`, che è già il valore provato, e il piano delle scale cade a `+819.200`, anch'esso
+multiplo di 16, senza padding. L'ordine è anche quello che l'S2 usa già per il Q2_0
+(`d_scales_off = down_off + H*ROW_D // S2 planar: codes then scales`): una sola convenzione nel tier.
+
+**L'allineamento a 16 byte è dimostrabile, non sperato.** `native_fmt` calcola
+`down_off = 2 · gu_row · n_ff` con `n_ff = FF = 640`, e `gu_row = (H/256) · block_bytes = 10 · bs`.
+Quindi `down_off = 2 · 10·bs · 640 = 12.800 · bs`, e **12.800 = 16 · 800** → `down_off % 16 == 0` per
+**qualunque** `bs` intero, non solo per quelli di questo pack. Verificato anche sul pack reale:
+**48/48 layer con `down_off % 64 == 0`** — i blocchi in gioco sono sei, `bs` ∈ {62 IQ1_M, 82 IQ2_S,
+86 IQ2_XXS, 98 IQ3_XXS, 110 IQ3_S, 136 IQ4_XS}, tutti pari (e 86 non lo sarebbe stato per un 32: è
+la ragione per cui il multiplo che conta è 16, non 32). Il design aggiunge comunque un **guard a
+runtime in `open()`** che rifiuta con un messaggio esplicito se `d_codes_off % 16 != 0`: un'invariante
+non controllata è un'invariante che un giorno si rompe in silenzio.
+
+### Perché `int4` è lecito qui (e non lo era prima)
+
+`get_int_b2(qs, i)` non legge 2 byte: legge **due** `uint16_t` (`x16[2i]`, `x16[2i+1]`) e li compone
+in una parola da 32 bit. Per blocco sono 4 chiamate → **8 load da 16 bit**. Il compilatore non può
+fonderli, perché dal suo punto di vista il puntatore è a 2 byte (`blk + 2`, dentro una struct da 18 B
+senza `alignas`), e una `LDG.128` su un indirizzo non allineato è un fault, non un rallentamento: è la
+ragione per cui sia `vec_dot_iq4_nl_q8_1` sia `Split<20>` usano `get_int_b2` e non un cast vettoriale.
+
+**Questo non è un'argomentazione: è misurato.** `results/38-down-iq4nl-sass-before.txt` conta le
+istruzioni di memoria dei tre kernel IQ4_NL sull'oggetto del branch (`43c84922`, `cuobjdump -sass`,
+sm_50):
+
+| kernel | istruzioni | `LDG.128` | **`LDG.U16`** | `LDG.U8` |
+|---|---|---|---|---|
+| `expert_iq4nl_down_batch<2,false>` | 540 | 29 | **8** | 3 |
+| `expert_iq4nl_down_batch<2,true>` | 564 | 29 | **8** | 3 |
+| `expert_iq4nl_down_mt<2,128,4>` | 804 | 31 | **8** | 4 |
+
+Gli **8 `U16` per corpo di loop** sono esattamente `get_int_b2` × 4 × 2 half-word: il percorso dei
+codici. Le `LDG.128` già presenti **non** sono i pesi — nel corpo non esiste altro `int4` che la copia
+di `faq` in `iq4nl_stage_act` (`dstq[i] = srcq[i]`, globale→shared) — e le `U8` sono `read_scale`,
+che legge i due byte della fp16 **separatamente** (`scales[b*2]`, `scales[b*2+1]`). Quindi oggi un
+blocco costa **10 load**: 8 × U16 + 2 × U8.
+
+Con il piano planare la base della riga è `d_codes_off + row·320`, con entrambi i termini multipli di
+16, e il blocco `b` sta a `+ b·16`: **un solo `LDG.E.128` per blocco**. I quattro `int32` che ne
+escono sono **gli stessi quattro** che `get_int_b2` componeva, nello stesso ordine, e alimentano lo
+stesso `get_int_from_table_16`: il valore di `p[0..7]` è identico bit per bit, cambia solo come
+arrivano i byte.
+
+Il piano delle scale rende **provabile** anche la seconda metà: `d_scales_off + row·40 + b·2` è a 2
+byte, quindi la fp16 si legge con **una** `LDG.U16` invece di due `U8` — stessi bit, un load. Questo
+usa un helper nuovo (`read_scale_u16`) e **non** modifica `read_scale`, che serve i kernel S2 di
+produzione: toccarlo cambierebbe il SASS del percorso IQ2_XS, che il gate (4) vieta.
+
+Conto per riga: **200 → 40 load** (10 → 2 per blocco), cioè **8 × U16 + 2 × U8 → 1 × 128 + 1 × U16**.
+La riduzione di istruzioni è 5×; quella dei soli codici è 8×, ed è quella che il design rivendica.
+
+**Il contratto d'indice, da non sbagliare.** Nel corpo di oggi il peso si indicizza con
+`(b - blk_base) * 18` mentre l'attivazione con `b * 32` (il loop parte da `b = blk_base + part`): le
+due cose coincidono solo perché `blk_base` è **sempre 0** per il tipo 20 — il tensor split lo rifiuta
+(`maxwell_experts.cpp:257`) e le tre chiamate passano `0, kDBlocksIq4nl`. Il design **conserva questa
+forma esattamente**: codici a `+ (b - blk_base)·16`, scale a `+ (b - blk_base)·2`, attivazioni a
+`+ b·32`. Non è un dettaglio teorico: scrivere `b·16` per i pesi darebbe risultati giusti finché
+`blk_base == 0` e sbagliati il giorno in cui qualcuno abilita lo split — ed è il tipo di errore che
+nessun test attuale vedrebbe, perché tutti passano `blk_base = 0`.
+
+### Cosa cambia, file per file
+
+| file | modifica |
+|---|---|
+| `include/strata/kernels/cuda/expert_maxwell.hpp` | le 3 firme `iq4nl_expert_maxwell_down_{batch,batch_f16,mt}_async` prendono `d_scales_off` e `d_scale_stride`; nuove costanti di geometria `kIq4nlCodesRow = FF·4/8 = 320`, `kIq4nlScalesRow = (FF/32)·2 = 40`; commento d'uso aggiornato |
+| `src/kernels/cuda/expert_maxwell.cu` | `iq4nl_load_block` prende un `int4` invece di un puntatore; nuovo `read_scale_u16` accanto a `read_scale` (che resta intatto, è dei kernel S2); i tre corpi leggono `dc = blob + d_codes_off + row·d_row_stride` come `int4` e la scala da `d_scales_off + row·d_scale_stride + b·2`; **il launcher MT smette di cablare `d_row_stride = 20·18`** (riga 1918) e usa il parametro |
+| `src/core/maxwell_experts.cpp` | `geo` per `d_type == 20`: `d_codes_off = f.down_off`, `d_row_stride = 320`, `d_scales_off = f.down_off + H·320`, `d_scale_stride = 40`; la copia al `open()` sostituisce il `memcpy` verbatim (riga 493) con la conversione planare; guard di allineamento; commento di testa (righe 68–73) riscritto |
+| `include/strata/core/maxwell_experts.hpp` | solo il commento di `LayerGeo`: il tipo 20 non è più "raw" |
+| `src/kernels/cuda/expert_maxwell_iq_parity.cpp` | costruisce il blob **planare** invece di copiare le righe grezze, chiamando **la stessa funzione di conversione di `open()`**; nuovo flag `--dump <file>` per la bit-identità contro HEAD (contratto, punto 3) |
+
+La conversione è una funzione host condivisa (`iq4nl_planarize(src_raw, dst_planar, rows)`), così il
+test di parity esercita **esattamente** il codice che la produzione esegue al load: se il layout è
+sbagliato, il test lo vede; se il test lo vede solo lui, la produzione è salva.
+
+### Il contratto di verifica
+
+1. **La conversione è una permutazione di byte, e si verifica byte per byte**: per ogni riga `r` e
+   blocco `b` di un esperto reale, `planar.codes[r·320 + b·16 .. +16] == raw[r·360 + b·18 + 2 .. +16]`
+   e `planar.scales[r·40 + b·2 .. +2] == raw[r·360 + b·18 .. +2]`, su tutte le 2560 × 20 coppie.
+   Poiché i byte sono gli stessi e l'aritmetica del kernel non cambia, questo è più forte di un
+   round-trip: non c'è nulla da invertire.
+2. **Parity 1e-5 contro `iq_mmvq` tipo 20** sui pesi reali (layer 0, 17, 2, 47 — le quattro
+   combinazioni 18/20, 21/20, 22/20, 23/20) e su sintetico, come in Iterazione 2/3:
+   `maxwell_iq_parity`, check (4) e (4b). Il numero atteso non è "sotto 1e-5": deve restare
+   **lo stesso di oggi** (9,1–9,6e-08).
+3. **Bit-identità vecchio vs nuovo, misurata e non argomentata**: `maxwell_iq_parity` acquisisce un
+   flag `--dump <file>` che scrive il vettore di uscita del down (nt × H float, esadecimale). Si
+   esegue il binario **di HEAD** (blob grezzo, kernel di oggi) e quello **del branch** (blob planare,
+   kernel nuovo) sugli **stessi pesi, le stesse `faq`/`fasc`, lo stesso seed**, e si confrontano i due
+   dump: **0 float diversi**, non 1e-5. È la prova che il layout non ha cambiato i valori, e non
+   richiede di tenere in vita il vecchio kernel (che sarebbe codice morto in produzione). Se questa
+   passa e la (2) peggiora, l'errore è nel layout; se questa fallisce, l'errore è nel load.
+   Il check (4b) del tool copre già la stessa proprietà fra batch, f16 e MT: se lo stride dell'MT
+   restasse cablato a 360, l'MT divergerebbe dal batch **dentro il tool** e il check fallirebbe.
+4. **SASS**: le istanze dell'S2 (`expert_s2_stage2_batch_v2` 5, `expert_s2_stage2_mt_batch` 1,
+   `expert_s2_stage1` 7, `expert_s2_stage2` 8) e le 66 delle 22/16/29 **bit-identiche** allo stesso
+   metodo dell'Iterazione 2 (`cuobjdump -sass`, normalizzando solo l'hash del namespace anonimo).
+   Il kernel IQ4_NL **deve** cambiare: è la variabile. Sul kernel nuovo, contro la baseline
+   `results/38-down-iq4nl-sass-before.txt`: **`LDG.U16` sul percorso dei codici = 0** (oggi 8; le
+   U16 che restano sono le 20 scale, una per blocco) e **`LDG.128` nel corpo dei pesi presente** (oggi
+   il corpo non ne ha nessuna). Se il compilatore non emette la vettoriale, il layout da solo non
+   serve e va detto prima di misurare.
+5. **µs/MB del down con `STRATA_MW_LAYERPROF=1`**, prima/dopo, **nella stessa finestra** (la
+   profilazione costa il 4,7%: un confronto fra finestre diverse non è un confronto). Si leggono
+   `down20 down us/L`, `MB/L` e il `kernel` per scheda, come nella tabella della misura da battere.
+6. **Banco città+codice A/B nella stessa finestra**, 3 run per label, senza LAYERPROF, contro il
+   criterio: media delle 6 run ≥ **55 tok/s**. Le due configurazioni sono **due binari** (HEAD e
+   branch, stessa config 988) alternati nella stessa finestra, come in Iterazione 6.
+
+### Risultato atteso (dichiarato come ipotesi)
+
+- **Da 296 a ≤161 µs/L** il down-20 (14,5 → ≥26,6 GB/s): è il minimo per il criterio, e non c'è
+  margine — è il 106% del tasso del Q2_0.
+- Se il disallineamento era l'unica causa e si raggiunge il tasso del Q2_0: 152,5 µs/L, ~56 tok/s.
+  Se il tetto vero fosse 40 GB/s (107 µs/L), ~62 tok/s.
+- Se resta a 296: la causa non era il load. Il codice resta comunque in uno stato in cui la prossima
+  variabile (la LUT in shared) si misura da sola.
+- **Soglia di stop dichiarata prima di misurare**: se il down-20 non scende sotto **~200 µs/L**
+  (misura 5), il banco (6) non può dare 55 e non si spende. Se scende sotto ~161, il banco si fa.
+
+### Cosa questo design non fa
+
+- **Non tocca la LUT `get_int_from_table_16`**: la variante con `kvalues_iq4nl` in shared come
+  `uint32_t` è una **variabile separata**, da valutare dopo, quando questo layout sarà chiuso. Qui la
+  LUT è già in shared (`shl`, 16 B) e la funzione non cambia.
+- **Non tocca il percorso di produzione Q2_0**: né i kernel S2, né la loro geometria, né il blob
+  canonico. Il gate è il SASS (punto 4).
+- **Non tocca** l'aritmetica, l'ordine di riduzione, il numero di thread/blocchi, lo staging delle
+  attivazioni (`int4`, già così), l'arrotondamento fp16 di `fasc`, `GPUFLAG`, `PERSIST`, il tensor
+  split (che già rifiuta il tipo 20), la cache 988, la potenza.
+- **Non tocca `read_scale`**, che serve i kernel S2 di produzione: la lettura a `uint16_t` della fp16
+  è un helper nuovo usato solo dai kernel IQ4_NL, così il SASS del percorso IQ2_XS resta identico.
+- **Non aggiunge VRAM**: 921.600 B per esperto prima e dopo.
+
+### Rischi aperti
+
+| # | rischio | mitigazione |
+|---|---|---|
+| R1 | `d_codes_off` non a 16 byte su un pack futuro | dimostrato `12.800·bs`; guard a runtime in `open()` che rifiuta |
+| R2 | il launcher MT cabla ancora `20·18` (riga 1918) | è nella tabella dei file: se sfugge, l'MT legge a stride sbagliato e il test (3) lo prende |
+| R3 | il tool di parity copia righe grezze | usa la funzione condivisa, non una copia del layout |
+| R4 | altri lettori della regione down | verificato: `mwdown::{batch,batch_f16,mt}` sono gli unici, tutti via `g.d_*`; `PERSIST` declina il tipo 20, `GPUFLAG` lo rifiuta, il tensor split lo rifiuta |
+| R5 | il piano delle scale a 40 B/riga non è 16-allineato | non serve: la fp16 si legge a 2 byte con **una** `LDG.U16` (`read_scale_u16`, nuovo), e il `d` è copiato **verbatim**. `read_scale` resta intatto per non toccare il SASS dell'S2 |
+| R6 | il compilatore non emette `LDG.128` | controllo esplicito nel SASS del kernel nuovo (punto 4), prima di misurare |
+| R7 | indice dei pesi scritto come `b·16` invece di `(b - blk_base)·16` | innocuo finché `blk_base == 0` (sempre, oggi) e sbagliato se un domani lo split si abilita: il design conserva la forma, e il commento nel kernel lo dice |
 
 ---
