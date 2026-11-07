@@ -1207,11 +1207,13 @@ sulla cache (≈746 MiB liberi, sotto il target).
 
 La cache non è una copia ridondante: è **l'altra metà della partizione**. Ridurla non «sposta»
 esperti sulle M10 — glieli aggiunge: a 988 i die passano da 5,424–5,450 a **5,539–5,563 GiB**
-(+~118 MiB per die, aritmetica del modello validato). Le M10 hanno ~2,3–2,5 GiB liberi per die,
-quindi lo assorbono senza OOM; il prezzo è che i pair meno caldi escono dalla cache della 3060 e
-passano al percorso M10. Il commento del motore dà ~50 µs/espte sul hit della 3060 contro ~17 µs
-aggregati sulle M10 (numeri del motore, non di questa campagna): se regge, il trade-off potrebbe
-essere **favorevole** — ma è un'ipotesi da misurare, non un risultato.
+(+~118 MiB per die, aritmetica del modello validato). Il margine per die non è stato misurato in
+questa campagna: con 8 GiB per scheda e 5,45 GiB di esperti resta **almeno** il reserve di 250 MiB
+più il resto, quindi ~118 MiB in più per die sono assorbiti senza OOM — ma la finestra lo verifica
+con `nvidia-smi` per die, non lo assume. Il prezzo è che i pair meno caldi escono dalla cache della
+3060 e passano al percorso M10. Il commento del motore dà ~50 µs/espte sul hit della 3060 contro
+~17 µs aggregati sulle M10 (numeri del motore, non di questa campagna): se regge, il trade-off
+potrebbe essere **favorevole** — ma è un'ipotesi da misurare, non un risultato.
 
 **Cosa chiedo all'operatore**: confermare il valore. La finestra misura **988** (l'unico che
 soddisfa «≥1 GB»), e se preferisce 1600 lo misura lo stesso — servirà a dimostrare che peggiora.
