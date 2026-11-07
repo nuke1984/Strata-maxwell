@@ -1,0 +1,13 @@
+# Iterazione 3 - finestra operativa: AER prima e dopo (2026-11-07)
+
+Solo i dispositivi con un contatore non zero; tutte le GPU a 0 in ogni istante.
+
+```
+prima della finestra (produzione su):          0000:09:11.0 cor=3
+dopo il test IQ2_XS (motore NEW):              0000:09:11.0 cor=3
+dopo il test IQ3_S (motore NEW):               0000:09:11.0 cor=3
+dopo il riavvio della produzione IQ2_XS:       0000:09:11.0 cor=3
+```
+
+09:11.0 e' un bridge PLX 8747 (10b5:8747), non una GPU: il contatore era gia' 3 prima della
+finestra e non si e' mosso. Nessun errore corretto o non corretto su 03:00.0-0d:00.0.

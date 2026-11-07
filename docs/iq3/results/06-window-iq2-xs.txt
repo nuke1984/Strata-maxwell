@@ -1,0 +1,44 @@
+# Iterazione 3 - finestra operativa: non regressione IQ2_XS con il motore NEW (2026-11-07)
+# confronto contro la baseline Iterazione 0 / engine 0.1.51 (results/00-baseline.txt)
+
+## 1. round-trip gate: NEW engine vs baseline 0.1.51
+
+```
+IDENTICAL: 24 of 24 (device, layer, expert, type, rel)
+```
+
+sha256 both files: 66a7dabadf8025c083d86e7addd8a0bab7ce71a348f6e08bea8c4c50892a58d5 
+
+## 2. load summary, NEW engine, IQ2_XS
+
+```
+strata generate: expert cache 1874 slots, 2.53 GiB of VRAM; policy is
+strata generate: pre-filled 1874 of 1874 slots from the profile in 16.7 s (163 MB/s); slot 0 verified
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.22e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 1: 2838 experts, 3.82 GiB (filled in 110.8 s)
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.24e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 2: 2838 experts, 3.81 GiB (filled in 78.0 s)
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.26e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 3: 2838 experts, 3.81 GiB (filled in 61.6 s)
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.17e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 4: 2838 experts, 3.80 GiB (filled in 59.0 s)
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.21e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 5: 2838 experts, 3.81 GiB (filled in 66.0 s)
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 6: 2838 experts, 3.81 GiB (filled in 70.6 s)
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.23e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 7: 2837 experts, 3.81 GiB (filled in 71.1 s)
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.12e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 8: 2837 experts, 3.81 GiB (filled in 71.4 s)
+strata serve: 2242 MiB of VRAM free with everything loaded
+```
+
+## 3. decode, 600 tokens, the same prompt as the Iterazione 0 baseline
+
+```
+strata serve: prompt 84 tokens = 0 reused + 84 read in 905 ms (92.8 tok/s), 600 generated in 12643 ms (47.5 tok/s), drafts accepted 276 of 416, 1 checkpoints
+strata serve: prompt 84 tokens = 79 reused + 5 read in 221 ms (22.6 tok/s), 600 generated in 12079 ms (49.7 tok/s), drafts accepted 292 of 442, 1 checkpoints
+```
+
+Baseline 0.1.51 (results/00-baseline.txt): 47.3 / 48.5 tok/s
+NEW engine: 47.5 / 49.7 tok/s

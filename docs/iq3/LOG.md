@@ -14,6 +14,8 @@ Indice:
 - [Iterazione 1 — censimento dei formati](#iterazione-1--censimento-dei-formati)
 - [Iterazione 2 — gate/up IQ3_XXS / IQ3_S / IQ4_XS](#iterazione-2--gateup-iq3_xxs--iq3_s--iq4_xs)
 - [Iterazione 3 — design: down IQ4_NL nativo (da rivedere prima del codice)](#iterazione-3--design-down-iq4_nl-nativo-da-rivedere-prima-del-codice)
+- [Iterazione 3 — implementazione e verifiche di kernel (misurato)](#iterazione-3--implementazione-e-verifiche-di-kernel-misurato-2026-11-07)
+  — con la [finestra operativa](#finestra-operativa-misurato-2026-11-07) in coda
 
 ---
 
@@ -688,10 +690,14 @@ comunque. Il test SASS dell'Iterazione 2 non poteva vederlo: è una condizione h
 4. **Memoria**: nessuna crescita (i blob sono già IQ4_NL). Da misurare al load: GiB/die e numero di
    esperti residenti, che con ~5,4–5,9 GiB/die sarà più basso dei 2838 dell'IQ2_XS.
 
+**Esito.** Tutti e quattro i punti verificati; i numeri misurati sono nella sezione seguente, la
+misura al load (punto 4) nella «Finestra operativa».
+
 ## Iterazione 3 — implementazione e verifiche di kernel (misurato, 2026-11-07)
 
-Stato: **codice completo e verde su parity sintetica, parity su pesi reali e SASS.** Restano la
-non-regressione IQ2_XS sul load completo e il primo load IQ3_S (sezione «Finestra operativa»).
+Stato: **codice completo e verde su parity sintetica, parity su pesi reali e SASS, e la finestra
+operativa è stata eseguita: IQ2_XS non regredisce, IQ3_S carica e risponde.** Dettagli nella sezione
+«Finestra operativa» in coda a questa voce.
 
 ### Cosa è stato scritto
 
@@ -804,3 +810,74 @@ gli stessi argomenti di prima, ed è ciò che il confronto SASS verifica.
   Q2_0).
 
 → **Iterazione 3: kernel e parity chiusi. Restano non-regressione IQ2_XS e primo load IQ3_S.**
+
+### Finestra operativa (misurato, 2026-11-07)
+
+Protocollo dell'operatore, eseguito nell'ordine dato. Nessuna variante al volo. Config di finestra
+(restano sul server, contengono l'api_key): `strata-iq2-xs-i3-after.json` e `strata-iq3_s-i3.json`,
+entrambi con `exe /root/Strata-iq3/build-iq3/strata`, `--maxwell-devices 1,2,3,4,5,6,7,8`,
+`--maxwell-reserve-mib 250` e i sei `STRATA_MW_*` della produzione. Il confronto è con la baseline
+**Iterazione 0 / engine 0.1.51**, non con 0.1.47.
+
+**Passo 0 — commit prima della finestra.** Codice e risultati 03/04/05 committati e pushati su
+`origin/iq3` (`0afed9e0`) prima di toccare la produzione; il worktree server ha lo stesso albero
+(`d067dbf0`, tree `32e8d207`).
+
+**Passo 1 — non regressione IQ2_XS con il motore NEW.** Output in `results/06-window-iq2-xs.txt`,
+log completo in `docs/iq3/window-iq2-xs-i3-after.txt`.
+
+| controllo | baseline 0.1.51 | motore NEW | esito |
+|---|---|---|---|
+| righe per layer del round-trip gate | 24 campioni | **24/24 identici**, stesso sha256 | PASS |
+| `round-trip gate PASSED` | 8 | **8** | PASS |
+| esperti per die | 2838 ×6, 2837 ×2 | **2838 ×6, 2837 ×2** | PASS |
+| GiB per die | 3.80–3.82 | **3.80–3.82** | PASS |
+| slot cache 3060 | 1874 | **1874** | PASS |
+| MiB liberi | 2246 | **2242** | PASS (−4 MiB, rumore) |
+| "tramonto", 600 tok | 47.3 / 48.5 tok/s | **47.5 / 49.7 tok/s** | PASS |
+
+Il gate è bit-identico, non solo "entro la tolleranza": le 24 tuple `(device, layer, expert, tipo)`
+e i loro `rel` coincidono al terzo decimale. È la verifica che il dedup a `(gu_type, d_type)` non
+ha spostato la scelta dei campioni su IQ2_XS (tutti i suoi layer hanno `d_type 42`).
+
+Il prompt è quello esatto della baseline, recuperato dalla sessione che l'ha eseguito:
+*"Elenca in modo prolisso e dettagliato 200 modi diversi di descrivere un tramonto, uno per riga,
+senza ripeterti."*, `temperature 0`, `max_tokens 600`, due run a caldo. Il conteggio del prompt
+(84 token in ingresso) coincide con la baseline, quindi la misura è A/B a parità di tutto.
+
+**Passo 2 — primo load IQ3_S.** Output in `results/07-window-iq3_s.txt`, log completo in
+`docs/iq3/window-iq3_s-i3.txt`. Motore NEW, pack `/root/Strata-data/packs/iq3_s`
+(`experts.bin` 50.292.326.400 B, il totale previsto dal design).
+
+| controllo | misurato | esito |
+|---|---|---|
+| `round-trip gate PASSED` | **8/8** | PASS |
+| campioni del gate | **56** = 7 combinazioni × 8 die | PASS |
+| esperti per die | 2854 ×3, 2853 ×5 | — |
+| GiB per die | **5.42–5.45** | conforme all'ipotesi (5.41 al minimo) |
+| slot cache 3060 | **1749** | — |
+| MiB liberi con tutto caricato | **396** | nessun OOM |
+| caricamento | 213 s fino a `/health` | — |
+| risposta di prova, 600 tok | **40.0 tok/s** client (42.9 dal motore) | — |
+
+I 56 campioni coprono le **7 combinazioni** del pack: 18/20, 18/42, 21/20, 21/42, 22/20, 22/42,
+23/20. La riga del gate stampa solo il tipo gate/up, ma il dedup è su `(gu_type, d_type)` e il
+conteggio per die è esattamente 7, quindi tutte e sette — incluse le quattro nuove col down 20
+(18/20, 21/20, 22/20, 23/20) — sono state campionate. `worst rel` per die: 1.00e-02 … 1.27e-02,
+nello stesso intervallo della baseline IQ2_XS.
+
+**Passo 3 — errori.** Nessun gate fallito, nessun errore, nessun OOM. Il ramo di stop non è stato
+usato.
+
+**Passo 4 — produzione ripristinata.** `systemctl start strata`, 651 s fino a `/health`, servizio
+`active` (PID 17340), `model qwen3.8-flash-next-iq2_xs`, **8 tier** con gate PASSED, 1874 slot,
+**2246 MiB** liberi — gli stessi valori di prima della finestra.
+
+**AER.** `results/08-window-aer.txt`. Sole `0000:09:11.0` (bridge PLX 8747, non una GPU) a **3**
+prima, durante e dopo; tutte le GPU `0000:03:00.0`–`0d:00.0` a **0** in ogni istante. Il contatore
+non si è mosso in tutta la finestra.
+
+**Nota di metodo.** IQ3_S caricato **non** come servizio ma con il server di test (`up.sh` /
+`gate_run.sh`) sulla porta 8080, produzione ferma e schede rilasciate prima di ogni load
+(verificato con `nvidia-smi`: 0 MiB usati su tutte e 9 le schede). La produzione è tornata su con
+il suo `strata.service` e il suo config originali, mai modificati.

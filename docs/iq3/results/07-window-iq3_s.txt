@@ -1,0 +1,104 @@
+# Iterazione 3 - finestra operativa: primo load IQ3_S con il motore NEW (2026-11-07)
+# motore: /root/Strata-iq3/build-iq3/strata (0.1.51 + Iterazione 3), config strata-iq3_s-i3.json
+# pack: /root/Strata-data/packs/iq3_s (experts.bin 50292326400 B, il valore previsto dal design)
+
+## gate: 8 die, 7 campioni per die = le 7 combinazioni (gate/up, down) del pack
+
+```
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 1: 2854 experts, 5.45 GiB (filled in 22.8 s)
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.26e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 2: 2854 experts, 5.44 GiB (filled in 23.4 s)
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 3: 2854 experts, 5.43 GiB (filled in 23.2 s)
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.19e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 4: 2853 experts, 5.44 GiB (filled in 23.7 s)
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.18e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 5: 2853 experts, 5.43 GiB (filled in 23.2 s)
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 6: 2853 experts, 5.43 GiB (filled in 23.5 s)
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.27e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 7: 2853 experts, 5.43 GiB (filled in 23.9 s)
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.28e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 8: 2853 experts, 5.42 GiB (filled in 24.1 s)
+```
+
+## slot e VRAM
+
+```
+strata generate: expert cache auto: 4.59 GiB free, 700 MiB reserved (+220 MiB for the draft head) -> 1357 slots
+strata generate: expert cache 1749 slots, 3.36 GiB of VRAM; policy is
+strata serve: 396 MiB of VRAM free with everything loaded
+strata serve: decode expert cache hit rate: 100.0% (13538 hits / 13538 lookups); 91582 more read by the GPU over PCIe or from another GPU (87.1% of all 105120 routed)
+strata serve: decode expert cache hit rate: 100.0% (86112 hits / 86112 lookups); 289248 more read by the GPU over PCIe or from another GPU (77.1% of all 375360 routed)
+```
+
+## campioni del gate (56: device, layer, expert, tipo gate/up, rel)
+
+```
+CUDA1	9	245	iq2_s	1.180e-02
+CUDA1	12	218	iq3_xxs	1.110e-02
+CUDA1	13	334	iq2_s	1.190e-02
+CUDA1	21	48	iq3_s	1.070e-02
+CUDA1	27	402	iq3_s	1.160e-02
+CUDA1	46	239	iq3_xxs	1.230e-02
+CUDA1	47	272	iq4_xs	1.270e-02
+CUDA2	1	229	iq2_s	1.120e-02
+CUDA2	11	207	iq2_s	1.130e-02
+CUDA2	12	432	iq3_xxs	1.070e-02
+CUDA2	21	298	iq3_s	1.110e-02
+CUDA2	27	449	iq3_s	1.100e-02
+CUDA2	38	414	iq3_xxs	1.150e-02
+CUDA2	47	416	iq4_xs	1.260e-02
+CUDA3	3	289	iq2_s	1.040e-02
+CUDA3	10	378	iq2_s	1.100e-02
+CUDA3	12	127	iq3_xxs	1.270e-02
+CUDA3	21	56	iq3_s	1.000e-02
+CUDA3	29	427	iq3_s	1.150e-02
+CUDA3	38	273	iq3_xxs	1.010e-02
+CUDA3	47	55	iq4_xs	1.260e-02
+CUDA4	3	408	iq2_s	1.130e-02
+CUDA4	10	328	iq2_s	1.130e-02
+CUDA4	12	98	iq3_xxs	1.050e-02
+CUDA4	16	332	iq3_xxs	1.060e-02
+CUDA4	17	499	iq3_s	1.060e-02
+CUDA4	21	150	iq3_s	1.190e-02
+CUDA4	47	27	iq4_xs	1.150e-02
+CUDA5	4	257	iq2_s	1.060e-02
+CUDA5	13	318	iq2_s	1.100e-02
+CUDA5	20	95	iq3_xxs	1.130e-02
+CUDA5	21	115	iq3_s	1.180e-02
+CUDA5	41	145	iq3_xxs	1.180e-02
+CUDA5	45	324	iq3_s	9.290e-03
+CUDA5	47	269	iq4_xs	1.030e-02
+CUDA6	4	414	iq2_s	1.200e-02
+CUDA6	8	204	iq2_s	1.090e-02
+CUDA6	20	436	iq3_xxs	1.110e-02
+CUDA6	21	369	iq3_s	1.140e-02
+CUDA6	35	24	iq3_s	1.160e-02
+CUDA6	37	88	iq3_xxs	1.120e-02
+CUDA6	47	281	iq4_xs	1.160e-02
+CUDA7	5	297	iq2_s	1.100e-02
+CUDA7	8	414	iq2_s	1.210e-02
+CUDA7	21	100	iq3_s	1.160e-02
+CUDA7	30	203	iq3_xxs	1.270e-02
+CUDA7	35	127	iq3_s	1.120e-02
+CUDA7	37	168	iq3_xxs	1.120e-02
+CUDA7	47	349	iq4_xs	1.200e-02
+CUDA8	6	281	iq2_s	1.160e-02
+CUDA8	8	292	iq2_s	1.100e-02
+CUDA8	21	54	iq3_s	1.090e-02
+CUDA8	27	103	iq3_s	1.140e-02
+CUDA8	30	241	iq3_xxs	1.210e-02
+CUDA8	37	340	iq3_xxs	1.280e-02
+CUDA8	47	407	iq4_xs	1.180e-02
+```
+
+## risposta di prova
+
+```
+strata serve: prompt 67 tokens = 0 reused + 67 read in 1110 ms (60.4 tok/s), 147 generated in 3728 ms (39.4 tok/s), drafts accepted 88 of 158, 1 checkpoints
+strata serve: prompt 84 tokens = 0 reused + 84 read in 996 ms (84.3 tok/s), 600 generated in 13995 ms (42.9 tok/s), drafts accepted 322 of 504, 1 checkpoints
+```
+
+client: 600 tok in 15.0 s = 40.0 tok/s; smoke 200 tok = 30.3 tok/s
