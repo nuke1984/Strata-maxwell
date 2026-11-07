@@ -160,7 +160,8 @@ systemctl start strata
 - Decode nel range 65–68,7 tok/s e prefill ~181 tok/s (nuova baseline: il numero che esce, se i gate
   sono verdi, è la reference per le iterazioni successive). Se un gate fallisce o i tier sono meno
   di 8, **fermarsi** e riportare il log: non misurare la velocità.
-- AER: 0 durante il test.
+- AER: annotare il contatore `TOTAL_ERR_COR` su `0000:09:11.0` **prima e dopo** il test (nessuna
+  indagine in questa iterazione).
 
 **Risultato misurato.** (2026-11-07, aidrogen; output completo in `docs/iq3/results/00-baseline.txt`)
 
@@ -172,7 +173,7 @@ esperti e GiB per die:        2838 (CUDA1-6), 2837 (CUDA7-8); 3.80-3.82 GiB
 slot 3060 / MiB liberi:       1874 slot / 2246 MiB
 prefill (tok/s):              173.8 / 178.6 / 178.7   (media 177.0)
 decode (tok/s):               dipende dal prompt, vedi sotto
-AER:                          2 correctable, entrambi sul PCIe switch PLX 8747 (09:11.0), 0 sulle GPU
+AER:                          0 prima dei test, 2 dopo; entrambi sul PLX 8747 (09:11.0), 0 sulle GPU
 ```
 
 **A/B a parità di tutto (l'unica misura di decode valida).** Stesso config, stessi
@@ -188,11 +189,21 @@ prompt, stessa macchina, stesso stato termico: cambia solo l'eseguibile.
 del brief (IQ2_XS invariato) è soddisfatto.
 
 **Perché il decode non è 65-68,7 e perché non è una regressione.** Il numero assoluto dipende
-dall'accettazione delle draft, quindi dal testo generato: nel run di riferimento del 6 novembre
+dall'accettazione delle draft, quindi dal testo generato. Nel run di riferimento del 6 novembre
 (1801 tok, 68.6 tok/s) le draft accettate erano **1273 su 1687 (75,5%)**; con i prompt di oggi
-sono **727 su 1007 (72,2%)**. I run brevi da 300-600 token danno 45-49 tok/s **anche sul motore
-0.1.47**, quindi il dato storico non è riproducibile senza la richiesta esatta del PI agent.
-Il valore di riferimento per le iterazioni successive è la colonna 0.1.51 di questa tabella.
+sono **727 su 1007 (72,2%)**. La differenza di accettazione vale **~9%**: con `--spec 6` una
+finestra costa ~3,5 token accettati al 75,5% e ~3,2 al 72,2%, non il 25-35% che separa 68,6 da
+~50 tok/s. Il resto della distanza **non è spiegato dal tasso di accettazione** e va cercato
+altrove.
+
+**Ipotesi (da verificare).** Il tipo di testo guida sia l'accettazione delle draft sia il routing
+degli expert: il 5 novembre, con lo stesso motore, abbiamo misurato **città ~67, codice ~65,
+prosa ~51,5 tok/s**. I prompt di oggi (elenco di modi per descrivere un tramonto, racconto
+libero) sono più vicini alla prosa che alla città, e i run brevi da 300-600 token danno 45-49
+tok/s **anche sul motore 0.1.47**. Questa è un'ipotesi, non una misura: per confermarla serve lo
+stesso banco fisso su città/codice/prosa, rimandato all'Iterazione 5 (A/B IQ2_XS vs IQ3_S nella
+stessa sessione). Il valore di riferimento per le iterazioni successive è la colonna 0.1.51 di
+questa tabella, a parità di prompt.
 
 **Nota di metodo sulla build.** Il checkout di produzione (`/root/Strata-maxwell`, branch `mw8`,
 motore 0.1.47) è stato lasciato intatto: la build è stata fatta in un worktree separato
@@ -204,6 +215,17 @@ preesistenti: `-Wrestrict`, `-Wunused-variable`, `-Wsign-compare`), 0 errori.
 → Ipotesi: **CONFERMATA** sulla capacità (8 tier, 8 gate, tempi di caricamento, prefill nel
 range). **SMENTITA** nella forma "decode 65-68,7 entro il rumore": il decode è ~47-55 tok/s con
 i prompt usati, su **entrambi** i motori. La causa è l'accettazione delle draft, non il codice.
+
+**AER — osservazione da seguire (non una spiegazione).** Il 5 novembre, a Gen1, il contatore AER
+era **0**. Il 7 novembre, durante i test di questa iterazione, sono comparsi **due** eventi
+`Correctable error message received` e il contatore è poi salito a **3**. Sono tutti su
+`0000:09:11.0`, che da `lspci -tv` è una **porta downstream del PLX 8747**; il figlio è
+`0000:0d:00.0` = **M10 indice 8 (CUDA8)**. Il registro interessato è `RxErr`
+(`TOTAL_ERR_COR 3`, fatal 0, nonfatal 0, tutte le altre classi 0) e **tutte le GPU hanno
+contatori AER a 0**. Non è quindi "coerente con il workaround Gen1": è un cambiamento rispetto
+al 5 novembre e va tenuto sotto osservazione. Da questa iterazione in poi si registra il
+contatore **prima e dopo ogni test** (comando in `docs/iq3/results/00-baseline.txt`); nessuna
+indagine oltre a questo, salvo peggioramento.
 
 ---
 
