@@ -8,13 +8,18 @@ its own engine-log line, so the tok/s and the accepted drafts come from the engi
         --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json --texts-out docs/iq3/results/10-quality-iq3_s.md
 
 The texts of the city and code prompts are written to --texts-out (first run of each: temperature 0), for the operator
-to compare IQ2_XS against IQ3_S.
+to compare IQ2_XS against IQ3_S. Every category is reported as mean, median and the first run kept apart (the run right
+after a load is the cold one), plus the accepted drafts summed over the runs.
 
 Two more modes, same server and same log parsing:
 
     --long-context 32k,64k   one haystack prompt per length, a code word hidden in it, short answer; reports the
                              prompt's real token count, prefill and decode tok/s, and the free VRAM after.
-    --soak-minutes 10        back-to-back city prompts until the time is up; reports the run count and the mean.
+    --soak-minutes 10        back-to-back city prompts until the time is up; reports the run count, mean, median,
+                             first and last run and the drift.
+
+Any HTTP or network error stops the run with a "*** STOP" line carrying the server's message and the tail of the engine
+log; the JSON written so far stays on disk. OOM is called out by name. The exit status is 2.
 
 The api key never appears on the command line: give --api-key-json FILE (field api_key) or --api-key-env NAME, and the
 key is read there. A missing key is not fatal: the tool then sends no Authorization header.
@@ -55,6 +60,11 @@ SOURCES = [("docs", "*.md"), ("src", "*.cpp"), ("src", "*.cu"), ("include", "*.h
 WORDS = ["amber", "falcon", "quartz", "willow", "copper", "harbor", "saffron", "glacier", "orchid", "lantern",
          "meadow", "cobalt", "juniper", "tundra", "velvet", "ember"]
 CHARS_PER_TOKEN = 3.2
+OOM_HINTS = ("out of memory", "cuda error", "failed to allocate", "oom")
+
+
+class BenchFailure(RuntimeError):
+    """The server refused or broke a run: stop the bench, keep what was measured."""
 
 
 def read_key(args) -> str:
@@ -98,8 +108,16 @@ def ask(url: str, key: str, prompt: str, max_tokens: int, timeout: float) -> tup
     req = urllib.request.Request(url.rstrip("/") + "/v1/chat/completions", data=json.dumps(body).encode(),
                                  headers=headers)
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        out = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            out = json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:2000]
+        raise BenchFailure(f"HTTP {exc.code} from the server: {detail}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise BenchFailure(f"could not reach the server: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise BenchFailure(f"the server's reply is not JSON: {exc}") from exc
     return out, time.time() - t0
 
 
@@ -140,8 +158,35 @@ def stats(values: list[float]) -> str:
         return "n/a"
     if len(values) == 1:
         return f"{values[0]:.1f}"
-    return (f"{statistics.fmean(values):.1f} (stdev {statistics.stdev(values):.1f}, "
-            f"min {min(values):.1f}, max {max(values):.1f})")
+    return (f"mean {statistics.fmean(values):.1f}, median {statistics.median(values):.1f}, "
+            f"stdev {statistics.stdev(values):.1f}, min {min(values):.1f}, max {max(values):.1f}")
+
+
+def summary(label: str, values: list[float]) -> str:
+    """Mean, median and the first run kept apart: the first run after a load is the cold one."""
+    if not values:
+        return f"{label:<5}: n/a"
+    first = f"{values[0]:.1f} (run 1, cold)"
+    if len(values) == 1:
+        return f"{label:<5}: first {first}"
+    return (f"{label:<5}: mean {statistics.fmean(values):.1f}, median {statistics.median(values):.1f}, "
+            f"first {first}, stdev {statistics.stdev(values):.1f}, min {min(values):.1f}, "
+            f"max {max(values):.1f}")
+
+
+def save_rows(path: str, rows: list[dict]) -> None:
+    if path:
+        Path(path).write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+def tail_text(path: str, nbytes: int = 4000) -> str:
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            fh.seek(max(0, size - nbytes))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
 
 
 def build_haystack(n_chars: int) -> str:
@@ -190,13 +235,21 @@ def main() -> int:
 
     def run_one(label: str, prompt: str, max_tokens: int) -> dict:
         nonlocal mark
-        out, secs = ask(a.url, key, prompt, max_tokens, a.timeout)
+        try:
+            out, secs = ask(a.url, key, prompt, max_tokens, a.timeout)
+        except BenchFailure as exc:
+            low = str(exc).lower()
+            kind = "OOM" if any(h in low for h in OOM_HINTS) else "ERROR"
+            tail = tail_text(a.engine_log)
+            raise BenchFailure(f"{kind} during {label}: {exc}\n--- engine log tail ---\n{tail}") from exc
         d, mark = read_log_tail(a.engine_log, mark)
         usage = out.get("usage") or {}
         row = {"label": label, "engine": d, "seconds": round(secs, 2),
                "generated": int(usage.get("completion_tokens") or 0),
                "client_tps": round((usage.get("completion_tokens") or 0) / secs, 1) if secs > 0 else 0.0,
                "text": answer_text(out)}
+        rows.append(row)
+        save_rows(a.json, rows)   # whatever was measured survives a stop
         return row
 
     if a.long_context:
@@ -214,7 +267,7 @@ def main() -> int:
             row["target"] = spec
             row["needle"] = word
             row["found"] = word in row["text"]
-            rows.append(row)
+            save_rows(a.json, rows)
             d = row["engine"]
             vram = free_vram(a.vram_gpu)
             if d is None:
@@ -223,9 +276,7 @@ def main() -> int:
                 print(f"{spec:>5}: prompt {d['prompt_tokens']:,} tok, prefill {d['prefill_tps']:.1f} tok/s "
                       f"({d['prefill_ms']} ms), decode {d['decode_tps']:.1f} tok/s, "
                       f"needle {'FOUND' if row['found'] else 'MISSED'}"
-                      + (f", 3060 {vram} MiB free" if vram is not None else ""))
-        if a.json:
-            Path(a.json).write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8")
+                      + (f", 3060 {vram} MiB free" if vram is not None else ""), flush=True)
         missed = [r for r in rows if not r.get("found")]
         return 0 if rows and not missed else 1
 
@@ -237,16 +288,18 @@ def main() -> int:
         while time.time() < deadline:
             i += 1
             row = run_one("soak", CITY, 300)
-            rows.append(row)
             d = row["engine"]
             tps = d["decode_tps"] if d else row["client_tps"]
             speeds.append(tps)
+            vram = free_vram(a.vram_gpu)
             print(f"run {i:>3}: {tps:6.1f} tok/s, {row['generated']} tok" +
-                  (f", 3060 {free_vram(a.vram_gpu)} MiB free" if free_vram(a.vram_gpu) is not None else ""),
+                  (f", 3060 {vram} MiB free" if vram is not None else ""),
                   flush=True)
-        print(f"{i} runs, mean {stats(speeds)} tok/s")
-        if a.json:
-            Path(a.json).write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8")
+        print()
+        print(f"{i} runs, {stats(speeds)} tok/s")
+        if speeds:
+            print(f"first {speeds[0]:.1f} (run 1, cold), last {speeds[-1]:.1f} "
+                  f"(drift {speeds[-1] - speeds[0]:+.1f} tok/s)")
         return 0
 
     print(f"# fixed bench, {a.label}, {a.url}, temperature 0, max_tokens {a.max_tokens}, {a.runs} runs each")
@@ -255,27 +308,35 @@ def main() -> int:
     if not chosen:
         raise SystemExit(f"--labels {a.labels!r} names no fixed prompt (city, code, prose)")
     by_label: dict[str, list[float]] = {}
+    drafts: dict[str, list[tuple[int, int]]] = {}
     texts: dict[str, str] = {}
     for label, prompt in chosen:
         by_label[label] = []
+        drafts[label] = []
         for i in range(1, a.runs + 1):
             row = run_one(label, prompt, a.max_tokens)
-            rows.append(row)
             d = row["engine"]
             tps = d["decode_tps"] if d else row["client_tps"]
             by_label[label].append(tps)
+            if d:
+                drafts[label].append((d["drafts_accepted"], d["drafts_total"]))
             vram = free_vram(a.vram_gpu)
             print(fmt_row(label, i, row, row["seconds"], vram), flush=True)
             if i == 1:
                 texts[label] = row["text"]
     print()
     for label, _ in chosen:
-        print(f"{label:<5}: {stats(by_label[label])} tok/s")
+        print(summary(label, by_label[label]) + " tok/s")
+        if drafts[label]:
+            ok = sum(x for x, _ in drafts[label])
+            tot = sum(y for _, y in drafts[label])
+            print(f"      drafts accepted {ok}/{tot} ({100.0 * ok / tot:.1f}%) over {len(drafts[label])} runs")
     city, code = by_label.get("city", []), by_label.get("code", [])
     if city and code:
         both = city + code
         crit = statistics.fmean(both)
-        print(f"\ncriterion (mean of city+code, {len(both)} runs): {crit:.1f} tok/s -> "
+        med = statistics.median(both)
+        print(f"\ncriterion (mean of city+code, {len(both)} runs): {crit:.1f} tok/s, median {med:.1f} -> "
               f"{'PASS' if crit >= 55 else 'FAIL'} against 55")
     if a.texts_out and texts:
         out = [f"# {a.label} - answers at temperature 0, first run\n"]
@@ -291,4 +352,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BenchFailure as exc:
+        print(f"\n*** STOP: {exc}", flush=True)
+        sys.exit(2)

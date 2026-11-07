@@ -941,11 +941,19 @@ Temperatura 0, `max_tokens 600`, **3 run per categoria**, IQ2_XS e IQ3_S **nella
 (`prompt N tokens … P generated in M ms (T tok/s), drafts accepted A of B`) invece di fidarsi
 dell'orologio del client, e riporta tok/s e bozze accettate.
 
+- **Ordine della finestra (operatore)**: **IQ3_S per primo** — banco, testi, contesto lungo, soak —
+  poi IQ2_XS, solo banco. Così il primo load dei 3,5 minuti da SSD è quello dell'IQ3_S e l'IQ2_XS
+  non paga due volte il tempo di caricamento.
+- **Resoconto (operatore)**: per **ogni prompt e ogni modello**, media, **mediana** e **primo run
+  riportato a parte** (il primo dopo il load è a freddo). Il tool stampa `mean … median … first …
+  (run 1, cold)`, e la stessa riga di sintesi va nel LOG.
 - **Criterio**: `≥55 tok/s` sulla media delle 6 run città+codice (la prosa non entra).
 - **Testi**: le risposte del primo run di `city` e `code` (temperatura 0) vanno in
-  `docs/iq3/results/10-quality-iq3_s.md` e `…-iq2_xs.md`, perché l'operatore le confronti.
+  `docs/iq3/results/10-quality-iq2_xs.md` e `…/11-quality-iq3_s.md`, perché l'operatore le confronti.
 - **Chiave**: mai sulla riga di comando; il tool la legge da `--api-key-json` (campo `api_key`),
   `--api-key-env` o `--api-key-file`, e senza chiave manda la richiesta senza header.
+- **Stop pulito**: un errore HTTP o di rete interrompe il tool con `*** STOP: …`, il messaggio del
+  server e la coda del log del motore; il JSON con le righe già misurate resta su disco.
 
 ### Contesto lungo
 
@@ -972,19 +980,10 @@ for d in /sys/bus/pci/devices/*; do
     echo "$(basename $d) $(grep -i TOTAL_ERR_COR $d/aer_dev_correctable | awk '{print $2}')"
 done
 
-# --- 1. IQ2_XS: banco fisso (motore NEW) ---
+# --- 1. IQ3_S: gate, banco fisso (testi inclusi), contesto lungo, soak ---
 systemctl stop strata
-bash /root/gate_run.sh /root/Strata-maxwell/strata-iq2-xs-i3-after.json
-PY=/root/Strata-maxwell/.venv/bin/python
-$PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs \
-  --engine-log /root/Strata-maxwell/strata-iq2-xs-i3-after.log \
-  --api-key-json /root/Strata-maxwell/strata-iq2_xs.json \
-  --texts-out /root/Strata-iq3/docs/iq3/results/10-quality-iq2_xs.md \
-  --json /root/iq2xs-bench.json
-
-# --- 2. IQ3_S: banco fisso, testi, contesto lungo, soak ---
-bash /root/down.sh
 bash /root/gate_run.sh /root/Strata-maxwell/strata-iq3_s-i3.json
+PY=/root/Strata-maxwell/.venv/bin/python
 $PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s \
   --engine-log /root/Strata-maxwell/strata-iq3_s-i3.log \
   --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json \
@@ -998,8 +997,18 @@ $PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --soak-minutes 10 \
   --engine-log /root/Strata-maxwell/strata-iq3_s-i3.log \
   --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json \
   --json /root/iq3s-soak.json
+# AER dopo lo soak, prima di scaricare l'IQ3_S
 
-# --- 3. AER dopo, produzione di nuovo su IQ2_XS ---
+# --- 2. IQ2_XS: gate e banco fisso ---
+bash /root/down.sh
+bash /root/gate_run.sh /root/Strata-maxwell/strata-iq2-xs-i3-after.json
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs \
+  --engine-log /root/Strata-maxwell/strata-iq2-xs-i3-after.log \
+  --api-key-json /root/Strata-maxwell/strata-iq2_xs.json \
+  --texts-out /root/Strata-iq3/docs/iq3/results/10-quality-iq2_xs.md \
+  --json /root/iq2xs-bench.json
+
+# --- 3. produzione di nuovo su IQ2_XS: health, 8 tier, AER ---
 bash /root/down.sh
 systemctl start strata
 curl -sf http://127.0.0.1:8080/health && echo

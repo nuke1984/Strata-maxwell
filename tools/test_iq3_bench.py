@@ -90,5 +90,48 @@ class Prompts(unittest.TestCase):
         self.assertEqual([n for n, _ in B.LABELS], ["city", "code", "prose"])
 
 
+class Reporting(unittest.TestCase):
+    def test_the_summary_keeps_the_first_run_apart(self):
+        """The operator reads mean, median and the first (cold) run separately, never folded together."""
+        line = B.summary("city", [40.0, 60.0, 62.0])
+        self.assertIn("mean 54.0", line)
+        self.assertIn("median 60.0", line)
+        self.assertIn("first 40.0 (run 1, cold)", line)
+
+    def test_the_summary_of_one_run_is_that_run(self):
+        line = B.summary("code", [58.5])
+        self.assertIn("first 58.5 (run 1, cold)", line)
+        self.assertNotIn("median", line)
+
+    def test_stats_reports_median(self):
+        line = B.stats([40.0, 60.0, 62.0])
+        self.assertIn("mean 54.0", line)
+        self.assertIn("median 60.0", line)
+
+
+class Failures(unittest.TestCase):
+    def test_an_http_error_stops_the_run_with_the_server_message(self):
+        class Boom:
+            def __init__(self):
+                self.code = 500
+
+            def read(self):
+                return b'{"error": "CUDA out of memory"}'
+
+        orig = B.urllib.request.urlopen
+
+        def fake(*_a, **_k):
+            raise B.urllib.error.HTTPError("u", 500, "boom", {}, Boom())
+
+        B.urllib.request.urlopen = fake
+        try:
+            with self.assertRaises(B.BenchFailure) as ctx:
+                B.ask("http://127.0.0.1:9", "", "x", 8, 5)
+        finally:
+            B.urllib.request.urlopen = orig
+        self.assertIn("HTTP 500", str(ctx.exception))
+        self.assertIn("CUDA out of memory", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
