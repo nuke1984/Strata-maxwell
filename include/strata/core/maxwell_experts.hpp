@@ -13,7 +13,7 @@
 // to the CPU.  The M10s serve the experts they hold.  A fixed assignment is correct because an M10 never
 // needs to evict: it holds what fits, the CPU takes the rest.
 //
-// MULTI-DEVICE: one MaxwellExperts instance per M10 (up to 4).  Each holds a disjoint subset of
+// MULTI-DEVICE: one MaxwellExperts instance per M10 (up to 8).  Each holds a disjoint subset of
 // (layer, expert) pairs.  Expert computation is embarrassingly parallel (no cross-expert dependencies),
 // so the split needs no synchronisation between devices.
 //
@@ -110,7 +110,7 @@ public:
                    std::string& err, bool accumulate = false);
     /// The two-phase prefill's launch half (2026-10-23): launch THIS card's down now (cheap, async);
     /// the caller then finish_to()s the cards in rank order, whose sync/D2H/scatter-add order - and
-    /// so the accumulated block - is bit-identical to the single-phase form.  The four cards' downs
+    /// so the accumulated block - is bit-identical to the single-phase form.  The cards' downs
     /// overlap like their gups instead of serialising behind each other's finishes.
     bool prefill_launch_down(std::string& err);
     /// STRATA_MW_DRED (the prefill's device-side reduce): the caller peer-copies this card's down

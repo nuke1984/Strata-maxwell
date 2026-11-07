@@ -5135,8 +5135,8 @@ void expert_pool_dispatch_multi(ExpertDispatch& d, const float* x_f, const int32
         // LPT (P6.x): the begin() calls are serial (~21.5 us each in this VM), so the LAST device's chain
         // starts ~64 us after the first.  Beginning the busiest device FIRST minimises the maximum
         // completion time (max over devices of start_i + chain_i).  One cheap in-memory scan per device.
-        int order[4] = {0, 1, 2, 3};
-        int64_t cnt[4] = {0, 0, 0, 0};
+        int order[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+        int64_t cnt[8] = {};
         for (int m = 0; m < d.maxwell_count; ++m)
             cnt[m] = d.maxwell[m]->count_owned(d.layers, ids, n_tok, k);
         for (int a = 0; a < d.maxwell_count; ++a)
