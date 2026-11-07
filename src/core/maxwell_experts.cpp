@@ -1121,13 +1121,28 @@ bool MaxwellExperts::begin_chain(std::string& err) {
             // E1 mode 2 left the previous layer's span unharvested (no sync on that path).  The stream
             // is the same, so this layer's kernels queue BEHIND that down: by now its events are
             // settled, and the elapsed can be reaped right before the new span arms.
+            // Iteration 6: the bucket is the PREVIOUS layer's, so s0_armed_d20_ is read before the
+            // new layer overwrites it (split below).
             float el = 0.0f, eg = 0.0f, ed = 0.0f;
             cudaEventElapsedTime(&el, s0_a_, s0_b_);
             cudaEventElapsedTime(&eg, s0_a_, s0_m_);
             cudaEventElapsedTime(&ed, s0_m_, s0_b_);
             s0_krn_ms_ += (double) el; s0_gup_ms_ += (double) eg; s0_dn_ms_ += (double) ed;
+            if (s0_armed_d20_) {
+                s0_d20_.krn_ms += (double) el; s0_d20_.gup_ms += (double) eg; s0_d20_.dn_ms += (double) ed;
+            } else {
+                s0_d42_.krn_ms += (double) el; s0_d42_.gup_ms += (double) eg; s0_d42_.dn_ms += (double) ed;
+            }
             if (s0_layers_ >= 1440.0) s0_report();
             s0_deferred_ = false;
+        }
+        // this new span's bucket, decided after the deferred harvest above (the report above already
+        // cleared the buckets, so this span starts the next window)
+        s0_armed_d20_ = geo_of(layer).d_type == 20;
+        {
+            S0Bucket& b = s0_armed_d20_ ? s0_d20_ : s0_d42_;
+            b.layers += 1.0; b.jobs += (double) jobs.size(); b.distinct += (double) distinct;
+            b.mb += (double) distinct * (double) geo_of(layer).blob_bytes / 1048576.0;
         }
         cudaEventRecord(s0_a_, streams_[0]);
     }
@@ -1397,9 +1412,28 @@ void MaxwellExperts::s0_report() {
                  ideal_us, krn_us, ideal_us > 0 ? krn_us / ideal_us : 0.0,
                  1000.0 * s0_gup_ms_ / s0_layers_, 1000.0 * s0_dn_ms_ / s0_layers_,
                  1000.0 * s0_sync_ms_ / s0_layers_);
+    // Iteration 6: the same span split by the down type.  Only printed when both buckets have spans, so the
+    // canonical Q2_0 pack (every layer down-42) keeps its old output exactly.
+    if (s0_d20_.layers > 0 && s0_d42_.layers > 0) {
+        s0_report_one("down20", s0_d20_);
+        s0_report_one("down42", s0_d42_);
+    }
     std::fflush(stderr);
     s0_layers_ = s0_jobs_ = s0_distinct_ = s0_mb_ = s0_krn_ms_ = s0_sync_ms_ = 0;
     s0_gup_ms_ = s0_dn_ms_ = 0;
+    s0_d20_.clear();
+    s0_d42_.clear();
+}
+
+void MaxwellExperts::s0_report_one(const char* tag, const S0Bucket& b) {
+    if (b.layers <= 0) return;
+    const double mb_l = b.mb / b.layers;
+    const double krn_us = 1000.0 * b.krn_ms / b.layers;
+    std::fprintf(stderr, "MWPROF m10type CUDA%d %s layers %.0f: %.3f MB/L, kernel %.0f us/L "
+                         "[gup %.0f + down %.0f], sync-wait %.0f us/L\n",
+                 device_, tag, b.layers, mb_l, krn_us,
+                 1000.0 * b.gup_ms / b.layers, 1000.0 * b.dn_ms / b.layers,
+                 1000.0 * b.sync_ms / b.layers);
 }
 
 bool MaxwellExperts::finish(float* out, std::string& err) {
@@ -1559,7 +1593,15 @@ bool MaxwellExperts::finish_chain(std::string& err) {
         s0_krn_ms_ += (double) el;
         s0_gup_ms_ += (double) eg;
         s0_dn_ms_ += (double) ed;
-        s0_sync_ms_ += std::chrono::duration<double, std::milli>(ft2 - s0_w0).count();
+        const double sw = std::chrono::duration<double, std::milli>(ft2 - s0_w0).count();
+        s0_sync_ms_ += sw;
+        if (s0_armed_d20_) {
+            s0_d20_.krn_ms += (double) el; s0_d20_.gup_ms += (double) eg; s0_d20_.dn_ms += (double) ed;
+            s0_d20_.sync_ms += sw;
+        } else {
+            s0_d42_.krn_ms += (double) el; s0_d42_.gup_ms += (double) eg; s0_d42_.dn_ms += (double) ed;
+            s0_d42_.sync_ms += sw;
+        }
         if (s0_layers_ >= 1440.0) s0_report();
         s0_a_ = nullptr;   // the next begin_chain arms a fresh span (the event objects are reused)
     }

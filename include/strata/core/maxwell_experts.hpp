@@ -240,8 +240,17 @@ private:
     cudaEvent_t s0_m_ = nullptr;   // S0 mid-stamp: after gup, before down - which stage eats the span
     double s0_layers_ = 0, s0_jobs_ = 0, s0_distinct_ = 0, s0_mb_ = 0, s0_krn_ms_ = 0, s0_sync_ms_ = 0;
     double s0_gup_ms_ = 0, s0_dn_ms_ = 0;
+    // Iteration 6: the same span split by the layer's DOWN type, so the report can say whether the IQ4_NL down
+    // (d_type 20) or the Q2_0 down (42) carries the cost.  Counters only, like the rest of S0.
+    struct S0Bucket {
+        double layers = 0, jobs = 0, distinct = 0, mb = 0, krn_ms = 0, gup_ms = 0, dn_ms = 0, sync_ms = 0;
+        void clear() { layers = jobs = distinct = mb = krn_ms = gup_ms = dn_ms = sync_ms = 0; }
+    };
+    S0Bucket s0_d20_, s0_d42_;          ///< the same accumulation, per down type
+    bool s0_armed_d20_ = false;         ///< the in-flight span's layer had d_type 20
     bool s0_deferred_ = false;     // E1 mode 2: the span is reaped at the next begin (see begin_chain)
     void s0_report();              // the MWPROF m10 line; prints and resets when 1440 layers accrue
+    void s0_report_one(const char* tag, const S0Bucket& b);
 
     // P3.4 (rev 3, misurato): la catena begin/finish gira INLINE sul thread chiamante.  Il worker persistente
     // per device (condvar nella prima prova, atomic-wait nella seconda) e' stato misurato: i

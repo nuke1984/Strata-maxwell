@@ -18,6 +18,7 @@ Indice:
   — con la [finestra operativa](#finestra-operativa-misurato-2026-11-07) in coda
 - [Iterazione 5 — banco fisso e verifiche per la produzione (protocollo)](#iterazione-5--banco-fisso-e-verifiche-per-la-produzione-protocollo-prossima-finestra)
   — con le [misure](#iterazione-5--banco-fisso-contesto-lungo-e-soak-misurato-2026-11-07) in coda
+- [Iterazione 6 — diagnosi: potenza, profilo per-layer, margine VRAM (protocollo)](#iterazione-6--diagnosi-potenza-profilo-per-layer-margine-vram-protocollo-prossima-finestra)
 
 ---
 
@@ -1133,3 +1134,236 @@ Produzione ripristinata: `active`, PID 20630, health OK, **8/8 gate PASSED**, 18
 → **Iterazione 5: criterio ≥55 FAIL sull'IQ3_S (46.8 media, 46.2 mediana).** IQ3_S è ~20% più
 lento dell'IQ2_XS su città+codice e lascia ~90 MiB liberi sulla 3060 invece di ~400. La produzione
 resta su IQ2_XS.
+
+---
+
+## Iterazione 6 — diagnosi: potenza, profilo per-layer, margine VRAM (protocollo, prossima finestra)
+
+Iterazione 5 è chiusa e misurata: l'IQ3_S costa il 19,7% in più per token e non viene promosso.
+Questa iterazione è **solo diagnosi**: una variabile per volta, **nessuna ottimizzazione dei kernel**.
+Le cinque misure dell'operatore (potenza, profilo per-layer, margine VRAM, qualità, AER) servono a
+decidere *dove* intervenire, non a intervenire.
+
+### Cosa è già pronto (compilato e testato, non ancora in finestra)
+
+| strumento | cosa fa |
+|---|---|
+| `tools/iq3_power.py` | campiona `nvidia-smi` (`power.draw`, `power.limit`, `clocks.sm`, `clocks.mem`, `temperature.gpu`, `clocks_throttle_reasons.active`) a 1 s, salva il CSV e stampa media/mediana/max, i motivi di throttle come **quota** dei campioni e il totale contro la somma dei limiti. `--parse` riassume un CSV già scritto. Non tocca clock né limiti. |
+| `tools/iq3_profile.py` | legge le righe `MWPROF` del log e separa **down-20 (IQ4_NL) da down-42 (Q2_0)**, per scheda e pesate sui layer-span. |
+| `src/core/maxwell_experts.cpp` | **solo contatori** (inerti senza `STRATA_MW_LAYERPROF`): nuova riga `MWPROF m10type CUDAk down20\|down42 …`. |
+| `tools/test_iq3_power.py`, `tools/test_iq3_profile.py` | 30 test offline in totale con quelli del banco; verdi in locale e sul server (3.11.2). |
+
+La riga `m10type` viene stampata **solo se entrambi i bucket hanno span**: sul pack canonico Q2_0
+(IQ2_XS, tutti i layer down-42) l'output del motore resta **identico** a prima. Misurato in
+compilazione: `[100%] Built target strata`, ospite e test verdi.
+
+La mappa dei layer è stata **verificata sul pack** (`native_experts.txt`), non copiata dal design:
+**39 layer down-20 + 9 layer down-42 = 48**. I 9 down-42 sono i layer
+`1, 8, 10, 12, 13, 20, 21, 30, 36` (il riepilogo delle iterazioni precedenti diceva «40/8»: era
+sbagliato, il pack dice 39/9 e il tool usa quello).
+
+### Due correzioni al punto 3, misurate prima della finestra
+
+Il punto 3 dell'operatore («cache fissa a 1600, gli esperti in più vanno sulle M10, obiettivo
+≥1 GB libero») si basa su due premesse che **il codice smentisce**. Meglio dirlo ora che scoprirlo
+in finestra.
+
+**(a) `--expert-cache N` non è «N slot».** Su un pack nativo N è il budget di **N blob più grandi**;
+il motore cammina il profilo e riempie finché ci sta:
+
+```
+budget = N × max_blob            (max_blob IQ3_S = 2.662.400 B = 2.539 MiB)
+slot   = i primi pair del profilo che entrano nel budget, ognuno col blob del SUO layer
+```
+
+Il modello riproduce **esattamente** il load della finestra 5 (chiedendo 1357 → 1749 slot,
+3,363 GiB, 2853–2854 esperti/die, 5,424–5,450 GiB/die contro 5,42–5,45 del log): quindi è affidabile.
+
+| `--expert-cache` | slot veri | cache | vs adesso | esperti/die | M10 GiB/die |
+|---|---|---|---|---|---|
+| **1600** | **2065** | 3,967 GiB | **+619 MiB** | 2814 | 5,35–5,38 |
+| 1400 | 1805 | 3,470 GiB | +110 MiB | 2846 | 5,41–5,44 |
+| *auto (1357, finestra 5)* | *1749* | *3,363 GiB* | *0* | *2853* | *5,42–5,45* |
+| 1242 | 1599 | 3,078 GiB | −292 MiB | 2872 | 5,46–5,48 |
+| 1100 | 1414 | 2,726 GiB | −652 MiB | 2895 | 5,50–5,53 |
+| **988** | **1267** | **2,448 GiB** | **−937 MiB** | 2914 | 5,54–5,56 |
+| 900 | 1155 | 2,232 GiB | −1159 MiB | 2928 | 5,60–5,63 |
+
+→ **1600 è nella direzione sbagliata**: chiede *più* cache di adesso. Il budget di 1600 unità è
+3,967 GiB, e in ogni caso il risultato è **≥ 3,363 GiB** — mai meno di adesso, quindi non libera
+niente. Il tetto dello spazio libero (≈3,69 GiB, stimato dai termini della riga `auto`: 4,59 GiB
+liberi − 700 riservati − 220 del draft) la taglia a ~1.919 slot, cioè **+334 MiB**: una stima, ma
+comunque sopra i 3,363 GiB attuali. Per l'obiettivo «≥1 GB libero sulla 3060» il punto è **≈988**
+(2,448 GiB di cache → 94 + 937 ≈ **1.031 MiB liberi**), oppure 1100 se si vuole restare più larghi
+sulla cache (≈746 MiB liberi, sotto il target).
+
+**(b) Gli esperti «in più» non vanno sulle M10: ci sono già.** La lista delle M10 è definita come
+*«i pair che la cache della 3060 non contiene»*, in ordine di profilo, distribuiti a rotazione sulle
+8 schede (`generate.cpp`, `maxwell_cand`). E i numeri del load lo confermano al byte:
+
+```
+22.827 esperti residenti sulle M10 + 1.749 slot della cache = 24.576 = 48 × 512  (tutto il pool)
+```
+
+La cache non è una copia ridondante: è **l'altra metà della partizione**. Ridurla non «sposta»
+esperti sulle M10 — glieli aggiunge: a 988 i die passano da 5,424–5,450 a **5,539–5,563 GiB**
+(+~118 MiB per die, aritmetica del modello validato). Le M10 hanno ~2,3–2,5 GiB liberi per die,
+quindi lo assorbono senza OOM; il prezzo è che i pair meno caldi escono dalla cache della 3060 e
+passano al percorso M10. Il commento del motore dà ~50 µs/espte sul hit della 3060 contro ~17 µs
+aggregati sulle M10 (numeri del motore, non di questa campagna): se regge, il trade-off potrebbe
+essere **favorevole** — ma è un'ipotesi da misurare, non un risultato.
+
+**Cosa chiedo all'operatore**: confermare il valore. La finestra misura **988** (l'unico che
+soddisfa «≥1 GB»), e se preferisce 1600 lo misura lo stesso — servirà a dimostrare che peggiora.
+
+### Le cinque fasi, in quest'ordine
+
+**Fase 0 — stato e AER prima.** Produzione `active`, 8 tier, AER di tutte le GPU e del bridge PLX.
+
+**Fase 1 — IQ3_S, cache piena (auto), profilo acceso.** Config derivata da `strata-iq3_s-i3.json`
+con `STRATA_MW_LAYERPROF=1` aggiunto in `env` (i contatori non cambiano il servizio). Con questa
+singola accensione si fanno **tre** misure:
+
+1. **POWER** — `iq3_power.py` campiona per tutta la durata: banco città+codice, poi soak da 10 minuti
+   (la sequenza continua che nella finestra 5 ha dato 37,5 tok/s contro i 44 del banco). Il confronto
+   banco↔soak è l'ipotesi principale: se le M10 entrano in `SwPowerCap` (bit `0x2`) solo nello soak,
+   la differenza è il tetto di potenza, non il motore.
+2. **TIME PROFILE** — dalle righe `m10` e `m10type`: `gup`, `down`, `sync-wait` per layer, **separando
+   i 39 layer down-20 dai 9 down-42**, più le fasi di dispatch (`plan/actq/jobs/run`) che dicono
+   quanto sta *fuori* dalle M10. Stesso prompt della finestra 5.
+3. **QUALITY** — i testi con `--no-thinking` (città e codice): nella finestra 5 erano ragionamento
+   troncato, non risposte. Raccolti qui, a cache piena, con `--texts-out`.
+
+**Fase 2 — IQ3_S, cache ridotta (988).** Un secondo load (213 s da SSD) con lo stesso `env` e
+`--expert-cache 988`. Si misurano: **MiB liberi sulla 3060 al load e durante la generazione**,
+esperti e GiB **per die**, tok/s città+codice, e il campionamento di potenza (la VRAM più stretta
+sulla 3060 può cambiare la pressione sulle M10). È il punto che sblocca o non sblocca la produzione.
+
+**Fase 3 — IQ2_XS, riferimento A/B.** Config derivata da `strata-iq2-xs-i3-after.json` con
+`STRATA_MW_LAYERPROF=1`. Banco città+codice, profilo, potenza, testi con `--no-thinking`. È il
+confronto che rende leggibili i numeri della Fase 1: senza lo stesso profilo sull'IQ2_XS, un
+`down-20` più lento non è attribuibile.
+
+**Fase 4 — ripristino.** Produzione su IQ2_XS: `active`, health, **8/8 gate PASSED**, 1874 slot,
+VRAM libera, 0 errori, 24 righe di gate identiche alla baseline 0.1.51. AER dopo.
+
+### AER: quando si legge
+
+Prima della finestra, e **dopo ogni fase** (dopo Fase 1, 2, 3, 4), annotando **quale carico era
+attivo** quando il contatore è salito. Nella finestra 5 il bridge PLX `0000:09:11.0` è passato
+3 → 6 → 8 (solo `RxErr`) mentre le 9 GPU restavano a 0: va seguito, non spiegato qui.
+
+### Potenza: cosa questa iterazione non fa
+
+I limiti di potenza sono **solo dell'operatore**. Le M10 sono a **30 W** (default 53, min 26,5, max
+53), la 3060 a 120 W, somma dei limiti **360 W**. Lo script previsto `/usr/local/sbin/nvidia-limits.sh`
+**non esiste** su aidrogen (cercato su tutto il filesystem: nessuno script con `nvidia-smi -pl`).
+Se il campionamento mostra `SwPowerCap` sulle M10, il protocollo **riferisce** e l'operatore decide:
+l'assistente non cambia un limite, nemmeno a 35 W.
+
+La misura di potenza è read-only (`--query-gpu`), non scrive clock e non tocca lo stato.
+
+### Regola di stop
+
+Come nelle finestre precedenti: se un gate fallisce, se c'è un errore o un OOM, ci si ferma, si
+salva il log, si riavvia la produzione e si riporta. **Nessuna variante al volo**, nessun secondo
+tentativo con parametri diversi dentro la stessa fase.
+
+Vale anche per il punto 3: se a 988 la 3060 va in OOM o i tok/s crollano oltre il rumore, la
+conclusione è «il margine non si compra con la cache» e la produzione resta com'è.
+
+### Comandi per aidrogen (finestra, dopo l'OK)
+
+```sh
+PY=/root/Strata-maxwell/.venv/bin/python
+CFG3=/root/Strata-maxwell/strata-iq3_s-i6-prof.json
+CFG3S=/root/Strata-maxwell/strata-iq3_s-i6-c988.json
+CFG2=/root/Strata-maxwell/strata-iq2-xs-i6-prof.json
+
+# --- 0. AER e stato prima ---
+bash /root/aer.sh            # helper della finestra: una riga per device, solo TOTAL_ERR_COR
+systemctl is-active strata
+
+# --- 1. IQ3_S a cache piena, profilo acceso ---
+systemctl stop strata
+bash /root/down.sh
+bash /root/up.sh "$CFG3" 2400
+$PY /root/Strata-iq3/tools/iq3_power.py --label iq3_s-full-bench --minutes 12 \
+    --out /root/i6-power-iq3_s-full-bench.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --runs 3 --labels city,code \
+    --no-thinking --engine-log /root/Strata-maxwell/strata-iq3_s-i6-prof.log \
+    --api-key-json "$CFG3" --texts-out /root/Strata-iq3/docs/iq3/results/17-quality-iq3_s.md \
+    --json /root/i6-bench-iq3_s-full.json
+wait
+$PY /root/Strata-iq3/tools/iq3_power.py --label iq3_s-full-soak --minutes 11 \
+    --out /root/i6-power-iq3_s-full-soak.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --soak-minutes 10 \
+    --engine-log /root/Strata-maxwell/strata-iq3_s-i6-prof.log \
+    --api-key-json "$CFG3" --json /root/i6-soak-iq3_s-full.json
+wait
+$PY /root/Strata-iq3/tools/iq3_profile.py --log /root/Strata-maxwell/strata-iq3_s-i6-prof.log \
+    > /root/Strata-iq3/docs/iq3/results/18-profile-iq3_s.txt
+# AER dopo la fase 1
+
+# --- 2. IQ3_S a cache 988 ---
+bash /root/down.sh
+bash /root/up.sh "$CFG3S" 2400
+$PY /root/Strata-iq3/tools/iq3_power.py --label iq3_s-c988 --minutes 8 \
+    --out /root/i6-power-iq3_s-c988.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --runs 3 --labels city,code \
+    --engine-log /root/Strata-maxwell/strata-iq3_s-i6-c988.log \
+    --api-key-json "$CFG3S" --json /root/i6-bench-iq3_s-c988.json
+wait
+# VRAM per die a cache piena e durante la generazione: nvidia-smi --query-gpu=index,memory.used,memory.free
+# AER dopo la fase 2
+
+# --- 3. IQ2_XS, riferimento ---
+bash /root/down.sh
+bash /root/up.sh "$CFG2" 2400
+$PY /root/Strata-iq3/tools/iq3_power.py --label iq2_xs --minutes 8 \
+    --out /root/i6-power-iq2_xs.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs --runs 3 --labels city,code \
+    --no-thinking --engine-log /root/Strata-maxwell/strata-iq2-xs-i6-prof.log \
+    --api-key-json "$CFG2" --texts-out /root/Strata-iq3/docs/iq3/results/19-quality-iq2_xs.md \
+    --json /root/i6-bench-iq2_xs.json
+wait
+$PY /root/Strata-iq3/tools/iq3_profile.py --log /root/Strata-maxwell/strata-iq2-xs-i6-prof.log \
+    > /root/Strata-iq3/docs/iq3/results/20-profile-iq2_xs.txt
+# AER dopo la fase 3
+
+# --- 4. produzione ---
+bash /root/down.sh
+systemctl start strata
+systemctl is-active strata && curl -sf http://127.0.0.1:8080/health && echo
+# AER dopo la fase 4
+```
+
+I tre config si creano **sul server** copiando quelli della finestra 5 e aggiungendo la chiave in
+`env` (contengono `api_key`: non si committano e non si stampano):
+
+```sh
+$PY - <<'PY'
+import json
+for src, dst, extra in (
+    ("strata-iq3_s-i3.json",      "strata-iq3_s-i6-prof.json",   {"STRATA_MW_LAYERPROF": "1"}),
+    ("strata-iq3_s-i3.json",      "strata-iq3_s-i6-c988.json",   {"STRATA_MW_LAYERPROF": "1"}),
+    ("strata-iq2-xs-i3-after.json","strata-iq2-xs-i6-prof.json", {"STRATA_MW_LAYERPROF": "1"}),
+):
+    c = json.load(open("/root/Strata-maxwell/" + src))
+    c["env"].update(extra)
+    c["log"] = dst.replace(".json", ".log")
+    a = c["args"]
+    if "c988" in dst:
+        a[a.index("--expert-cache") + 1] = "988"
+    json.dump(c, open("/root/Strata-maxwell/" + dst, "w"), indent=1)
+    print(dst, "->", c["log"], "cache", a[a.index("--expert-cache") + 1])
+PY
+```
+
+### Cosa questa iterazione non fa
+
+Non cambia i kernel, non cambia il criterio, non promuove l'IQ3_S. Non cambia i limiti di potenza.
+Non riduce la cache in produzione: se il margine VRAM non si compra senza perdere velocità, la
+risposta è «IQ3_S non va in produzione», che è già la conclusione dell'Iterazione 5.
+
+---
