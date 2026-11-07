@@ -1,0 +1,226 @@
+[strata] 2026-11-07 19:27:49 engine started: /root/Strata-iq3/build-iq3/strata --serve --pack /mnt/backup/strata-iq2_xs/packs/iq2_xs --native /mnt/backup/strata-iq2_xs/models/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf --ple-gguf /mnt/backup/strata-iq2_xs/models/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf --expert-profile /root/Strata-maxwell/data/expert-profile.bin --expert-cache 1800 --prefill auto --spec 6 --spec-min-p 0.5 --mtp /root/Strata-data/mtp/rt --max-context 128000 --kv k8v4 --mmap-experts --maxwell-devices 1,2,3,4,5,6,7,8 --maxwell-reserve-mib 250 --spec-split
+strata generate: memory guard: limit 24.0 GiB (source: meminfo), current 0.5 GiB, reclaimable cache credited 0.0 GiB; available 23.5 GiB (MemAvailable 23.5 GiB), floor 2560 MiB
+strata generate: PCIe probe: 11.2 GB/s host->device (best of 11.2 11.2 11.2 11.2) -> pcie_frac 0.31 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: /mnt/backup/strata-iq2_xs/packs/iq2_xs experts (largest blob 1.51 MB), token embedding IQ4_XS in VRAM (322 MiB, 1.8 s)
+strata generate: 1466 MiB of weights loaded from /mnt/backup/strata-iq2_xs/packs/iq2_xs in 8.2 s (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1474.85 MiB of weights, in 8.8 s
+strata generate: WARNING: --ple-io direct measures slow here (11456 rows/s, about 47 MB/s of random 4 KiB reads): a prompt can spend minutes reading layer 1 and trip the stall watchdog (#1425, #1629). --ple-io mmap was 40-100x faster on some DRAM-less NVMe drives but 7x slower on a SATA SSD (#2040), so it is not chosen for you; --ple-io ram needs the RAM for the table (kept direct: pass --ple-io mmap or --ple-io ram to change it; in a config file's "args" they are two entries: "--ple-io", "mmap")
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: profile /root/Strata-maxwell/data/expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: PLE on, table 320001536 rows of /mnt/backup/strata-iq2_xs/models/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf
+strata mtp: draft layer loaded, 948 MiB of VRAM (experts 675, dense 111), files read in 0.50 s (1573 MiB/s)
+strata generate: experimental native Q5_K head, 337715200 bytes, in 1.7 s
+strata generate: GPU 0: NVIDIA GeForce RTX 3060, compute capability 8.6
+strata generate: experts via mmap (--mmap-experts; the A/B arm of R2.1)
+strata generate: file tier (Linux defaults, experts.bin: its pages are read from the mapping as they are): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=0), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+strata generate: GPU host-callback thread started before host-core pinning
+strata generate: CPU pool tasks/phase: 12 (automatic), participating threads: 4
+strata generate: CPU pool: 3 workers by default (4 physical cores, 8 logical processors; bounded by every physical core but the host's)
+strata generate: 3 pool workers on logical processors 1,2,3, the host thread on 0 (draining too) (--host-core first)
+strata generate: CPU workers on logical processors 1,2,3 (3 workers, one per physical core; host on 0)
+strata aux cpus: threads that are neither pool workers nor the host go to CPUs 4 (off at start; a request's aux_cpus=1 turns it on)
+strata generate: expert cache 1874 slots, 2.53 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: the profile fill asks for 256 pairs ahead (STRATA_FILL_AHEAD)
+strata generate: pre-filled 1874 of 1874 slots from the profile in 18.3 s (148 MB/s); slot 0 verified
+strata maxwell: sub-batch window 256 tokens (STRATA_MW_NTM; 64 is the default)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA1): round-trip gate layer 42 expert 17 (iq2_s): rel 1.19e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 1 expert 92 (iq2_xxs): rel 1.22e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 8 expert 301 (iq1_m): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.22e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 1: 2838 experts, 3.82 GiB (filled in 112.6 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA2): round-trip gate layer 47 expert 82 (iq2_s): rel 1.17e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 30 expert 203 (iq2_xxs): rel 1.24e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 37 expert 163 (iq1_m): rel 1.08e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.24e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 2: 2838 experts, 3.81 GiB (filled in 63.4 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA3): round-trip gate layer 47 expert 126 (iq2_s): rel 1.26e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 37 expert 18 (iq1_m): rel 1.24e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 4 expert 285 (iq2_xxs): rel 1.05e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.26e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 3: 2838 experts, 3.81 GiB (filled in 56.5 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA4): round-trip gate layer 47 expert 272 (iq2_s): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 19 expert 378 (iq2_xxs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 37 expert 474 (iq1_m): rel 1.17e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.17e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 4: 2838 experts, 3.80 GiB (filled in 57.5 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA5): round-trip gate layer 2 expert 22 (iq2_s): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 10 expert 331 (iq2_xxs): rel 1.21e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 13 expert 36 (iq1_m): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.21e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 5: 2838 experts, 3.81 GiB (filled in 63.5 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA6): round-trip gate layer 2 expert 149 (iq2_s): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 9 expert 30 (iq2_xxs): rel 1.20e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 13 expert 330 (iq1_m): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 6: 2838 experts, 3.81 GiB (filled in 68.0 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA7): round-trip gate layer 10 expert 328 (iq2_xxs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 28 expert 37 (iq2_s): rel 1.23e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 37 expert 166 (iq1_m): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.23e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 7: 2837 experts, 3.81 GiB (filled in 69.7 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA8): round-trip gate layer 13 expert 398 (iq1_m): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 28 expert 324 (iq2_s): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 11 expert 442 (iq2_xxs): rel 1.09e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.12e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 8: 2837 experts, 3.81 GiB (filled in 71.4 s)
+strata generate: Maxwell pairs in the 3060 cache: 0 of 22702
+strata generate: routing-aware prefetch on (the next layer's router, file tier)
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 3 expert-pool workers + the host thread (created on the first CPU expert batch)
+strata generate: session is up (engine 0.1.51)
+strata generate: token graph hit path: 1874 resident experts, decided on the device
+strata: the CPU prefill share is not armed by default: the experts it would read are 30.5 GiB of file pages and only 22.8 GiB of RAM is free to keep them. STRATA_PREFILL_CPU_SHARE=auto turns it on anyway
+strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+strata prefill: 8 Maxwell tier(s) compute their experts' rows of every prompt chunk (the arena is not read for them)
+strata serve: arena release skipped: release_arena is not supported by this expert source
+strata serve: expert file cache not dropped: FileExpertSource: no mapped experts
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 8 tokens, 69.0 MiB of device buffers
+strata mtp: draft head over 106299 tokens (137.9 MiB)
+strata serve: conversation cache sized from the free RAM: 7424 MiB for up to 4 parked conversations, so an agent's next turn reuses its prompt (--conversation-cache-mib N sets it, 0 turns it off)
+strata serve: STRATA_ROUTE_TAIL_SKIP=7 is ON (default): a missed expert that every token of a verify window routes at rank 7 or lower is skipped (+10..20% decode on 12-16 GB cards that miss experts, answers differ slightly from 0.1.41); STRATA_ROUTE_TAIL_SKIP=0 turns it off
+strata serve: adaptive overlap: off: the adaptive tier is off
+strata serve: 2242 MiB of VRAM free with everything loaded
+strata maxwell: multi-token prefill gup (STRATA_MW_MT)
+strata maxwell: two-phase prefill finish (STRATA_MW_TWOPHASE)
+strata verify: capturing the 4-token window (2202 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: capturing the 1-token window (2166 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata verify: capturing the 6-token window (2144 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error)
+strata verify: capturing the 3-token window (2102 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error)
+strata verify: capturing the 8-token window (2066 MiB of VRAM free)
+strata verify: captured the 8-token window (upload no error, sync no error)
+strata verify: capturing the 2-token window (2022 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata verify: capturing the 5-token window (1986 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error)
+Maxwell STAT jobs/layer histogram (n=20000): [1]=7366 [2]=5103 [3]=3051 [4]=1755 [5]=1022 [6]=656 [7]=307 [8]=170 [9]=103 [10]=45 [11]=27 [12]=2 [13]=4 [14]=4 [15]=1
+Maxwell STAT jobs/layer histogram (n=40000): [1]=14523 [2]=10816 [3]=6257 [4]=3578 [5]=2015 [6]=1217 [7]=578 [8]=322 [9]=159 [10]=79 [11]=42 [12]=13 [13]=5 [14]=7 [15]=4
+Maxwell STAT jobs/layer histogram (n=60000): [1]=20526 [2]=15879 [3]=9710 [4]=5758 [5]=3291 [6]=2114 [7]=1056 [8]=622 [9]=346 [10]=155 [11]=86 [12]=25 [13]=16 [14]=13 [15]=9
+Maxwell STAT jobs/layer histogram (n=80000): [1]=28911 [2]=22031 [3]=12701 [4]=7107 [5]=3871 [6]=2426 [7]=1183 [8]=684 [9]=375 [10]=164 [11]=88 [12]=26 [13]=17 [14]=13 [15]=9
+Maxwell STAT jobs/layer histogram (n=100000): [1]=33409 [2]=26676 [3]=16627 [4]=9963 [5]=5684 [6]=3513 [7]=1770 [8]=1050 [9]=497 [10]=228 [11]=110 [12]=37 [13]=20 [14]=13 [15]=9
+Maxwell STAT jobs/layer histogram (n=120000): [1]=38375 [2]=31580 [3]=20484 [4]=12621 [5]=7409 [6]=4466 [7]=2264 [8]=1322 [9]=604 [10]=273 [11]=122 [12]=40 [13]=24 [14]=13 [15]=9
+strata serve: prompt 74 tokens = 0 reused + 74 read in 942 ms (78.5 tok/s), 600 generated in 11209 ms (53.5 tok/s), drafts accepted 367 of 612, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (47547 hits / 47547 lookups); 359973 more read by the GPU over PCIe or from another GPU (88.3% of all 407520 routed)
+strata serve: expert tiers: GPU 47547 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 84804.3 MB from storage (64211 major faults) for 35488.4 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.62 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 221 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 5 windows, 15 of 30 drafts accepted
+strata serve: conversation cache: parked 677 tokens in 163.7 ms; parked=1 bytes=244554720 evictions=0 snapshot_bytes=244554720 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=140000): [1]=43021 [2]=36350 [3]=24374 [4]=15365 [5]=9243 [6]=5585 [7]=2758 [8]=1597 [9]=736 [10]=329 [11]=150 [12]=49 [13]=26 [14]=14 [15]=9
+Maxwell STAT jobs/layer histogram (n=160000): [1]=50692 [2]=41988 [3]=27591 [4]=17018 [5]=10155 [6]=6072 [7]=2977 [8]=1721 [9]=779 [10]=352 [11]=156 [12]=53 [13]=28 [14]=14 [15]=9
+Maxwell STAT jobs/layer histogram (n=180000): [1]=58578 [2]=47925 [3]=30607 [4]=18547 [5]=10924 [6]=6487 [7]=3208 [8]=1834 [9]=837 [10]=375 [11]=167 [12]=57 [13]=31 [14]=18 [15]=9
+Maxwell STAT jobs/layer histogram (n=200000): [1]=64466 [2]=53150 [3]=34061 [4]=20782 [5]=12229 [6]=7371 [7]=3689 [8]=2084 [9]=974 [10]=443 [11]=204 [12]=67 [13]=38 [14]=22 [15]=18
+Maxwell STAT jobs/layer histogram (n=220000): [1]=72190 [2]=58753 [3]=37125 [4]=22460 [5]=13134 [6]=7887 [7]=3949 [8]=2209 [9]=1049 [10]=462 [11]=216 [12]=76 [13]=43 [14]=25 [15]=18
+Maxwell STAT jobs/layer histogram (n=240000): [1]=76256 [2]=63314 [3]=41186 [4]=25431 [5]=15064 [6]=9048 [7]=4599 [8]=2581 [9]=1172 [10]=528 [11]=239 [12]=90 [13]=45 [14]=25 [15]=18
+Maxwell STAT jobs/layer histogram (n=260000): [1]=80704 [2]=67816 [3]=45198 [4]=28374 [5]=16922 [6]=10144 [7]=5211 [8]=2894 [9]=1306 [10]=577 [11]=258 [12]=100 [13]=48 [14]=25 [15]=19
+strata serve: prompt 74 tokens = 69 reused + 5 read in 220 ms (22.7 tok/s), 600 generated in 10257 ms (58.5 tok/s), drafts accepted 375 of 560, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (42344 hits / 42344 lookups); 334936 more read by the GPU over PCIe or from another GPU (88.8% of all 377280 routed)
+strata serve: expert tiers: GPU 42344 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 1681.0 MB from storage (26 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.62 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 448 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 3 windows, 11 of 15 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=0
+strata serve: conversation cache: parked 674 tokens in 122.8 ms; parked=1 bytes=244505172 evictions=0 snapshot_bytes=244505172 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=280000): [1]=88078 [2]=73169 [3]=48452 [4]=30174 [5]=17994 [6]=10758 [7]=5491 [8]=3024 [9]=1376 [10]=610 [11]=273 [12]=101 [13]=50 [14]=27 [15]=19
+Maxwell STAT jobs/layer histogram (n=300000): [1]=95376 [2]=79108 [3]=51594 [4]=31916 [5]=18907 [6]=11259 [7]=5710 [8]=3165 [9]=1431 [10]=635 [11]=286 [12]=107 [13]=52 [14]=29 [15]=19
+Maxwell STAT jobs/layer histogram (n=320000): [1]=101666 [2]=84458 [3]=55005 [4]=34081 [5]=20087 [6]=12049 [7]=6087 [8]=3366 [9]=1550 [10]=690 [11]=315 [12]=124 [13]=53 [14]=34 [15]=21
+Maxwell STAT jobs/layer histogram (n=340000): [1]=109844 [2]=90198 [3]=57989 [4]=35546 [5]=20796 [6]=12492 [7]=6331 [8]=3495 [9]=1612 [10]=711 [11]=328 [12]=130 [13]=56 [14]=36 [15]=21
+Maxwell STAT jobs/layer histogram (n=360000): [1]=114448 [2]=94702 [3]=61985 [4]=38353 [5]=22645 [6]=13623 [7]=6924 [8]=3797 [9]=1740 [10]=770 [11]=347 [12]=138 [13]=56 [14]=36 [15]=21
+Maxwell STAT jobs/layer histogram (n=380000): [1]=119209 [2]=99374 [3]=65876 [4]=41119 [5]=24453 [6]=14669 [7]=7504 [8]=4077 [9]=1852 [10]=826 [11]=365 [12]=144 [13]=59 [14]=37 [15]=21
+strata serve: prompt 74 tokens = 69 reused + 5 read in 192 ms (26.1 tok/s), 600 generated in 10265 ms (58.4 tok/s), drafts accepted 373 of 559, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (43949 hits / 43949 lookups); 333331 more read by the GPU over PCIe or from another GPU (88.4% of all 377280 routed)
+strata serve: expert tiers: GPU 43949 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 1335.6 MB from storage (2 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.62 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 676 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 5 windows, 16 of 25 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=0
+strata serve: conversation cache: parked 673 tokens in 122.6 ms; parked=1 bytes=244505168 evictions=0 snapshot_bytes=244505168 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=400000): [1]=123468 [2]=103787 [3]=69668 [4]=44098 [5]=26349 [6]=15835 [7]=8107 [8]=4385 [9]=1972 [10]=875 [11]=384 [12]=152 [13]=63 [14]=37 [15]=21
+Maxwell STAT jobs/layer histogram (n=420000): [1]=132506 [2]=109248 [3]=72460 [4]=45544 [5]=27022 [6]=16176 [7]=8257 [8]=4440 [9]=1998 [10]=888 [11]=388 [12]=153 [13]=63 [14]=37 [15]=21
+Maxwell STAT jobs/layer histogram (n=440000): [1]=141346 [2]=114762 [3]=75237 [4]=46974 [5]=27777 [6]=16546 [7]=8425 [8]=4522 [9]=2037 [10]=904 [11]=395 [12]=154 [13]=64 [14]=37 [15]=21
+Maxwell STAT jobs/layer histogram (n=460000): [1]=149278 [2]=119919 [3]=78113 [4]=48640 [5]=28833 [6]=17157 [7]=8773 [8]=4699 [9]=2133 [10]=943 [11]=419 [12]=164 [13]=67 [14]=41 [15]=22
+Maxwell STAT jobs/layer histogram (n=480000): [1]=154393 [2]=124661 [3]=81759 [4]=51241 [5]=30425 [6]=18198 [7]=9393 [8]=5020 [9]=2299 [10]=1020 [11]=465 [12]=185 [13]=75 [14]=42 [15]=25
+Maxwell STAT jobs/layer histogram (n=500000): [1]=157752 [2]=128579 [3]=85686 [4]=54450 [5]=32750 [6]=19774 [7]=10275 [8]=5439 [9]=2520 [10]=1119 [11]=504 [12]=202 [13]=83 [14]=43 [15]=25
+strata serve: prompt 117 tokens = 0 reused + 117 read in 974 ms (120.2 tok/s), 600 generated in 10089 ms (59.5 tok/s), drafts accepted 380 of 555, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (62626 hits / 62626 lookups); 310334 more read by the GPU over PCIe or from another GPU (83.2% of all 372960 routed)
+strata serve: expert tiers: GPU 62626 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 1843.7 MB from storage (23 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.62 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 899 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 12 windows, 51 of 62 drafts accepted
+strata serve: conversation cache: parked 718 tokens in 165.2 ms; parked=2 bytes=489555584 evictions=0 snapshot_bytes=245050416 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=520000): [1]=162486 [2]=133136 [3]=89536 [4]=57293 [5]=34535 [6]=20879 [7]=10887 [8]=5719 [9]=2652 [10]=1190 [11]=525 [12]=208 [13]=85 [14]=43 [15]=25
+Maxwell STAT jobs/layer histogram (n=540000): [1]=171751 [2]=138666 [3]=92257 [4]=58674 [5]=35157 [6]=21164 [7]=11000 [8]=5775 [9]=2668 [10]=1197 [11]=529 [12]=208 [13]=85 [14]=43 [15]=25
+Maxwell STAT jobs/layer histogram (n=560000): [1]=178904 [2]=143972 [3]=95457 [4]=60606 [5]=36286 [6]=21810 [7]=11311 [8]=5952 [9]=2746 [10]=1227 [11]=551 [12]=218 [13]=91 [14]=43 [15]=25
+Maxwell STAT jobs/layer histogram (n=580000): [1]=187176 [2]=149186 [3]=98271 [4]=62257 [5]=37229 [6]=22361 [7]=11596 [8]=6101 [9]=2807 [10]=1266 [11]=563 [12]=223 [13]=94 [14]=44 [15]=25
+Maxwell STAT jobs/layer histogram (n=600000): [1]=191202 [2]=153335 [3]=102108 [4]=65130 [5]=39314 [6]=23731 [7]=12403 [8]=6571 [9]=3016 [10]=1367 [11]=605 [12]=241 [13]=100 [14]=48 [15]=27
+strata serve: prompt 117 tokens = 112 reused + 5 read in 222 ms (22.5 tok/s), 600 generated in 9893 ms (60.6 tok/s), drafts accepted 393 of 590, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (67304 hits / 67304 lookups); 316696 more read by the GPU over PCIe or from another GPU (82.5% of all 384000 routed)
+strata serve: expert tiers: GPU 67304 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 937.7 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.61 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 1110 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 10 windows, 44 of 50 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=1
+strata serve: conversation cache: parked 719 tokens in 123.0 ms; parked=2 bytes=489555588 evictions=0 snapshot_bytes=245050420 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=620000): [1]=194443 [2]=157242 [3]=106002 [4]=68348 [5]=41701 [6]=25310 [7]=13258 [8]=7047 [9]=3253 [10]=1485 [11]=654 [12]=265 [13]=111 [14]=51 [15]=28
+Maxwell STAT jobs/layer histogram (n=640000): [1]=200381 [2]=162073 [3]=109581 [4]=70814 [5]=43179 [6]=26191 [7]=13716 [8]=7265 [9]=3350 [10]=1522 [11]=665 [12]=268 [13]=113 [14]=51 [15]=28
+Maxwell STAT jobs/layer histogram (n=660000): [1]=209729 [2]=167739 [3]=112236 [4]=72098 [5]=43803 [6]=26442 [7]=13820 [8]=7313 [9]=3360 [10]=1529 [11]=666 [12]=270 [13]=113 [14]=51 [15]=28
+Maxwell STAT jobs/layer histogram (n=680000): [1]=218499 [2]=173337 [3]=114895 [4]=73523 [5]=44537 [6]=26884 [7]=14009 [8]=7415 [9]=3399 [10]=1555 [11]=670 [12]=276 [13]=115 [14]=54 [15]=28
+Maxwell STAT jobs/layer histogram (n=700000): [1]=223997 [2]=178055 [3]=118333 [4]=75938 [5]=46224 [6]=27902 [7]=14601 [8]=7742 [9]=3548 [10]=1656 [11]=704 [12]=293 [13]=118 [14]=55 [15]=30
+Maxwell STAT jobs/layer histogram (n=720000): [1]=229134 [2]=182648 [3]=121954 [4]=78596 [5]=47942 [6]=28922 [7]=15185 [8]=8079 [9]=3737 [10]=1741 [11]=734 [12]=311 [13]=127 [14]=56 [15]=30
+strata serve: prompt 117 tokens = 112 reused + 5 read in 193 ms (25.9 tok/s), 600 generated in 10107 ms (59.4 tok/s), drafts accepted 384 of 580, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (67146 hits / 67146 lookups); 316854 more read by the GPU over PCIe or from another GPU (82.5% of all 384000 routed)
+strata serve: expert tiers: GPU 67146 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 522.2 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.61 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 1331 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 11 windows, 45 of 57 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=1
+strata serve: conversation cache: parked 720 tokens in 122.3 ms; parked=2 bytes=489561736 evictions=0 snapshot_bytes=245056568 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=740000): [1]=232345 [2]=186516 [3]=125890 [4]=81756 [5]=50196 [6]=30460 [7]=16046 [8]=8491 [9]=3947 [10]=1841 [11]=774 [12]=329 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=760000): [1]=240889 [2]=192041 [3]=128812 [4]=83280 [5]=51006 [6]=30819 [7]=16212 [8]=8576 [9]=3983 [10]=1852 [11]=790 [12]=331 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=780000): [1]=249917 [2]=197803 [3]=131540 [4]=84618 [5]=51644 [6]=31127 [7]=16309 [8]=8636 [9]=4006 [10]=1863 [11]=794 [12]=334 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=800000): [1]=259457 [2]=203484 [3]=134074 [4]=85857 [5]=52204 [6]=31392 [7]=16423 [8]=8681 [9]=4018 [10]=1871 [11]=795 [12]=335 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=820000): [1]=269240 [2]=209303 [3]=136534 [4]=86955 [5]=52675 [6]=31610 [7]=16511 [8]=8726 [9]=4031 [10]=1875 [11]=796 [12]=335 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=840000): [1]=279724 [2]=215334 [3]=138834 [4]=87736 [5]=52935 [6]=31698 [7]=16553 [8]=8735 [9]=4035 [10]=1876 [11]=796 [12]=335 [13]=130 [14]=60 [15]=31
+Maxwell STAT jobs/layer histogram (n=860000): [1]=290148 [2]=221281 [3]=141051 [4]=88616 [5]=53271 [6]=31822 [7]=16592 [8]=8763 [9]=4038 [10]=1877 [11]=797 [12]=335 [13]=130 [14]=60 [15]=31
+strata serve: prompt 84 tokens = 0 reused + 84 read in 773 ms (108.6 tok/s), 600 generated in 12156 ms (49.4 tok/s), drafts accepted 289 of 431, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (98444 hits / 98444 lookups); 259156 more read by the GPU over PCIe or from another GPU (72.5% of all 357600 routed)
+strata serve: expert tiers: GPU 98444 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 1623.7 MB from storage (1 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.61 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 1646 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 14 windows, 22 of 49 drafts accepted
+strata serve: conversation cache: parked 686 tokens in 168.3 ms; parked=3 bytes=734215604 evictions=0 snapshot_bytes=244653868 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=880000): [1]=297692 [2]=226585 [3]=144143 [4]=90472 [5]=54368 [6]=32418 [7]=16864 [8]=8879 [9]=4099 [10]=1909 [11]=812 [12]=343 [13]=131 [14]=65 [15]=32
+Maxwell STAT jobs/layer histogram (n=900000): [1]=307114 [2]=232268 [3]=146736 [4]=91719 [5]=54976 [6]=32689 [7]=16961 [8]=8933 [9]=4113 [10]=1916 [11]=813 [12]=346 [13]=131 [14]=65 [15]=32
+Maxwell STAT jobs/layer histogram (n=920000): [1]=316939 [2]=237971 [3]=149172 [4]=92805 [5]=55497 [6]=32937 [7]=17074 [8]=8971 [9]=4129 [10]=1925 [11]=816 [12]=347 [13]=132 [14]=65 [15]=32
+Maxwell STAT jobs/layer histogram (n=940000): [1]=327212 [2]=243467 [3]=151486 [4]=93850 [5]=55961 [6]=33176 [7]=17167 [8]=9009 [9]=4152 [10]=1931 [11]=819 [12]=350 [13]=134 [14]=65 [15]=32
+Maxwell STAT jobs/layer histogram (n=960000): [1]=336017 [2]=249141 [3]=154265 [4]=95272 [5]=56667 [6]=33517 [7]=17310 [8]=9081 [9]=4179 [10]=1945 [11]=830 [12]=352 [13]=137 [14]=65 [15]=33
+Maxwell STAT jobs/layer histogram (n=980000): [1]=345531 [2]=254846 [3]=156823 [4]=96495 [5]=57221 [6]=33775 [7]=17426 [8]=9132 [9]=4189 [10]=1951 [11]=831 [12]=355 [13]=138 [14]=65 [15]=33
+Maxwell STAT jobs/layer histogram (n=1000000): [1]=355029 [2]=260762 [3]=159434 [4]=97553 [5]=57694 [6]=34034 [7]=17541 [8]=9178 [9]=4203 [10]=1958 [11]=832 [12]=356 [13]=138 [14]=65 [15]=34
+strata serve: prompt 84 tokens = 79 reused + 5 read in 225 ms (22.2 tok/s), 600 generated in 12076 ms (49.7 tok/s), drafts accepted 291 of 452, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (95872 hits / 95872 lookups); 269408 more read by the GPU over PCIe or from another GPU (73.8% of all 365280 routed)
+strata serve: expert tiers: GPU 95872 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 915.8 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.60 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 1956 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 9 windows, 24 of 38 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=2
+strata serve: conversation cache: parked 683 tokens in 123.0 ms; parked=3 bytes=734166056 evictions=0 snapshot_bytes=244604320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1020000): [1]=362185 [2]=266055 [3]=162707 [4]=99553 [5]=58835 [6]=34643 [7]=17820 [8]=9308 [9]=4263 [10]=1985 [11]=849 [12]=365 [13]=141 [14]=67 [15]=35
+Maxwell STAT jobs/layer histogram (n=1040000): [1]=371438 [2]=271778 [3]=165368 [4]=100806 [5]=59487 [6]=34921 [7]=17917 [8]=9357 [9]=4280 [10]=1994 [11]=852 [12]=368 [13]=143 [14]=67 [15]=35
+Maxwell STAT jobs/layer histogram (n=1060000): [1]=381076 [2]=277350 [3]=167846 [4]=102023 [5]=60086 [6]=35209 [7]=18063 [8]=9393 [9]=4297 [10]=1999 [11]=853 [12]=370 [13]=144 [14]=67 [15]=35
+Maxwell STAT jobs/layer histogram (n=1080000): [1]=391238 [2]=282966 [3]=170224 [4]=103116 [5]=60528 [6]=35406 [7]=18136 [8]=9419 [9]=4306 [10]=2002 [11]=853 [12]=371 [13]=144 [14]=67 [15]=35
+Maxwell STAT jobs/layer histogram (n=1100000): [1]=401161 [2]=288912 [3]=172707 [4]=104118 [5]=60910 [6]=35568 [7]=18196 [8]=9443 [9]=4316 [10]=2008 [11]=854 [12]=371 [13]=145 [14]=67 [15]=35
+Maxwell STAT jobs/layer histogram (n=1120000): [1]=411348 [2]=294452 [3]=175029 [4]=105156 [5]=61424 [6]=35811 [7]=18303 [8]=9466 [9]=4334 [10]=2012 [11]=856 [12]=371 [13]=145 [14]=69 [15]=35
+strata serve: prompt 84 tokens = 79 reused + 5 read in 193 ms (26.0 tok/s), 600 generated in 12051 ms (49.8 tok/s), drafts accepted 288 of 432, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (103423 hits / 103423 lookups); 254177 more read by the GPU over PCIe or from another GPU (71.1% of all 357600 routed)
+strata serve: expert tiers: GPU 103423 hits this request; since the start RAM 0 blobs, files 0 blobs 35488.4 MB read
+strata serve: file tier I/O this request: the OS read 765.3 MB from storage (0 major faults) for 0.0 MB of expert reads; page cache held 0.0 MB at the read, not 0.0 MB; io prefetch: 0 read ahead (0.0 MB by pread), 0 used, 0 unused, 0 skipped (cached), 0 dropped; decode waited 0.0 ms in 0 fetches; decode gate: cache room 0.60 of the experts, read-ahead used 100%, page cache held 0% of the decode's reads (EWMA), closed, closed in 2270 windows so far, 1 flips; read ahead 0.0 MB, 0.0 MB of it used; 0 late, 0 not admitted (confidence), 0 (budget 0 MB/window)
+strata serve: suffix drafts: 10 windows, 25 of 41 drafts accepted

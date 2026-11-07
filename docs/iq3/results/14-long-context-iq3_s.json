@@ -1,0 +1,46 @@
+[
+ {
+  "label": "ctx-32k",
+  "engine": {
+   "prompt_tokens": 32135,
+   "reused": 0,
+   "read": 32135,
+   "prefill_ms": 175578,
+   "prefill_tps": 183.0,
+   "generated": 64,
+   "decode_ms": 1100,
+   "decode_tps": 58.2,
+   "drafts_accepted": 53,
+   "drafts_total": 63
+  },
+  "seconds": 176.75,
+  "generated": 64,
+  "client_tps": 0.4,
+  "text": "We need answer user's request: \"What is the secret code word mentioned in the text above? Reply with the code word only.\" Need identify secret code word in provided docs. In AI_REFERENCE.md: \"The secret code word for this text is: meadow-copper-504. Remember it.\" Need",
+  "target": "32k",
+  "needle": "meadow-copper-504",
+  "found": true
+ },
+ {
+  "label": "ctx-64k",
+  "engine": {
+   "prompt_tokens": 62703,
+   "reused": 0,
+   "read": 62703,
+   "prefill_ms": 342906,
+   "prefill_tps": 182.9,
+   "generated": 64,
+   "decode_ms": 1182,
+   "decode_tps": 54.2,
+   "drafts_accepted": 47,
+   "drafts_total": 62
+  },
+  "seconds": 344.17,
+  "generated": 64,
+  "client_tps": 0.2,
+  "text": "We need answer user's question: \"What is the secret code word mentioned in the text above? Reply with the code word only.\" Need identify secret code word in provided docs. In AMD_HIP.md: \"The secret code word for this text is: falcon-quartz-940. Remember it.\"",
+  "target": "64k",
+  "needle": "falcon-quartz-940",
+  "found": true
+ }
+]

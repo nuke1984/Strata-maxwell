@@ -1,0 +1,93 @@
+Iterazione 5 - finestra operativa - 7 novembre 2026 (18:01-19:45 UTC)
+=====================================================================
+Banco fisso: citta / codice / prosa, temperatura 0, 600 token, 3 run per prompt.
+Motore NEW IQ3_S (/root/Strata-iq3/build-iq3/strata) contro IQ2_XS (stesso motore).
+Ordine: IQ3_S prima (load 213 s), poi IQ2_XS. Produzione ferma per tutta la finestra.
+Nessun OOM, nessun gate fallito, nessun errore.
+
+1. BANCO FISSO - tok/s dal log del motore
+------------------------------------------
+
+IQ3_S (load 213 s, 396 MiB liberi al load, 95 MiB durante le generazioni)
+  city   run 1  43.7  (600 tok, drafts 370/578)
+  city   run 2  43.1  (600 tok, drafts 371/612)
+  city   run 3  45.5  (600 tok, drafts 379/585)
+  code   run 1  51.1  (600 tok, drafts 423/596)
+  code   run 2  46.9  (600 tok, drafts 368/526)
+  code   run 3  50.6  (600 tok, drafts 416/596)
+  prose  run 1  43.8  (600 tok, drafts 316/444)
+  prose  run 2  42.5  (600 tok, drafts 320/508)
+  prose  run 3  43.6  (600 tok, drafts 309/429)
+
+IQ3_S riepilogo (media / mediana / primo run / stdev / min / max):
+  city   mean 44.1  median 43.7  first 43.7 (run 1, freddo)  stdev 1.2  min 43.1  max 45.5
+  code   mean 49.5  median 50.6  first 51.1 (run 1, freddo)  stdev 2.3  min 46.9  max 51.1
+  prose  mean 43.3  median 43.6  first 43.8 (run 1, freddo)  stdev 0.7  min 42.5  max 43.8
+  drafts accettati: city 1120/1775 (63.1%), code 1207/1718 (70.3%), prose 945/1381 (68.4%)
+
+IQ2_XS (load 640 s da HDD, 2242 MiB liberi)
+  city   run 1  53.5  (600 tok, drafts 367/612)
+  city   run 2  58.5  (600 tok, drafts 375/560)
+  city   run 3  58.4  (600 tok, drafts 373/559)
+  code   run 1  59.5  (600 tok, drafts 380/555)
+  code   run 2  60.6  (600 tok, drafts 393/590)
+  code   run 3  59.4  (600 tok, drafts 384/580)
+  prose  run 1  49.4  (600 tok, drafts 289/431)
+  prose  run 2  49.7  (600 tok, drafts 291/452)
+  prose  run 3  49.8  (600 tok, drafts 288/432)
+
+IQ2_XS riepilogo:
+  city   mean 56.8  median 58.4  first 53.5 (run 1, freddo)  stdev 2.9  min 53.5  max 58.5
+  code   mean 59.8  median 59.5  first 59.5 (run 1, freddo)  stdev 0.7  min 59.4  max 60.6
+  prose  mean 49.6  median 49.7  first 49.4 (run 1, freddo)  stdev 0.2  min 49.4  max 49.8
+  drafts accettati: city 1115/1731 (64.4%), code 1157/1725 (67.1%), prose 868/1315 (66.0%)
+
+CRITERIO (media delle 6 run citta+codice):
+  IQ3_S  46.8 tok/s, mediana 46.2  -> FAIL contro 55
+  IQ2_XS 58.3 tok/s, mediana 59.0  -> PASS contro 55
+
+Confronto a parita di prompt (media):
+  city   IQ3_S 44.1 vs IQ2_XS 56.8  -> -22.3%
+  code   IQ3_S 49.5 vs IQ2_XS 59.8  -> -17.2%
+  prose  IQ3_S 43.3 vs IQ2_XS 49.6  -> -12.7%
+  citta+codice  IQ3_S 46.8 vs IQ2_XS 58.3  -> -19.7%
+
+2. QUALITA - testi salvati
+---------------------------
+  results/10-quality-iq2_xs.md   (citta + codice, primo run, temperatura 0)
+  results/11-quality-iq3_s.md    (citta + codice, primo run, temperatura 0)
+
+3. CONTESTO LUNGO - IQ3_S
+--------------------------
+  32k: prompt 32.135 tok, prefill 183.0 tok/s, decode 58.2 tok/s, needle TROVATO, 3060 93 MiB liberi
+  64k: prompt 62.703 tok, prefill 182.9 tok/s, decode 54.2 tok/s, needle TROVATO, 3060 93 MiB liberi
+  Nessun OOM. 128k non provato (non richiesto: 32k e 64k tenevano).
+  Nota: la VRAM libera sulla 3060 scende da 396 MiB (al load) a 93 MiB durante la generazione,
+  per le finestre del verifier. Resta positiva a 32k e 64k.
+
+4. SOAK - IQ3_S, 10 minuti
+---------------------------
+  73 run da 300 token, media 37.5, mediana 37.5, stdev 1.0, min 34.5, max 39.7
+  primo 36.9 (freddo), ultimo 35.7, deriva -1.2 tok/s
+  primo terzo 37.6, ultimo terzo 37.5: nessun degrado progressivo
+  VRAM libera costante a 93 MiB per tutti i 73 run
+  AER prima: 09:11.0 = 6 (solo RxErr). AER dopo: 09:11.0 = 8. GPU tutte a 0.
+
+5. GATE E PRODUZIONE
+---------------------
+  IQ3_S 8/8 PASSED, 56 campioni (7 combinazioni x 8 die), 2853-2854 esperti/die,
+        5.42-5.45 GiB/die, 1749 slot, 396 MiB liberi, load 213 s
+  IQ2_XS 8/8 PASSED, 24 campioni IDENTICI alla baseline 0.1.51,
+        2838 x6 / 2837 x2, 3.80-3.82 GiB/die, 1874 slot, 2242 MiB liberi
+  Produzione riavviata: active, PID 20630, health OK, 8/8 gate PASSED,
+        24 righe di gate IDENTICHE alla baseline 0.1.51, 1874 slot, 2246 MiB liberi, 0 errori
+  AER fine finestra: solo 0000:09:11.0 a 8 (era 3 all'inizio); tutte le GPU a 0
+
+6. NOTE
+-------
+  - La 3060 (nvidia-smi index 4) e la scheda che ospita cache esperti e verifier.
+    Con IQ3_S la VRAM libera scende a 93-95 MiB durante la generazione (era 396 al load).
+    Con IQ2_XS resta 1943 MiB. E' la differenza piu' rilevante per la produzione.
+  - L'AER del bridge PLX 8747 (0000:09:11.0) e' salito da 3 a 8 (tutti RxErr, correggibili).
+    Non e' una GPU e non ha prodotto OOM ne' errori applicativi. Da seguire.
+  - IQ3_S paga circa -20% sulla media citta+codice e -13% sulla prosa rispetto a IQ2_XS.

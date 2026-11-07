@@ -17,6 +17,7 @@ Indice:
 - [Iterazione 3 — implementazione e verifiche di kernel (misurato)](#iterazione-3--implementazione-e-verifiche-di-kernel-misurato-2026-11-07)
   — con la [finestra operativa](#finestra-operativa-misurato-2026-11-07) in coda
 - [Iterazione 5 — banco fisso e verifiche per la produzione (protocollo)](#iterazione-5--banco-fisso-e-verifiche-per-la-produzione-protocollo-prossima-finestra)
+  — con le [misure](#iterazione-5--banco-fisso-contesto-lungo-e-soak-misurato-2026-11-07) in coda
 
 ---
 
@@ -1020,5 +1021,97 @@ fermarsi, salvare il log, riavviare la produzione e riportare. Nessuna variante 
 **Cosa questa iterazione non fa.** Non cambia il codice del motore: è misura. Il criterio ≥55 vale
 sulla media città+codice, che è l'unica cosa che il banco deve decidere.
 
-→ **Iterazione 5: banco, testi di qualità, contesto lungo e soak pronti; misure alla prossima
-finestra.**
+---
+
+## Iterazione 5 — banco fisso, contesto lungo e soak (misurato, 2026-11-07)
+
+Finestra **18:01–19:45 UTC**, produzione ferma, schede rilasciate prima di ogni load. Ordine
+dell'operatore: **IQ3_S per primo**, poi IQ2_XS. Nessun OOM, nessun gate fallito, nessun errore
+applicativo: la regola di stop non è stata usata. Output completo in `results/09-window-i5.txt`,
+log grezzi in `docs/iq3/window-iq3_s-i5.txt` e `window-iq2_xs-i5.txt`, JSON in `results/12`–`15`.
+
+### Il criterio — **FAIL**
+
+| motore | media città+codice (6 run) | mediana | esito |
+|---|---|---|---|
+| IQ3_S | **46.8 tok/s** | 46.2 | **FAIL** contro 55 |
+| IQ2_XS | **58.3 tok/s** | 59.0 | **PASS** contro 55 |
+
+L'IQ3_S costa **−19,7%** sulla media città+codice rispetto all'IQ2_XS (−22,3% su città, −17,2% su
+codice, −12,7% su prosa). Non è un problema di draft: l'accettazione è simile (63,1% vs 64,4% su
+città, 70,3% vs 67,1% su codice). Il divario è nel costo per token, coerente con il peso maggiore
+del pack IQ3_S.
+
+### Banco fisso — ogni prompt, media / mediana / primo run
+
+**IQ3_S** (load 213 s, 396 MiB liberi al load, 93–95 MiB durante le generazioni)
+
+| prompt | media | mediana | primo run (freddo) | stdev | min–max | draft |
+|---|---|---|---|---|---|---|
+| città | 44.1 | 43.7 | **43.7** | 1.2 | 43.1–45.5 | 1120/1775 (63,1%) |
+| codice | 49.5 | 50.6 | **51.1** | 2.3 | 46.9–51.1 | 1207/1718 (70,3%) |
+| prosa | 43.3 | 43.6 | **43.8** | 0.7 | 42.5–43.8 | 945/1381 (68,4%) |
+
+**IQ2_XS** (load 640 s da HDD, 2242 MiB liberi)
+
+| prompt | media | mediana | primo run (freddo) | stdev | min–max | draft |
+|---|---|---|---|---|---|---|
+| città | 56.8 | 58.4 | **53.5** | 2.9 | 53.5–58.5 | 1115/1731 (64,4%) |
+| codice | 59.8 | 59.5 | **59.5** | 0.7 | 59.4–60.6 | 1157/1725 (67,1%) |
+| prosa | 49.6 | 49.7 | **49.4** | 0.2 | 49.4–49.8 | 868/1315 (66,0%) |
+
+Il primo run è a freddo su entrambi i motori, e su città è il più lento in entrambi (43.7 vs media
+44.1 per IQ3_S; 53.5 vs 56.8 per IQ2_XS). La distanza fra i due motori non è un effetto del primo
+run: resta su tutte e tre le categorie.
+
+### Qualità — testi per l'operatore
+
+`results/10-quality-iq2_xs.md` e `results/11-quality-iq3_s.md`: risposte città e codice del primo
+run, temperatura 0, testo integrale (thinking + risposta).
+
+### Contesto lungo — IQ3_S, nessun OOM
+
+| lunghezza | token reali | prefill | decode | parola-codice | 3060 libera |
+|---|---|---|---|---|---|
+| ~32k | **32.135** | 183.0 tok/s (175.6 s) | 58.2 tok/s | **TROVATA** | 93 MiB |
+| ~64k | **62.703** | 182.9 tok/s (342.9 s) | 54.2 tok/s | **TROVATA** | 93 MiB |
+
+Il prefill è **identico** alla baseline (183.0 e 182.9 contro ~181 tok/s). Il decode a 32k/64k è
+**più veloce** che sul prompt corto (58.2 e 54.2 contro 44.1): con più contesto le draft del
+verifier vengono accettate di più. 128k non è stato provato: 32k e 64k tenevano e non serviva
+spingersi oltre.
+
+**Il dato che conta per la produzione**: con IQ3_S la VRAM libera sulla 3060 scende da 396 MiB al
+load a **93–95 MiB** durante la generazione non appena la cache si riempie, e ci resta. A 32k e 64k
+non va in OOM, ma il margine è di ~90 MiB, non di ~400. Con IQ2_XS resta 1943 MiB.
+
+### Soak — IQ3_S, 10 minuti
+
+73 run da 300 token: **media 37.5, mediana 37.5**, stdev 1.0, min 34.5, max 39.7. Primo run 36.9
+(freddo), ultimo 35.7 (**deriva −1.2 tok/s**). Primo terzo 37.6, ultimo terzo 37.5: **nessun
+degrado progressivo**. VRAM libera costante a 93 MiB per tutti i 73 run.
+
+**AER.** Prima: solo `0000:09:11.0` (bridge PLX 8747, non una GPU) a **6**, tutte le GPU a **0**.
+Dopo: lo stesso bridge a **8**, GPU ancora tutte a **0**. Le 2 unità in più sono tutte `RxErr`
+(errori di ricezione PCIe correggibili): **il contatore si è mosso durante la finestra**, cosa che
+nella finestra dell'Iterazione 3 non era successa (3→3). Nessun OOM e nessun errore applicativo
+associato; è un'osservazione da seguire, non una spiegazione.
+
+### Gate e produzione
+
+| controllo | IQ3_S | IQ2_XS |
+|---|---|---|
+| gate PASSED | **8/8** | **8/8** |
+| campioni | **56** (7 combinazioni × 8 die) | **24**, identici alla baseline 0.1.51 |
+| esperti/die | 2853–2854 | 2838 ×6, 2837 ×2 |
+| GiB/die | 5.42–5.45 | 3.80–3.82 |
+| slot cache | 1749 | 1874 |
+| MiB liberi al load | 396 | 2242 |
+| load | 213 s (SSD) | 640 s (HDD) |
+
+Produzione ripristinata: `active`, PID 20630, health OK, **8/8 gate PASSED**, 1874 slot,
+**2246 MiB** liberi, 0 errori, e le **24 righe di gate identiche alla baseline 0.1.51**.
+
+→ **Iterazione 5: criterio ≥55 FAIL sull'IQ3_S (46.8 media, 46.2 mediana).** IQ3_S è ~20% più
+lento dell'IQ2_XS su città+codice e lascia ~90 MiB liberi sulla 3060 invece di ~400. La produzione
+resta su IQ2_XS.
