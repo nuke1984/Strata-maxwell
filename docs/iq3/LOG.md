@@ -1366,4 +1366,18 @@ Non cambia i kernel, non cambia il criterio, non promuove l'IQ3_S. Non cambia i 
 Non riduce la cache in produzione: se il margine VRAM non si compra senza perdere velocità, la
 risposta è «IQ3_S non va in produzione», che è già la conclusione dell'Iterazione 5.
 
+### Stato della preparazione (misurato, prima della finestra)
+
+| controllo | esito |
+|---|---|
+| compilazione del motore | `[100%] Built target strata`, dai sorgenti allineati al commit `5eb4944a` |
+| test offline (potenza, profilo, banco) | **30/30 verdi** in locale e sul server (Python 3.11.2) |
+| worktree del server `/root/Strata-iq3` | `5eb4944a`, **pulito**; il remoto configurato è `nuke1984`, il branch è stato allineato con un fetch esplicito da `BitMakerMan` (i due alberi coincidono file per file, `LOG.md` escluso finché non è arrivato col commit) |
+| `tools/iq3_profile.py --dump` | 48 layer, **39 down-20 + 9 down-42**, mappa verificata sul pack |
+| produzione IQ2_XS | `active`, health OK, **2.247 MiB liberi** sulla 3060, 4.0–4.1 GiB usati per die sulle M10 |
+| AER di partenza | bridge `0000:09:11.0` a **8** (`RxErr`), **tutte le 9 GPU a 0** |
+
+Nota operativa: `/root/aer.sh` **non esisteva**; è stato creato in preparazione (legge
+`aer_dev_correctable` e stampa una riga per device, più le classi non nulle delle GPU). È read-only.
+
 ---
