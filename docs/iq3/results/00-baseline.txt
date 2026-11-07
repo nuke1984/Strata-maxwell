@@ -1,0 +1,54 @@
+# Iterazione 0 - baseline IQ2_XS a 8 die
+# data: 2026-11-07T14:50:56Z  host: strata  kernel: 6.17.13-21-pve
+# engine: strata 0.1.51 (branch iq3, commit 8b15183e)
+# GPU: RTX 3060 (CUDA0) + 8x Tesla M10 GM107 (CUDA1-8), CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+## Caricamento
+strata generate: expert cache 1874 slots, 2.53 GiB of VRAM; policy is
+strata generate: pre-filled 1874 of 1874 slots from the profile in 17.5 s (155 MB/s); slot 0 verified
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.22e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 1: 2838 experts, 3.82 GiB (filled in 103.8 s)
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.24e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 2: 2838 experts, 3.81 GiB (filled in 76.4 s)
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.26e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 3: 2838 experts, 3.81 GiB (filled in 61.7 s)
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.17e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 4: 2838 experts, 3.80 GiB (filled in 59.6 s)
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.21e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 5: 2838 experts, 3.81 GiB (filled in 67.4 s)
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2838 blobs converted)
+strata generate: Maxwell GPU 6: 2838 experts, 3.81 GiB (filled in 70.8 s)
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.23e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 7: 2837 experts, 3.81 GiB (filled in 70.6 s)
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.12e-02, 2837 blobs converted)
+strata generate: Maxwell GPU 8: 2837 experts, 3.81 GiB (filled in 73.8 s)
+strata prefill: 8 Maxwell tier(s) compute their experts' rows of every prompt chunk (the arena is not read for them)
+strata serve: 2246 MiB of VRAM free with everything loaded
+
+## Prefill (3 prompt da 2220 token, /root/prefill_test.py)
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12771 ms (173.8 tok/s), 1 generated in 45 ms (22.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12433 ms (178.6 tok/s), 1 generated in 28 ms (35.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12424 ms (178.7 tok/s), 1 generated in 28 ms (35.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+
+## Decode
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12771 ms (173.8 tok/s), 1 generated in 45 ms (22.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12433 ms (178.6 tok/s), 1 generated in 28 ms (35.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12424 ms (178.7 tok/s), 1 generated in 28 ms (35.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 96 tokens = 0 reused + 96 read in 891 ms (107.7 tok/s), 1289 generated in 23595 ms (54.6 tok/s), drafts accepted 727 of 1007, 1 checkpoints
+strata serve: prompt 1403 tokens = 1384 reused + 19 read in 222 ms (85.4 tok/s), 494 generated in 11097 ms (44.5 tok/s), drafts accepted 224 of 416, 1 checkpoints
+strata serve: prompt 84 tokens = 0 reused + 84 read in 915 ms (91.8 tok/s), 600 generated in 12695 ms (47.3 tok/s), drafts accepted 268 of 425, 1 checkpoints
+strata serve: prompt 84 tokens = 79 reused + 5 read in 186 ms (26.9 tok/s), 600 generated in 12384 ms (48.5 tok/s), drafts accepted 275 of 423, 1 checkpoints
+
+## A/B: stesso config, motore 0.1.47 (engine-mw8) vs 0.1.51
+### prefill 0.1.47
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12771 ms (173.8 tok/s), 1 generated in 45 ms (22.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12250 ms (181.2 tok/s), 1 generated in 29 ms (35.1 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12257 ms (181.1 tok/s), 1 generated in 29 ms (35.0 tok/s), drafts accepted 0 of 0, 1 checkpoints
+### decode 0.1.47
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12771 ms (173.8 tok/s), 1 generated in 45 ms (22.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12250 ms (181.2 tok/s), 1 generated in 29 ms (35.1 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 2220 tokens = 0 reused + 2220 read in 12257 ms (181.1 tok/s), 1 generated in 29 ms (35.0 tok/s), drafts accepted 0 of 0, 1 checkpoints
+strata serve: prompt 96 tokens = 0 reused + 96 read in 709 ms (135.5 tok/s), 1290 generated in 24095 ms (53.5 tok/s), drafts accepted 719 of 1018, 1 checkpoints
+strata serve: prompt 1403 tokens = 1385 reused + 18 read in 216 ms (83.4 tok/s), 494 generated in 11594 ms (42.6 tok/s), drafts accepted 209 of 420, 1 checkpoints
+strata serve: prompt 84 tokens = 0 reused + 84 read in 634 ms (132.6 tok/s), 600 generated in 12494 ms (48.0 tok/s), drafts accepted 271 of 422, 1 checkpoints
+strata serve: prompt 84 tokens = 79 reused + 5 read in 57 ms (87.9 tok/s), 600 generated in 12243 ms (49.0 tok/s), drafts accepted 279 of 436, 1 checkpoints

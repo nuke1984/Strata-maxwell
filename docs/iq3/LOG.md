@@ -47,6 +47,13 @@ misura la velocità.
 - Il kernel `src/kernels/cuda/expert_maxwell.cu`: è già per-die, nessuna modifica necessaria.
 - I default del percorso IQ2_XS: nessuno è cambiato.
 
+**Nota sullo stato del server al momento dell'esecuzione (2026-11-07).** Il checkout di
+produzione non era quello dato per scontato dal brief: `/root/Strata-maxwell` è sul branch `mw8`
+(motore 0.1.47, commit locale `892d8df0`) con remote `nuke1984`, e la produzione **girava già con
+8 die** su `engine-mw8`. Il `main` del fork (`6175fa0`, 0.1.51) è un ramo diverso: 597 commit di
+distanza, base comune `011c9e60`. Per questo la baseline 0a è stata eseguita in un worktree
+separato e confrontata A/B con il motore in produzione, invece di sostituirlo.
+
 **Nota sulla patch `mw8`.** Il file `0001-mw8-up-to-8-Maxwell-devices-arrays-prefill-tier-cap-.patch`
 non era presente nel checkout locale. Le modifiche sono state riapplicate a mano seguendo la
 descrizione della patch, adattandole a `main` 6175fa0. L'unico hunk **omesso** è il warning +
@@ -155,21 +162,48 @@ systemctl start strata
   di 8, **fermarsi** e riportare il log: non misurare la velocità.
 - AER: 0 durante il test.
 
-**Risultato misurato.** *(da compilare da parte dell'operatore o del revisore)*
+**Risultato misurato.** (2026-11-07, aidrogen; output completo in `docs/iq3/results/00-baseline.txt`)
 
 ```
-data:
-8 Maxwell tier(s)?            SI / NO
-gate PASSED su tutti gli 8?   SI / NO
-esperti e GiB per die:
-slot 3060 / MiB liberi:
-prefill (tok/s):
-decode (tok/s):
-AER:
-note:
+data:                         2026-11-07
+8 Maxwell tier(s)?            SI
+gate PASSED su tutti gli 8?   SI (8/8, worst rel 1.12e-02 .. 1.26e-02)
+esperti e GiB per die:        2838 (CUDA1-6), 2837 (CUDA7-8); 3.80-3.82 GiB
+slot 3060 / MiB liberi:       1874 slot / 2246 MiB
+prefill (tok/s):              173.8 / 178.6 / 178.7   (media 177.0)
+decode (tok/s):               dipende dal prompt, vedi sotto
+AER:                          2 correctable, entrambi sul PCIe switch PLX 8747 (09:11.0), 0 sulle GPU
 ```
 
-→ Ipotesi: **CONFERMATA / SMENTITA** (da decidere sul risultato sopra).
+**A/B a parità di tutto (l'unica misura di decode valida).** Stesso config, stessi
+prompt, stessa macchina, stesso stato termico: cambia solo l'eseguibile.
+
+| prompt | 0.1.47 (`engine-mw8`) | 0.1.51 (`build-iq3`) |
+|---|---|---|
+| prefill 2220 tok × 3 | 173.8 / 181.2 / 181.1 | 173.8 / 178.6 / 178.7 |
+| 600 tok, "200 modi per un tramonto" | 48.0 / 49.0 | 47.3 / 48.5 |
+| 1801 tok (racconto) | 53.5 + 42.6 (1784 tok in 35.7 s ≈ 50.0) | 54.6 + 44.5 (1783 tok in 34.7 s ≈ 51.4) |
+
+→ **0.1.51 non regredisce**: è pari o leggermente sopra 0.1.47 su ogni prova. Il criterio 5
+del brief (IQ2_XS invariato) è soddisfatto.
+
+**Perché il decode non è 65-68,7 e perché non è una regressione.** Il numero assoluto dipende
+dall'accettazione delle draft, quindi dal testo generato: nel run di riferimento del 6 novembre
+(1801 tok, 68.6 tok/s) le draft accettate erano **1273 su 1687 (75,5%)**; con i prompt di oggi
+sono **727 su 1007 (72,2%)**. I run brevi da 300-600 token danno 45-49 tok/s **anche sul motore
+0.1.47**, quindi il dato storico non è riproducibile senza la richiesta esatta del PI agent.
+Il valore di riferimento per le iterazioni successive è la colonna 0.1.51 di questa tabella.
+
+**Nota di metodo sulla build.** Il checkout di produzione (`/root/Strata-maxwell`, branch `mw8`,
+motore 0.1.47) è stato lasciato intatto: la build è stata fatta in un worktree separato
+`/root/Strata-iq3` (detached su `8b15183`), con `third_party/llama.cpp` in symlink alla copia
+già presente. La `llama.cpp` sul server corrisponde esattamente al pin `3cf03257` richiesto da
+0.1.51 (hash della regione `mmq.cuh` identico). Build pulita in ~10 min, 18 warning (tutti
+preesistenti: `-Wrestrict`, `-Wunused-variable`, `-Wsign-compare`), 0 errori.
+
+→ Ipotesi: **CONFERMATA** sulla capacità (8 tier, 8 gate, tempi di caricamento, prefill nel
+range). **SMENTITA** nella forma "decode 65-68,7 entro il rumore": il decode è ~47-55 tok/s con
+i prompt usati, su **entrambi** i motori. La causa è l'accettazione delle draft, non il codice.
 
 ---
 
