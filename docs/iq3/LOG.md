@@ -16,6 +16,7 @@ Indice:
 - [Iterazione 3 — design: down IQ4_NL nativo (da rivedere prima del codice)](#iterazione-3--design-down-iq4_nl-nativo-da-rivedere-prima-del-codice)
 - [Iterazione 3 — implementazione e verifiche di kernel (misurato)](#iterazione-3--implementazione-e-verifiche-di-kernel-misurato-2026-11-07)
   — con la [finestra operativa](#finestra-operativa-misurato-2026-11-07) in coda
+- [Iterazione 5 — banco fisso e verifiche per la produzione (protocollo)](#iterazione-5--banco-fisso-e-verifiche-per-la-produzione-protocollo-prossima-finestra)
 
 ---
 
@@ -866,6 +867,20 @@ conteggio per die è esattamente 7, quindi tutte e sette — incluse le quattro 
 (18/20, 21/20, 22/20, 23/20) — sono state campionate. `worst rel` per die: 1.00e-02 … 1.27e-02,
 nello stesso intervallo della baseline IQ2_XS.
 
+**Confronto IQ3_S vs IQ2_XS a parità di prompt (correzione del criterio).** Il «≥55 tok/s» del
+brief si riferiva ai prompt **città/codice**, dove l'IQ2_XS faceva 65–67 tok/s il 5 novembre. Sul
+prompt tramonto l'IQ2_XS fa 47.5 / 49.7, quindi il confronto valido con la risposta di prova
+dell'IQ3_S non è 55 ma la colonna IQ2_XS dello stesso prompt:
+
+| prompt | IQ2_XS (motore) | IQ3_S (motore) | delta |
+|---|---|---|---|
+| "tramonto", 600 tok, a freddo | **47.5** tok/s | **42.9** tok/s | **−9,7%** |
+
+Cioè **circa −10%**, non "sotto target": il target va misurato sul banco città+codice, che è
+l'Iterazione 5. La prima risposta dell'IQ3_S è a freddo (finestre del verifier ancora da catturare),
+mentre la seconda colonna IQ2_XS della finestra (49.7) è già a caldo; il confronto omogeneo è
+47.5 contro 42.9, entrambi prima generazione dopo il load.
+
 **Passo 3 — errori.** Nessun gate fallito, nessun errore, nessun OOM. Il ramo di stop non è stato
 usato.
 
@@ -884,3 +899,114 @@ non si è mosso in tutta la finestra.
 `gate_run.sh`) sulla porta 8080, produzione ferma e schede rilasciate prima di ogni load
 (verificato con `nvidia-smi`: 0 MiB usati su tutte e 9 le schede). La produzione è tornata su con
 il suo `strata.service` e il suo config originali, mai modificati.
+
+---
+
+## Iterazione 5 — banco fisso e verifiche per la produzione (protocollo, prossima finestra)
+
+Iterazione 3 **confermata** dall'operatore. Questa voce prepara la finestra successiva: il banco
+fisso che decide il criterio, la raccolta dei testi per il confronto di qualità, il contesto lungo e
+lo soak. Codice e comandi sono pronti; le misure si fanno nella finestra, con l'OK dell'operatore.
+
+### Il criterio, corretto
+
+Il «≥55 tok/s» del brief si riferisce ai prompt **città/codice**, dove l'IQ2_XS faceva 65–67 tok/s
+il 5 novembre. Sul prompt tramonto l'IQ2_XS fa 47.5 / 49.7: confrontare l'IQ3_S con 55 su quel
+prompt sarebbe un errore di riferimento. Il confronto corretto è **a parità di prompt**:
+
+| prompt | IQ2_XS | IQ3_S | delta |
+|---|---|---|---|
+| "tramonto", 600 tok, prima generazione dopo il load | 47.5 tok/s | 42.9 tok/s | −9,7% |
+
+→ **IQ3_S costa circa il 10% di decode sullo stesso prompt**, non è "sotto target". Il criterio
+≥55 resta valido sulla **media città+codice** del banco fisso, che è ciò che misura questa
+iterazione.
+
+### Il banco — `tools/iq3_bench.py`
+
+Un solo strumento per le tre misure, con un test offline (`tools/test_iq3_bench.py`, 6 casi: campi
+della riga di log, isolamento della fetta, ultima riga che vince, log assente, criterio, prompt).
+
+| categoria | prompt | note |
+|---|---|---|
+| `city` | quello di `/root/det_test.py`: *"Descrivi la città di Firenze in circa 150 parole…"* | identico alla baseline del 5 novembre |
+| `code` | funzione Python media (`merge_intervals`, ~40 righe, type hint e due test) | |
+| `prose` | *"Elenca in modo prolisso e dettagliato 200 modi diversi di descrivere un tramonto…"* | lo stesso della finestra Iterazione 3 |
+
+Temperatura 0, `max_tokens 600`, **3 run per categoria**, IQ2_XS e IQ3_S **nella stessa sessione**
+(cambio di motore fra i due, non fra le categorie). Per ogni run il tool legge la riga del motore
+(`prompt N tokens … P generated in M ms (T tok/s), drafts accepted A of B`) invece di fidarsi
+dell'orologio del client, e riporta tok/s e bozze accettate.
+
+- **Criterio**: `≥55 tok/s` sulla media delle 6 run città+codice (la prosa non entra).
+- **Testi**: le risposte del primo run di `city` e `code` (temperatura 0) vanno in
+  `docs/iq3/results/10-quality-iq3_s.md` e `…-iq2_xs.md`, perché l'operatore le confronti.
+- **Chiave**: mai sulla riga di comando; il tool la legge da `--api-key-json` (campo `api_key`),
+  `--api-key-env` o `--api-key-file`, e senza chiave manda la richiesta senza header.
+
+### Contesto lungo
+
+Con **IQ3_S**, un prompt da ~32k e uno da ~64k token (fino a ~128k se regge), costruiti dallo stesso
+strumento con il testo della repo e una parola-codice nascosta a metà. Per ogni lunghezza:
+token reali del prompt, prefill tok/s, decode tok/s, VRAM libera sulla 3060, e se la parola-codice
+è stata ritrovata. Da annotare: OOM (nessuno atteso), e se i 396 MiB liberi bastano alle finestre
+del verifier a 32k/64k/128k.
+
+### Soak
+
+**10 minuti** con IQ3_S: prompt città in sequenza continua, 300 token per run, riportando tok/s,
+deriva della velocità, VRAM libera e AER **prima e dopo**. Un degrado progressivo o un contatore
+AER che si muove sono il risultato da riportare, non da interpretare qui.
+
+### Comandi per aidrogen (finestra, dopo l'OK)
+
+```sh
+# --- 0. stato e AER prima ---
+systemctl is-active strata
+nvidia-smi --query-gpu=index,memory.used,memory.free --format=csv,noheader
+for d in /sys/bus/pci/devices/*; do
+  [ -f "$d/aer_dev_correctable" ] && \
+    echo "$(basename $d) $(grep -i TOTAL_ERR_COR $d/aer_dev_correctable | awk '{print $2}')"
+done
+
+# --- 1. IQ2_XS: banco fisso (motore NEW) ---
+systemctl stop strata
+bash /root/gate_run.sh /root/Strata-maxwell/strata-iq2-xs-i3-after.json
+PY=/root/Strata-maxwell/.venv/bin/python
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs \
+  --engine-log /root/Strata-maxwell/strata-iq2-xs-i3-after.log \
+  --api-key-json /root/Strata-maxwell/strata-iq2_xs.json \
+  --texts-out /root/Strata-iq3/docs/iq3/results/10-quality-iq2_xs.md \
+  --json /root/iq2xs-bench.json
+
+# --- 2. IQ3_S: banco fisso, testi, contesto lungo, soak ---
+bash /root/down.sh
+bash /root/gate_run.sh /root/Strata-maxwell/strata-iq3_s-i3.json
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s \
+  --engine-log /root/Strata-maxwell/strata-iq3_s-i3.log \
+  --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json \
+  --texts-out /root/Strata-iq3/docs/iq3/results/11-quality-iq3_s.md \
+  --json /root/iq3s-bench.json
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --long-context 32k,64k \
+  --engine-log /root/Strata-maxwell/strata-iq3_s-i3.log \
+  --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json \
+  --json /root/iq3s-long.json
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --soak-minutes 10 \
+  --engine-log /root/Strata-maxwell/strata-iq3_s-i3.log \
+  --api-key-json /root/Strata-maxwell/strata-iq3_s-i3.json \
+  --json /root/iq3s-soak.json
+
+# --- 3. AER dopo, produzione di nuovo su IQ2_XS ---
+bash /root/down.sh
+systemctl start strata
+curl -sf http://127.0.0.1:8080/health && echo
+```
+
+**Regola di stop**, come nella finestra precedente: se un gate fallisce, se c'è un errore o un OOM,
+fermarsi, salvare il log, riavviare la produzione e riportare. Nessuna variante al volo.
+
+**Cosa questa iterazione non fa.** Non cambia il codice del motore: è misura. Il criterio ≥55 vale
+sulla media città+codice, che è l'unica cosa che il banco deve decidere.
+
+→ **Iterazione 5: banco, testi di qualità, contesto lungo e soak pronti; misure alla prossima
+finestra.**
