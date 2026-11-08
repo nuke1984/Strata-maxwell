@@ -132,14 +132,18 @@ Two consequences worth knowing before reading any number below:
   traffic specifically — the line does not separate a copy from the host from a copy from another
   die — so no bottleneck share is claimed here. The link numbers above are what was measured.
 
-### Why Gen1: what the campaign observed
+### Why Gen1: the remedy, and what is left of it
 
 The Gen1 forcing is the operator's, and it predates this work — the BIOS is not touched by this fork.
-The reason given for it is an electromagnetic-compatibility problem that had shown up as PCIe errors.
-What the campaign can add is the *observation* of what the link layer does afterwards, and that
-observation does **not** confirm the remedy: correctable errors continue on the second card's bridge
-while the slots are already at Gen1 (series below). Gen1 is a stated platform constraint here, not a
-result of this fork.
+On **2026-10-25** the machine had an NVMe SSD sitting next to an unshielded riser of an M10, and it
+produced a storm of correctable AER: about **10,500 per second** (`RxErr`, `BadDLLP`, `Timeout`) on
+the M10's bridge. The remedy was to move the SSD to slot 3 and force the M10 slots to **Gen1**, after
+which the count went to **0**. Retries at Gen3 with two different risers brought residual errors back
+and growing, so Gen1 stayed. The remedy is confirmed by that measurement — roughly 10,500/s down to
+zero — and Gen1 is a platform constraint here, not a result of this fork.
+
+Those 2026-10-25 numbers are the operator's record; they predate this campaign and are not among the
+files in `results/`. What the campaign measured, from 2026-11-05 on, is the **residual**.
 
 The relevant counter is AER (`/sys/bus/pci/devices/*/aer_dev_correctable`, read by `/root/aer.sh`).
 It resets when the machine reboots, so it is read as a per-boot series. Across the campaign, from
@@ -148,8 +152,8 @@ It resets when the machine reboots, so it is read as a per-boot series. Across t
 - **Every** event is a correctable `RxErr` (receiver error, physical layer) on the PLX bridge
   **`0000:09:11.0`** — the downstream port of the **second** M10 (slot 5, child `0D:00.0`).
 - **No GPU ever reports anything**: all nine devices at zero, in every window.
-- Series, per boot and read at each window's edges: **0** on 2026-11-05 (already at Gen1; the forcing
-  predates this campaign) → **2** by the Iteration 0a baseline → **3** before and after the Iteration 3 window →
+- Series, per boot and read at each window's edges: **0** on 2026-11-05 (already at Gen1) → **2** by
+  the Iteration 0a baseline → **3** before and after the Iteration 3 window →
   **6 → 8** across the Iteration 5 window → **11** at the Iteration 6 close → **14** at the start of the
   Iteration 7 window, **16** at its end over ~16.9 h of that boot (11 events in the first 10 h, 5 in the
   last 6.9 h — steady, not a burst). The machine rebooted on 2026-11-08 before the Iteration 8 window,
@@ -158,9 +162,10 @@ It resets when the machine reboots, so it is read as a per-boot series. Across t
   minutes later, then stayed at 7 for six readings 20 s apart. The two events between the I8 close and
   that first reading were not observed as they happened.
 
-None is fatal, non-fatal or uncorrectable; none coincides with an OOM, a CUDA error or a failed
-allocation; the counter does not track load (it rose during a light documentation session and stayed
-still through the 10-minute soak). It is recorded, not explained. The distinction that matters for
+That is a residual of roughly **one event per hour**, only on the bridge of the **second** card —
+**observed, not explained**. None is fatal, non-fatal or uncorrectable; none coincides with an OOM, a
+CUDA error or a failed allocation; the counter does not track load (it rose during a light
+documentation session and stayed still through the 10-minute soak). The distinction that matters for
 the tier is **bridge, not GPU** — and the bridge in question is the one in front of the second card,
 which is also the card whose Gen1 link is twice as wide as the first card's.
 
@@ -531,8 +536,10 @@ the verifier allocates four flags and the assembly kernel is four-way. Whole-exp
 what production uses, handles eight. An IQ4_NL (`d_type 20`) down is refused in both paths rather
 than read with the wrong layout.
 
-**AER on the second M10's bridge is observed, not explained.** See §2: correctable `RxErr` only, on
-`0000:09:11.0`, GPUs always clean, no correlation with load or errors. Followed, not cured.
+**AER on the second M10's bridge: the storm was cured, a residual is observed.** Moving the SSD to
+slot 3 and forcing Gen1 took the 2026-10-25 storm (~10,500 correctable errors/s) to zero (§2). What
+remains, ~1 event/hour, is correctable `RxErr` only, on `0000:09:11.0`, GPUs always clean, no
+correlation with load or errors. Followed, not explained.
 
 **The second card's uplink is Gen1 x16 = 3.14 GB/s** (host→device, measured), against 12.05 GB/s
 for the 3060's Gen3 x16. Every expert row a die does not hold locally has to arrive through that
