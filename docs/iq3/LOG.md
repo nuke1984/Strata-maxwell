@@ -21,6 +21,8 @@ Indice:
 - [Iterazione 6 — diagnosi: potenza, profilo per-layer, margine VRAM (protocollo)](#iterazione-6--diagnosi-potenza-profilo-per-layer-margine-vram-protocollo-prossima-finestra)
 - [Iterazione 6b — diagnosi 3060: quale causa di throttle (misurato)](#iterazione-6b--diagnosi-3060-quale-causa-di-throttle-misurato)
 - [Iterazione 7 — design: down IQ4_NL planare](#iterazione-7--design-down-iq4_nl-planare-da-rivedere-prima-del-codice)
+- [Iterazione 7 — limite noto: gli application clock delle M10 non sono impostabili](#iterazione-7--limite-noto-gli-application-clock-delle-m10-non-sono-impostabili)
+- [Iterazione 7 — protocollo: la 3060 a 140 W, A/B](#iterazione-7--protocollo-la-3060-a-140-w-ab-una-variabile)
 
 ---
 
@@ -1922,5 +1924,277 @@ sbagliato, il test lo vede; se il test lo vede solo lui, la produzione è salva.
 | R5 | il piano delle scale a 40 B/riga non è 16-allineato | non serve: la fp16 si legge a 2 byte con **una** `LDG.U16` (`read_scale_u16`, nuovo), e il `d` è copiato **verbatim**. `read_scale` resta intatto per non toccare il SASS dell'S2 |
 | R6 | il compilatore non emette `LDG.128` | controllo esplicito nel SASS del kernel nuovo (punto 4), prima di misurare |
 | R7 | indice dei pesi scritto come `b·16` invece di `(b - blk_base)·16` | innocuo finché `blk_base == 0` (sempre, oggi) e sbagliato se un domani lo split si abilita: il design conserva la forma, e il commento nel kernel lo dice |
+
+---
+
+## Iterazione 7 — limite noto: gli application clock delle M10 non sono impostabili
+
+**Domanda chiusa.** L'Iterazione 6 — e la sua §1 in particolare — lasciava aperto *perché* le M10
+stiano a 1032 MHz invece che ai 1202 riportati da NVML. **Non è più una domanda aperta.** L'operatore
+ha provato a impostare gli application clock con `nvidia-smi`, sul host, sulla die 0. La risposta del
+driver è stata:
+
+```
+Setting applications clocks is not supported
+```
+
+I clock sono stati ripristinati subito dopo. Quindi:
+
+| grandezza | valore | stato |
+|---|---|---|
+| clock delle M10 | **~1032 MHz** | **base clock**, non un tetto raggiunto |
+| application clock | **non impostabili** su questo driver | limite del driver, chiuso |
+| massimo NVML | 1202 MHz | teorico, non ottenibile per questa via |
+
+Va letto per quello che è: **un limite noto del sistema**, non un esperimento da rifare e non una leva
+disponibile. Conseguenze pratiche, da qui in avanti:
+
+- il bit `ApplicationsClocksSetting` sulle M10 (93–99% dei campioni attivi) **non è un sintomo da
+  curare**: è il driver che riporta il clock base con cui le schede girano;
+- **alzare il limite di potenza delle M10 non può dare clock**, perché non è la potenza a fissare i
+  1032 MHz (confermato dal draw 21–23 W su 30 W e dal contatore `SW Power Capping` fermo);
+- ogni stima che assuma «M10 a 1202 MHz» va buttata: il tetto di calcolo delle M10 è quello che si
+  misura, non quello che NVML dichiara.
+
+Resta **la 3060** l'unica scheda su cui la potenza agisce — ed è l'oggetto della finestra seguente.
+
+---
+
+## Iterazione 7 — protocollo: la 3060 a 140 W, A/B (una variabile)
+
+**Stato: protocollo. Nessuna misura fatta, nessun limite toccato.** I limiti di potenza sono
+dell'operatore: **i 140 W sulla 3060 li imposta lui**, non l'assistente. Questo documento dice solo
+cosa misurare e come leggerlo.
+
+**Obiettivo.** Stabilire se i 140 W sulla 3060 spostano i tok/s dei due modelli, e di quanto. È la
+prima delle due cose che l'operatore ha messo in fila: **prima** questa, **poi** il kernel planare
+dell'Iterazione 7. Una sola variabile: **il limite della 3060, da 120 a 140 W**. Motore invariato,
+kernel invariati, cache invariata, nessun'altra manopola.
+
+### Perché questa misura ha senso solo con un numero dichiarato prima
+
+La 3060 è `SwPowerCap` al 73–89% dei campioni attivi: è **l'unica scheda che il limite lo tocca**
+(Iterazione 6b). Ma non è l'unica scheda che lavora: le M10 fanno il percorso Maxwell e la 3060 fa
+quello denso. Se la 3060 è una frazione piccola del tempo per token, +20 W non sposta nulla e lo si
+deve sapere **prima** di leggere il wattmetro, altrimenti si attribuisce al rumore quello che è
+aritmetica.
+
+Il profilo dell'Iterazione 6 dà la quota host del roundtrip, non quella della 3060. Quello che si può
+dire con i numeri già in mano:
+
+| grandezza | IQ3_S 988 | IQ2_XS | fonte |
+|---|---|---|---|
+| tok/s | 42,7 | 57,2 | banco I6 |
+| tempo per token | 23.400 µs | 17.483 µs | 1e6 / tok/s |
+| span misurato sulla scheda | 403 µs/L | 282 µs/L | profilo I6 |
+| span host dispatch | 551 µs/L | 377 µs/L | profilo I6 (`MWPROF layer`) |
+| **residuo host non attribuito** | **~148 µs/L** | **~95 µs/L** | span host − span scheda |
+
+Il residuo è **l'unico posto in cui può stare la 3060**: lo span misurato sulla scheda è quello delle
+M10 (eventi CUDA sulla loro stream), e il `sync-wait` (63 µs/L IQ3_S, 39 IQ2_XS) non lo spiega.
+**Ma non è attribuito**: l'Iterazione 6 lo dichiara esplicitamente non separato. Quindi la quota della
+3060 è **un'incognita dichiarata**, con un tetto superiore: **al più** tutto il residuo, cioè 148 µs/L
+su 553,6 (IQ3_S) e 95 su 377 (IQ2_XS).
+
+Il conto del caso migliore, che è il motivo per cui il protocollo esiste:
+
+- se la 3060 fosse **tutto** il residuo e i 140 W dessero un +10% di clock effettivo sulla parte
+  power-limited, si guadagnerebbero 148 · 0,10 ≈ **15 µs/L**, cioè **+2,6%** sui 553,6 µs/L di span
+  (IQ3_S da ~43 a ~44 tok/s, IQ2_XS da ~57 a ~58,5);
+- se la 3060 fosse metà del residuo, **+1,3%**;
+- se i 140 W non dessero clock (plausibile: 140/120 = +17% di budget, ma il clock dipende dal carico e
+  dalle tensioni, non linearmente), **0%**.
+
+**Nessuno di questi numeri raggiunge il criterio di 55 tok/s per l'IQ3_S.** Il criterio non è in
+discussione in questa finestra, e va detto prima: **questa è una misura di margine, non una leva per
+il criterio.** Se anche desse il caso migliore, l'IQ3_S resterebbe a ~44 tok/s.
+
+Dichiarato come **ipotesi**, non come misura: il residuo contiene la 3060, e il suo peso è ignoto.
+Il punto (3) del protocollo è lì per ridurre quell'incognita a un numero misurato.
+
+### Il problema che il banco a 3 run non può risolvere
+
+Prima di scrivere i comandi va detto un numero che, se scoperto dopo, avrebbe bruciato la finestra.
+La dispersione **run-to-run misurata** del banco città+codice, dai tre banchi IQ2_XS già in repo:
+
+| banco | etichetta | run | media | cv |
+|---|---|---|---|---|
+| `32-bench-iq2_xs-i6` | city | 51,2 / 54,2 / 54,5 | 53,3 | 3,4% |
+| `32-bench-iq2_xs-i6` | code | 62,3 / 60,8 / 60,0 | 61,0 | 1,9% |
+| `37-bench-iq2_xs-diag` | city | 54,6 / 55,8 / 57,9 | 56,1 | 3,0% |
+| `37-bench-iq2_xs-diag` | code | 65,6 / 55,3 / 60,7 | 60,5 | 8,5% |
+| `13-bench-iq2_xs` | city | 53,5 / 58,5 / 58,4 | 56,8 | 5,0% |
+| `13-bench-iq2_xs` | code | 59,5 / 60,6 / 59,4 | 59,8 | 1,1% |
+
+**cv pooled = 3,8%.** Con 3 run, l'errore standard della media è 2,2%, e per dichiarare un effetto
+con 2 sigma su **due** etichette serve superare **~6,3%**. L'effetto atteso è **1–3%**: il banco a 3 run
+**non può vedere l'effetto che questa finestra cerca**. Non è un'opinione, è aritmetica sulla
+dispersione già misurata, e va dichiarata prima.
+
+Cosa fare, in ordine di preferenza:
+
+1. **Endpoint primario = il clock.** `clocks.sm` della 3060 è il numero a varianza quasi nulla: se i
+   140 W danno clock, il clock **sale e si vede subito** (in I6 era 1789 medio, 1912 max, stabile a
+   500 ms). Un salto di clock è la prova del meccanismo, e non ha bisogno del banco.
+2. **Endpoint secondario = banco a 6 run per etichetta**, non 3: porta la soglia da 6,3% a **4,4%**.
+   Costa ~2× il tempo del banco, che a 600 token e ~50 tok/s è ~12 s per run: **~5 min in più per
+   fase**. È poco, e rende la finestra capace di vedere il caso migliore.
+3. Se l'operatore vuole tenere 3 run, la finestra si dichiara **inconcludente sul tok/s in partenza** e
+   risponde solo sul clock. Meglio saperlo ora.
+
+Il protocollo qui sotto usa **6 run** e il clock come endpoint primario.
+
+### Il banco, e perché A/B nella stessa finestra
+
+`tools/iq3_bench.py` con `--labels city,code`, **6 run per etichetta**, `--max-tokens 600`,
+`--no-thinking`, `--vram-gpu 4` (la 3060 è l'indice NVML 4 — verificato dai CSV: è l'unica a 120 W).
+Si legge il decode tok/s **dal log del motore**, non dal client. Il clock SM della 3060, campionato a
+500 ms per tutta la fase, è **l'endpoint primario**.
+
+L'ordine è **A/B/A**, non A poi B, perché il tempo e la temperatura della stanza cambiano:
+
+```
+A1 (120 W)  ->  B (140 W)  ->  A2 (120 W di nuovo)
+```
+
+A1 e A2 devono coincidere entro il rumore: se non coincidono, **il rumore è più grande dell'effetto** e
+la finestra non conclude (vedi regola di stop). Il confronto utile è **B contro la media di A1 e A2**,
+con la differenza A1−A2 come barra d'errore. **Non si confronta con l'Iterazione 6**: quella finestra
+aveva il profilo acceso, che costa il 4,7% (dichiarato in I6).
+
+### Le tre fasi, in quest'ordine
+
+1. **Stato e AER prima.** `systemctl is-active strata`, `/root/aer.sh`, e i limiti correnti letti con
+   `nvidia-smi --query-gpu=index,power.limit --format=csv` (**sola lettura**: nessun `-pl` da parte mia).
+2. **A1, IQ2_XS a 120 W.** Produzione fermata, motore IQ2_XS su con `up.sh`, banco città+codice 3 run,
+   `iq3_power.py --deep` in parallelo per tutta la durata. Poi **A1, IQ3_S cache 988** nella stessa
+   posizione A: stesso banco, stesso sampler.
+3. **B, a 140 W.** L'operatore alza il limite **sulla sola 3060** e lo conferma a voce; io verifico con
+   una lettura che il valore sia 140 e che le M10 siano ancora a 30 (se una M10 è cambiata, **stop**:
+   sarebbe una seconda variabile). Si ripetono esattamente A1: IQ2_XS poi IQ3_S 988.
+4. **A2, di nuovo a 120 W.** L'operatore riporta il limite; verifica della lettura; si ripete il banco.
+5. **Produzione.** `down.sh`, `systemctl start strata`, health, AER, limiti riletti e riportati nel LOG.
+
+### Potenza: cosa si campiona accanto al banco
+
+`tools/iq3_power.py --deep --interval-ms 500` per ogni fase, in parallelo al banco (come in 6b, dove ha
+funzionato senza disturbare la produzione). Si riportano, per la 3060, **solo i campioni attivi**:
+
+| campo | perché |
+|---|---|
+| `power.draw` media/max | i 140 W vengono davvero usati? |
+| `clocks.sm` media/max | **è qui l'effetto atteso**: se il clock non sale, +20 W non ha dato nulla |
+| `SwPowerCap` % | se scende dal 73–89%, il limite morde meno — e questo è il meccanismo |
+| `temperature.gpu` max | margine termico ai 140 W |
+| `fan.speed` | se la ventola satura, il margine è finito |
+| contatore `SW Power Capping` | secondi cumulati: deve **crescere meno** a 140 W |
+
+Se `SwPowerCap` resta al 73–89% **e** il clock SM non sale, la conclusione è che i 140 W non sono la
+leva — e si chiude lì, senza Iterazione 8 sulla potenza. Nota: `temperature.memory` è `N/A` su questo
+driver, non lo si aspetta.
+
+### Il wattmetro
+
+Lo legge **l'operatore**, alla presa, e lo riporta per fase (A1, B, A2) insieme all'ora di lettura.
+Serve a una cosa sola: **verificare che i 140 W siano davvero 140 W alla presa** e che il consumo
+totale (9 schede) non abbia margine di alimentatore. Non entra nel confronto tok/s.
+
+### Lettura del risultato
+
+| esito | lettura |
+|---|---|
+| **clock SM sale** e `SwPowerCap` scende | il limite mordeva: **meccanismo provato**, e si quantifica col resto |
+| clock SM piatto dentro il rumore dei 500 ms | **i 140 W non danno clock**: la potenza non è la leva, si chiude |
+| banco: B − media(A) > 2 × \|A1 − A2\| | effetto reale sul tok/s, e **quantificato** |
+| banco: B dentro 2 × \|A1 − A2\| | **nessun effetto misurabile** a questa risoluzione |
+| \|A1 − A2\| grande quanto B − media(A) | **finestra inconcludente**: rumore dominante, si rifà o si chiude |
+
+L'ordine di lettura è deliberato: **prima il clock**, poi il banco. Se il clock non si muove, il banco
+non ha nulla da misurare e non serve interpretarlo — è il caso in cui questa finestra costa poco e
+chiude una domanda.
+
+In ogni caso **non si promuove l'IQ3_S**: il criterio è 55 tok/s e questa leva, nel caso migliore
+dichiarato sopra, ne dà ~1–3%.
+
+### Regola di stop
+
+- Se una **M10** cambia limite insieme alla 3060: **stop immediato** (seconda variabile).
+- Se la 3060 supera **80 °C** o la ventola va al **100%** a 140 W: si riporta a 120 W e si chiude.
+- Se A1 e A2 non coincidono entro il 2%: la finestra è inconcludente, non si fanno altre fasi.
+- La produzione si ferma solo con l'OK dell'operatore, e si ripristina **prima** di qualunque altra cosa.
+
+### Cosa questa finestra non fa
+
+Non tocca i kernel (il planare è la fase **dopo**, separata). Non tocca la cache 988. Non tocca i limiti
+delle M10, che restano 30 W. Non cambia il criterio e non promuove l'IQ3_S. Non spiega il crollo
+banco→soak. **Non è una leva per i 55 tok/s**: è la misura che dice se la potenza della 3060 conta
+qualcosa, prima di spendere il banco sul kernel.
+
+### Comandi per aidrogen (finestra, dopo l'OK dell'operatore)
+
+```sh
+PY=/root/Strata-maxwell/.venv/bin/python
+CFG3S=/root/Strata-maxwell/strata-iq3_s-i6-c988.json    # stesso config di I6: motore invariato
+CFG2=/root/Strata-maxwell/strata-iq2-xs-i6-prof.json
+
+# --- 0. stato, limiti (SOLA LETTURA), AER ---
+systemctl is-active strata
+nvidia-smi --query-gpu=index,power.limit,power.default_limit,power.max_limit --format=csv
+bash /root/aer.sh
+
+# --- 1. A1 @120 W: IQ2_XS, poi IQ3_S 988 ---
+systemctl stop strata
+bash /root/down.sh
+bash /root/up.sh "$CFG2" 1800
+$PY /root/Strata-iq3/tools/iq3_power.py --deep --label a1-iq2_xs --minutes 8 \
+    --interval-ms 500 --out /root/i7-a1-power-iq2_xs.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs --runs 6 --labels city,code \
+    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq2-xs-i6-prof.log \
+    --api-key-json "$CFG2" --json /root/i7-a1-bench-iq2_xs.json
+wait
+bash /root/down.sh
+bash /root/up.sh "$CFG3S" 1800
+$PY /root/Strata-iq3/tools/iq3_power.py --deep --label a1-iq3_s --minutes 8 \
+    --interval-ms 500 --out /root/i7-a1-power-iq3_s.csv &
+$PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --runs 6 --labels city,code \
+    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq3_s-i6-c988.log \
+    --api-key-json "$CFG3S" --json /root/i7-a1-bench-iq3_s.json
+wait
+# AER dopo A1
+
+# --- 2. B @140 W (l'operatore alza SOLO la 3060), poi identico ad A1 ---
+#   nvidia-smi -i 4 -pl 140     <-- LO FA L'OPERATORE, non l'assistente
+nvidia-smi --query-gpu=index,power.limit --format=csv     # deve dire 140 sulla 4, 30 sulle altre
+#   ... stessi quattro blocchi di A1 con --label b-... e --out /root/i7-b-...
+# AER dopo B
+
+# --- 3. A2 @120 W (l'operatore riporta), poi identico ad A1 ---
+#   nvidia-smi -i 4 -pl 120     <-- LO FA L'OPERATORE
+nvidia-smi --query-gpu=index,power.limit --format=csv     # deve dire 120 sulla 4, 30 sulle altre
+#   ... stessi quattro blocchi con --label a2-... e --out /root/i7-a2-...
+# AER dopo A2
+
+# --- 4. produzione ---
+bash /root/down.sh
+systemctl start strata
+systemctl is-active strata && curl -sf http://127.0.0.1:8080/health && echo
+nvidia-smi --query-gpu=index,power.limit --format=csv     # 120 sulla 4, 30 sulle altre
+# AER dopo il ripristino
+```
+
+**Nota.** A2 esiste per una ragione sola: senza, il confronto A/B sarebbe contro un numero di
+un'altra ora. Con A1 e A2 si ha la barra d'errore della stessa finestra.
+
+**Nota sul sampler.** `iq3_power.py` ha `--minutes` fisso: non sa quando il banco finisce. Con **6 run
+per etichetta** su due etichette il banco dura ~4–5 min a modello (dipende dai tok/s), quindi i 8
+minuti coprono la fase con margine. Se il banco finisse prima, i campioni in più sono a scheda quasi
+idle e **non entrano nel riepilogo** (`active_only`, come in 6b). Se durasse di più, il sampler taglia
+la coda: si legge il clock anche dal **banco stesso** (`--engine-log` non lo riporta) e, in caso di
+dubbio, si rilegge il CSV invece di rifare la fase.
+
+Il tempo totale stimato: A1 + B + A2 = 3 fasi × 2 modelli × (load + ~5 min di banco) ≈ **50–60 minuti**,
+più i cambi di limite dell'operatore. Se l'operatore vuole accorciare, si taglia prima A2 (dichiarando
+che il confronto perde la barra d'errore interna), **non** i run: 3 run rendono la finestra cieca
+sull'endpoint del tok/s (vedi sopra).
 
 ---
