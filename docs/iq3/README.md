@@ -342,7 +342,7 @@ driver above:
 
 ```sh
 cd /root/Strata-maxwell                      # a checkout of this fork
-git fetch https://github.com/BitMakerMan/Strata-maxwell.git iq3
+git fetch https://github.com/BitMakerMan/Strata-maxwell-IQ3_s.git iq3
 git checkout -B iq3 FETCH_HEAD
 
 export PATH=/opt/cmake-venv/bin:$PATH        # cmake 4.x; 3.25.1 cannot compile the CUDA20 dialect
