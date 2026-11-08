@@ -5,7 +5,7 @@
 > **What it adds:** up to **8 Tesla M10 dies** (two cards) on the whole-expert path instead of 4;
 > **Qwen3.8-Flash-Next IQ3_S** on the M10 tier, with new Maxwell dot products for IQ3_XXS/IQ3_S/IQ4_XS
 > gate/up and a **native, planar IQ4_NL down** (the down stage cut by 56%). Same binary, same protocol, 6 runs:
-> **54.30 tok/s** vs **60.28** for IQ2_XS — the 55 tok/s gate missed by 0.70, a margin inside the noise.
+> **54.30 tok/s** vs **60.28** for IQ2_XS — a formal **FAIL** on the 55 tok/s gate, by 0.70, inside the noise.
 >
 > Full guide, hardware, results, reproduction: **[docs/iq3/README.md](docs/iq3/README.md)**.
 
