@@ -2126,16 +2126,36 @@ dichiarato sopra, ne dà ~1–3%.
 ### Cosa questa finestra non fa
 
 Non tocca i kernel (il planare è la fase **dopo**, separata). Non tocca la cache 988. Non tocca i limiti
-delle M10, che restano 30 W. Non cambia il criterio e non promuove l'IQ3_S. Non spiega il crollo
+delle M10, che restano 30 W. **Non accende la profilazione** (`STRATA_MW_LAYERPROF` resta spenta: il suo
+4,7% sarebbe una seconda variabile). Non cambia il criterio e non promuove l'IQ3_S. Non spiega il crollo
 banco→soak. **Non è una leva per i 55 tok/s**: è la misura che dice se la potenza della 3060 conta
 qualcosa, prima di spendere il banco sul kernel.
 
 ### Comandi per aidrogen (finestra, dopo l'OK dell'operatore)
 
+**I config.** Non si riusano quelli dell'Iterazione 6: hanno `STRATA_MW_LAYERPROF=1` nell'`env`, che
+costa il **4,7%** di decode (misurato in I6) e qui sarebbe una seconda variabile. Si creano due config
+**senza** profilazione, partendo dagli stessi sorgenti e togliendo la chiave:
+
 ```sh
 PY=/root/Strata-maxwell/.venv/bin/python
-CFG3S=/root/Strata-maxwell/strata-iq3_s-i6-c988.json    # stesso config di I6: motore invariato
-CFG2=/root/Strata-maxwell/strata-iq2-xs-i6-prof.json
+$PY - <<'PY'
+import json
+for src, dst in (("strata-iq3_s-i3.json",   "strata-iq3_s-i7w.json"),
+                 ("strata-iq2-xs-i3-after.json", "strata-iq2-xs-i7w.json")):
+    c = json.load(open("/root/Strata-maxwell/" + src))
+    c["env"].pop("STRATA_MW_LAYERPROF", None)      # one variable: no profile overhead
+    c["log"] = dst.replace(".json", ".log")
+    a = c["args"]
+    if "iq3_s" in dst:
+        a[a.index("--expert-cache") + 1] = "988"  # the measured reference config
+    json.dump(c, open("/root/Strata-maxwell/" + dst, "w"), indent=1)
+    print(dst, "->", c["log"], "cache", a[a.index("--expert-cache") + 1],
+          "prof", "STRATA_MW_LAYERPROF" in c["env"])
+PY
+
+CFG3S=/root/Strata-maxwell/strata-iq3_s-i7w.json
+CFG2=/root/Strata-maxwell/strata-iq2-xs-i7w.json
 
 # --- 0. stato, limiti (SOLA LETTURA), AER ---
 systemctl is-active strata
@@ -2149,7 +2169,7 @@ bash /root/up.sh "$CFG2" 1800
 $PY /root/Strata-iq3/tools/iq3_power.py --deep --label a1-iq2_xs --minutes 8 \
     --interval-ms 500 --out /root/i7-a1-power-iq2_xs.csv &
 $PY /root/Strata-iq3/tools/iq3_bench.py --label iq2_xs --runs 6 --labels city,code \
-    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq2-xs-i6-prof.log \
+    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq2-xs-i7w.log \
     --api-key-json "$CFG2" --json /root/i7-a1-bench-iq2_xs.json
 wait
 bash /root/down.sh
@@ -2157,7 +2177,7 @@ bash /root/up.sh "$CFG3S" 1800
 $PY /root/Strata-iq3/tools/iq3_power.py --deep --label a1-iq3_s --minutes 8 \
     --interval-ms 500 --out /root/i7-a1-power-iq3_s.csv &
 $PY /root/Strata-iq3/tools/iq3_bench.py --label iq3_s --runs 6 --labels city,code \
-    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq3_s-i6-c988.log \
+    --no-thinking --vram-gpu 4 --engine-log /root/Strata-maxwell/strata-iq3_s-i7w.log \
     --api-key-json "$CFG3S" --json /root/i7-a1-bench-iq3_s.json
 wait
 # AER dopo A1
@@ -2189,8 +2209,9 @@ un'altra ora. Con A1 e A2 si ha la barra d'errore della stessa finestra.
 per etichetta** su due etichette il banco dura ~4–5 min a modello (dipende dai tok/s), quindi i 8
 minuti coprono la fase con margine. Se il banco finisse prima, i campioni in più sono a scheda quasi
 idle e **non entrano nel riepilogo** (`active_only`, come in 6b). Se durasse di più, il sampler taglia
-la coda: si legge il clock anche dal **banco stesso** (`--engine-log` non lo riporta) e, in caso di
-dubbio, si rilegge il CSV invece di rifare la fase.
+la coda: il clock viene dal **CSV di potenza**, non dal log del motore, quindi in quel caso si rifà
+**solo il sampler** sulla fase già finita (costa minuti, non tocca il banco) oppure si accetta il buco
+e lo si dichiara.
 
 Il tempo totale stimato: A1 + B + A2 = 3 fasi × 2 modelli × (load + ~5 min di banco) ≈ **50–60 minuti**,
 più i cambi di limite dell'operatore. Se l'operatore vuole accorciare, si taglia prima A2 (dichiarando
