@@ -27,6 +27,7 @@ Indice:
 - [Iterazione 7 — passi 1–3: il down IQ4_NL è planare, e il contratto è rispettato](#iterazione-7--passi-13-il-down-iq4_nl-è-planare-e-il-contratto-è-rispettato)
 - [Iterazione 7 — passo 4: la finestra di misura, e il divario che scende dal 25% al 10%](#iterazione-7--passo-4-la-finestra-di-misura-e-il-divario-che-scende-dal-25-al-10)
 - [Iterazione 8 — IQ3_S in produzione: il passaggio, verificato](#iterazione-8--iq3_s-in-produzione-il-passaggio-verificato)
+- [Nota — l'autore del commit `6dcaa8e2`](#nota--lautore-del-commit-6dcaa8e2)
 
 ---
 
@@ -2809,5 +2810,33 @@ ottimizzazione. Non modifica pack o pesi. Non esegue lo snapshot ZFS.
 
 Tutti e cinque verificati privi di `api_key`/`Bearer` (0 corrispondenze). I due config restano sul
 server a 0600 e non entrano nel repo.
+
+---
+
+## Nota — l'autore del commit `6dcaa8e2`
+
+**Annotato il 2026-11-08.** Il commit `6dcaa8e2` («docs(iq3): revise Iteration 3 design after
+operator review») è l'unico della campagna con l'autore sbagliato: **`nuke1984
+<nuke1984@users.noreply.github.com>`**, cioè l'identità git con cui il checkout del server era
+configurato, invece di **Craicek <bitmaker.industrialcoder@gmail.com>**, l'autore degli altri
+commit del branch. Non è una scelta editoriale: è un errore di configurazione del checkout.
+
+**Non si riscrive la storia, per decisione dell'operatore.** Cambiare l'autore di `6dcaa8e2`
+cambierebbe il suo hash e, a cascata, gli hash di tutti i commit successivi — compreso
+**`e1de86e8`**, che è citato nel LOG, nel rapporto dell'Iterazione 8 e **nel nome della cartella
+del motore in produzione** (`/root/Strata-maxwell/engine-iq3-e1de86e8/`). Il costo di quella
+riscrittura sarebbe più alto del beneficio.
+
+**Cosa è stato fatto invece.** L'identità corretta è ora impostata nel checkout del server
+(`/root/Strata-iq3`, solo `.git/config`, nessuna riscrittura):
+
+```sh
+git config user.name  "Craicek"
+git config user.email "bitmaker.industrialcoder@gmail.com"
+```
+
+**Cosa resta.** L'attribuzione di `6dcaa8e2` sarà corretta **nel branch pulito della futura PR**
+verso `nuke1984`, dove la storia viene ricostruita comunque. Fino ad allora questo è il posto in
+cui l'errore è dichiarato.
 
 ---
