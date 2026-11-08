@@ -201,7 +201,7 @@ Production engine is the binary from commit **`e1de86e8`**, md5 `0f5effb3d86b225
 kept at `/root/Strata-maxwell/engine-iq3-e1de86e8/strata` with `libstrata_kq.so` beside it. The tag
 **`aidrogen-prod-2026-11-08`** points at that same commit. Everything committed after `e1de86e8` up to
 the branch tip is documentation only — verified with `git diff --name-only e1de86e8..HEAD`, which
-lists nothing but `docs/iq3/`.
+lists `docs/iq3/` and the fork box at the top of the root `README.md`, and no source file.
 
 `libstrata_kq.so` is **opt-in**: `mmq_kq_loader.cpp` opens it only with `STRATA_MMQ_KQ=1`. Production
 does not arm it, so the absence of "K-quant prompt kernels" lines in the log is correct, not a
