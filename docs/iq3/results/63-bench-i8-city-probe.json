@@ -1,0 +1,21 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 0,
+   "read": 74,
+   "prefill_ms": 854,
+   "prefill_tps": 86.6,
+   "generated": 600,
+   "decode_ms": 11981,
+   "decode_tps": 50.1,
+   "drafts_accepted": 364,
+   "drafts_total": 554
+  },
+  "seconds": 12.84,
+  "generated": 600,
+  "client_tps": 46.7,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Nata come colonia romana, nel Medioevo divenne un potente comune mercantile e, tra il XIV e il XVI secolo, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero idee, banche, letteratura e un nuovo modo di vedere l’uomo e il mondo.\n\nL’arte è ovunque: Brunelleschi, Giotto, Donatello, Botticelli, Michelangelo e Leonardo hanno lasciato capolavori indimenticabili. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazza della Signoria. Una passeggiata lungo l’Arno o una salita a Piazzale Michelangelo regalano panorami unici. Firenze è un museo a cielo aperto, dove storia, arte e vita quotidiana si intrecciano.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13. Nata14 come15 colonia16 romana17, nel18 Medioevo19 divenne20 un21 potente22 comune23 mercantile24 e25, tra26 il27 XIV28 e29 il30 XVI31 secolo32, il33 cuore34 del35 Rinascimento36 grazie37 alla38 famiglia39 Medici40. Qui41 nacquero42 idee43, banche44, letteratura45 e46 un47 nuovo48 modo49 di50 vedere51 l’uomo52 e53 il54 mondo55.\n\nL’arte56 è57 ovunque58: Brunelleschi59, Giotto60, Donatello61, Botticelli62, Michelangelo63 e64 Leonardo65 hanno66 lasciato67 capolavori68 indimenticabili69. Da70 visitare71: il72 Duomo73 con74 la75 cupola76 di77 Brunelleschi78, il79 Battistero80, la81 Galleria82 degli83 Uffizi84, Palazzo85 Pitti86, Ponte87 Vecchio8"
+ }
+]

@@ -1,0 +1,24 @@
+[
+ {
+  "label": "ctx-120k",
+  "engine": {
+   "prompt_tokens": 119275,
+   "reused": 0,
+   "read": 119275,
+   "prefill_ms": 668680,
+   "prefill_tps": 178.4,
+   "generated": 64,
+   "decode_ms": 1431,
+   "decode_tps": 44.7,
+   "drafts_accepted": 46,
+   "drafts_total": 71
+  },
+  "seconds": 670.33,
+  "generated": 64,
+  "client_tps": 0.1,
+  "text": "We need answer user's question: \"What is the secret code word mentioned in the text above? Reply with the code word only.\" Need identify secret code word in provided docs. There is a line in BENCHMARK_PROTOCOL.md: \"The secret code word for this text is: meadow-copper-504",
+  "target": "120k",
+  "needle": "meadow-copper-504",
+  "found": true
+ }
+]

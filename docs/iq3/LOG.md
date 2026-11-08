@@ -24,6 +24,9 @@ Indice:
 - [Iterazione 7 — limite noto: gli application clock delle M10 non sono impostabili](#iterazione-7--limite-noto-gli-application-clock-delle-m10-non-sono-impostabili)
 - [Iterazione 7 — protocollo: la 3060 a 140 W, A/B](#iterazione-7--protocollo-la-3060-a-140-w-ab-una-variabile)
 - [Iterazione 7 — la 3060 a 140 W, misurata: non è sul percorso critico](#iterazione-7--la-3060-a-140-w-misurata-non-è-sul-percorso-critico)
+- [Iterazione 7 — passi 1–3: il down IQ4_NL è planare, e il contratto è rispettato](#iterazione-7--passi-13-il-down-iq4_nl-è-planare-e-il-contratto-è-rispettato)
+- [Iterazione 7 — passo 4: la finestra di misura, e il divario che scende dal 25% al 10%](#iterazione-7--passo-4-la-finestra-di-misura-e-il-divario-che-scende-dal-25-al-10)
+- [Iterazione 8 — IQ3_S in produzione: il passaggio, verificato](#iterazione-8--iq3_s-in-produzione-il-passaggio-verificato)
 
 ---
 
@@ -2683,5 +2686,128 @@ un passaggio automatico di questa iterazione.
 | `results/60-final-i7-restore-verified.txt` | 64k, ripristino verificato, mappatura AER, i due falsi allarmi |
 
 Verificati privi di `api_key`/`Bearer`/materiale della chiave (0 corrispondenze su 14 file).
+
+---
+
+## Iterazione 8 — IQ3_S in produzione: il passaggio, verificato
+
+**Eseguita 2026-11-08**, finestra 11:00–11:33 CET (10:00–10:33Z), con l'OK dell'operatore e dopo la
+sua decisione esplicita: il criterio **55 è FAIL formale a 54,30**, ma il divario è dentro il rumore
+(SE ~0,80 tok/s), e la decisione è **promuovere IQ3_S in produzione**. Le ottimizzazioni (gate/up
+134 µs/L, LUT in shared) **restano per dopo e non bloccano**. Ordine del brief eseguito 1→7, senza
+varianti al volo. Nessun limite di potenza toccato: `-pl` mai eseguito.
+
+### Cosa è in produzione adesso
+
+| | valore |
+|---|---|
+| modello | **`qwen3.8-flash-next-iq3_s`**, `loaded: true`, `max_context` **128000** |
+| motore | `/root/Strata-maxwell/engine-iq3-e1de86e8/strata`, md5 **`0f5effb3d86b2251cd80439079a50575`** = `e1de86e8` |
+| libreria | `libstrata_kq.so` accanto al binario, md5 `b7b1d93d8e7ef763034a098604a7c586` |
+| config | `strata-iq3_s-prod.json`, **0600**, chiave mai stampata |
+| cache 3060 | **1267 slot**, 2,45 GiB, pre-filled 1267/1267 in 4,4 s (600 MB/s), slot 0 verificato |
+| partizione | `Maxwell pairs in the 3060 cache: 0 of 23309` — il pool intero, come da modello |
+| tier Maxwell | **8**, 2914×5 + 2913×3 esperti, **5,54–5,56 GiB** per die |
+| gate | **8/8 PASSED**, worst rel 1,18e-02 … 1,29e-02 |
+| VRAM 3060 | **1332 MiB** al load, **1033 MiB** a regime dopo il soak |
+| servizio | `active`, MainPID 2435, **NRestarts=0**, health OK in 251 s |
+| potenza | 3060 **120,00 W**, M10 × 8 **30,00 W** — letti, mai scritti |
+
+Il motore è **lo stesso binario** delle misure dell'Iterazione 7: il down planare che ha fatto
+271 → 118 µs/L è quello che serve adesso. `engine-mw8` (0.1.47) resta su disco come riserva.
+
+### Test a 128k — PASS, e il contextWindow per PI è 128000
+
+| | misura |
+|---|---|
+| prompt | **119 275 token**, 0 riusati, tutti letti |
+| prefill | **178,4 tok/s** (668 680 ms) |
+| decode | **44,7 tok/s** (64 token) |
+| needle | `meadow-copper-504` → **FOUND**, exit 0 |
+| VRAM libera | **1035 MiB** |
+| errori | **0** OOM / CUDA / allocazioni (word-boundary sull'intero log) |
+| AER | fermo a **4** prima e dopo; **9 GPU a 0** |
+
+Non è servito scendere a 96k: **`contextWindow` = 128000**, già il valore che `/health` dichiara.
+La risposta è ragionamento perché il controllo gira **con thinking attivo**, come il 64k dell'I7: il
+needle è stato trovato, il contesto è stato letto.
+
+### Soak di 10 minuti in produzione
+
+84 run consecutivi, prompt città, 300 token, thinking attivo.
+
+| | valore |
+|---|---|
+| run / media / mediana | **84** / **43,51** / 43,45 tok/s |
+| dev. std / min / max | 1,29 / 39,7 / 46,7 tok/s |
+| primo → ultimo | 43,2 → 42,4 tok/s (**drift −0,8**) |
+| VRAM 3060 | **1033 MiB costanti**, nessuna deriva |
+| AER prima → dopo | bridge **4 → 4**, GPU tutte a 0 → **nessun evento in finestra** |
+| servizio dopo | `active`, NRestarts=0, health OK |
+
+Il drift è dentro la σ e il plateau è piatto. **43,5 non va confrontato con il 54,30 del banco**:
+protocollo diverso (300 token, un solo prompt) — è il numero di esercizio, non il criterio.
+
+### La richiesta di prova (città)
+
+Primo run dopo il load, 600 token: **50,1 tok/s** dal motore (11 981 ms), prompt 74 tok a 86,6 tok/s,
+draft 364/554 (**65,7%**, in linea col 65,8% dell'I6), 1077 MiB liberi. A freddo, coerente col 50,4
+del primo run del banco I7.
+
+### File e comandi
+
+Sul server (0600, contengono la chiave, **non** vanno committati): `strata-iq3_s-prod.json`,
+`strata-iq2_xs-prod-reserve.json` (IQ2_XS **con lo stesso motore nuovo**, cache 1800, **non attiva**),
+`/root/strata.service.bak.20261108T101754Z`, `/root/strata-switch.sh`.
+
+Tornare a IQ2_XS è **un comando**; il tempo è il load (~250 s), non lo switch:
+
+```sh
+/root/strata-switch.sh iq2        # IQ2_XS, motore e1de86e8 (non regressione verificata)
+/root/strata-switch.sh iq2-old    # IQ2_XS sul vecchio engine-mw8, com'era prima dell'I8
+/root/strata-switch.sh iq3        # di nuovo IQ3_S
+/root/strata-switch.sh            # dice quale config è attiva
+```
+
+Snapshot ZFS: **è dell'operatore, sull'host Proxmox** — il container non vede `zfs`. Il rootfs è
+`rpool/data/subvol-101-disk-0`:
+
+```sh
+zfs snapshot rpool/data/subvol-101-disk-0@iq3s-prod-2026-11-08
+zfs list -t snapshot -o name,used,creation | grep iq3s-prod
+```
+
+I 78 GB di modelli e i 49 GB di pack stanno sotto `/root/Strata-data` e `/mnt/backup`: se non sono
+nello stesso dataset, lo snapshot del rootfs **non li copre** — da verificare sull'host.
+
+### Un dettaglio verificato, per non lasciare un falso allarme
+
+`libstrata_kq.so` è **opt-in**: `mmq_kq_loader.cpp` la apre solo con `STRATA_MMQ_KQ=1`, che la
+produzione non arma (0 righe "K-quant prompt kernels"). Lo zero è **corretto**, non un caricamento
+fallito. La `.so` è comunque accanto al binario con l'md5 giusto, pronta se si arma.
+
+### Un solo problema incontrato
+
+Il primo tentativo di scrittura della config è fallito con `UnboundLocalError` nel mio script Python
+(assegnazione a una variabile dentro una funzione annidata). Nessun file è stato scritto: la config è
+stata creata al secondo tentativo e verificata (chiave presente, modo 0600, argomenti attesi).
+
+### Cosa questa finestra non fa
+
+Non tocca i kernel, non cambia il criterio, non tocca la potenza. Non promuove nessuna
+ottimizzazione. Non modifica pack o pesi. Non esegue lo snapshot ZFS.
+
+### File archiviati
+
+| file | contenuto |
+|---|---|
+| `results/61-final-i8-production-verified.md` | il rapporto completo della finestra |
+| `results/62-longctx-i8-128k.json` | il test 128k, needle trovata, 1035 MiB liberi |
+| `results/63-bench-i8-city-probe.json` | la richiesta di prova città, 50,1 tok/s |
+| `results/64-soak-i8-10min.json` | gli 84 run del soak, riga per riga |
+| `results/65-soak-i8-runs.txt` | l'output leggibile del soak |
+
+Tutti e cinque verificati privi di `api_key`/`Bearer` (0 corrispondenze). I due config restano sul
+server a 0600 e non entrano nel repo.
 
 ---
