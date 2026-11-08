@@ -7,9 +7,13 @@
 //     build/maxwell_iq_parity --synthetic <gu>/<down> ...   random weights quantized by ggml (e.g. iq3_s/q2_0)
 //
 // --dump <file> may precede either form: it appends, for every type-20 (IQ4_NL) down, the block's output
-// as raw IEEE-754 bit patterns plus FNV-1a checksums of the three inputs it was computed from (the down
-// region AS THE KERNEL READS IT, faq, fasc).  Two binaries comparing their dumps therefore prove both
+// as raw IEEE-754 bit patterns plus FNV-1a checksums of the three inputs it was computed from (the codes
+// plane AS THE KERNEL READS IT, faq, fasc).  Two binaries comparing their dumps therefore prove both
 // "same inputs" and "same bits", which is Iteration 7's contract point 3.
+//
+// TWO BLOBS, on purpose.  The M10's kernel reads the PLANAR down (expert_maxwell_iq4nl.hpp, the form
+// production builds at load()) while the 3060's iq_mmvq and ggml's to_float read the RAW GGUF blocks:
+// the reference must not move with the variable under test.  The gate/up rows are identical in both.
 //
 // The IQ3_S file's gate/up encodings (18 IQ3_XXS, 21 IQ3_S, 23 IQ4_XS) are checked the same way.  Its
 // layers 12, 20, 30 (18/42) and 21 (21/42) are real rows this tool reads; layer 47 is 23/20 and the
@@ -42,6 +46,7 @@
 //       float dequantizer - is why (1), not this, is the gated reference.)
 
 #include "strata/kernels/cuda/expert_maxwell.hpp"
+#include "strata/kernels/cuda/expert_maxwell_iq4nl.hpp"
 
 #include "strata/artifact/dequant.hpp"
 #include "strata/artifact/gguf_reader.hpp"
@@ -67,6 +72,7 @@
 
 namespace cpu = strata::kernels::cpu;
 namespace geo = strata::kernels::cuda::expert_maxwell_geo;
+namespace iq4nl = strata::kernels::cuda::expert_maxwell_iq4nl;
 namespace k = strata::kernels;
 
 namespace {
@@ -191,10 +197,51 @@ void dump_down_section(std::FILE* fp, const cpu::NativeFmt& f, const std::vector
 DownGeo down_geo_of(const cpu::NativeFmt& f) {
     DownGeo g;
     g.codes_off = f.down_off;
-    g.codes_stride = f.d_row;      // raw: 20 blocks * 18 B, codes and fp16 scales interleaved
-    g.scales_off = 0;
-    g.scale_stride = 0;            // 0 = scales live inside the block
+    g.codes_stride = iq4nl::kCodesRow;                                     // 320: planar codes
+    g.scales_off = f.down_off + (size_t) H * iq4nl::kCodesRow;             // the plane that follows
+    g.scale_stride = iq4nl::kScalesRow;                                    // 40
     return g;
+}
+
+// The blob the M10's kernel is given.  TWO blobs exist on purpose, because the two CONSUMERS need two
+// different layouts and only one of them is the variable under test:
+//   * the 3060's iq_mmvq(type 20) and ggml's to_float read the RAW GGUF blocks - they are the reference,
+//     and re-expressing their input would change the thing we measure against;
+//   * the M10's kernel reads the PLANAR form.
+// `raw` supplies gate/up (identical in both: the i-quant rows are never touched) and the raw down for the
+// reference; the returned blob has the planar down in exactly the region production uses.
+std::vector<uint8_t> planar_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& raw) {
+    std::vector<uint8_t> blob = raw;
+    iq4nl::planarize(raw.data() + f.down_off, blob.data() + f.down_off, (int) H);
+    return blob;
+}
+
+// Iteration 7, contract point 1: the conversion is a BYTE PERMUTATION and is verified as one.  For every
+// row and block, the planar codes equal the raw block's 16 code bytes and the planar scale equals the raw
+// block's fp16 d - over all H x 20 pairs of a real expert.  Nothing is inverted and no value is
+// recomputed, so this is stronger than a round trip: the check can only fail if a byte went missing.
+bool planar_is_a_permutation(const cpu::NativeFmt& f, const std::vector<uint8_t>& raw, std::string& err) {
+    const std::vector<uint8_t> planar = planar_blob(f, raw);
+    size_t bad_codes = 0, bad_scales = 0;
+    const uint8_t* sc = planar.data() + f.down_off + (size_t) H * iq4nl::kCodesRow;
+    for (int64_t r = 0; r < H; ++r) {
+        const uint8_t* rrow = raw.data() + f.down_off + (size_t) r * f.d_row;
+        const uint8_t* prow = planar.data() + f.down_off + (size_t) r * iq4nl::kCodesRow;
+        for (int b = 0; b < iq4nl::kBlocks; ++b) {
+            const uint8_t* rblk = rrow + (size_t) b * iq4nl::kRawBlock;
+            if (std::memcmp(prow + (size_t) b * 16, rblk + 2, 16) != 0) ++bad_codes;
+            if (std::memcmp(sc + (size_t) r * iq4nl::kScalesRow + (size_t) b * 2, rblk, 2) != 0) ++bad_scales;
+        }
+    }
+    // and nothing outside the region moved or was left behind
+    if (std::memcmp(planar.data(), raw.data(), f.down_off) != 0) err = "the conversion touched the gate/up";
+    if (planar.size() != raw.size()) err += " size changed";
+    if (bad_codes || bad_scales) {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "%zu code blocks and %zu scales differ", bad_codes, bad_scales);
+        err += buf;
+    }
+    return err.empty();
 }
 
 // The DOWN stage (IQ4_NL, ggml type 20): the M10's iq4nl kernel against the 3060's own production
@@ -205,6 +252,20 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
                const std::vector<int8_t>& h_faq, const std::vector<float>& h_fasc,
                const std::string& label, std::FILE* dump) {
     int failures = 0;
+    // The M10's input: the planar form, produced by THE SAME FUNCTION production calls at load().
+    const std::vector<uint8_t> planar = planar_blob(f, blob);
+    const DownGeo dg = down_geo_of(f);
+    // (P) the permutation itself, before any GPU work depends on it
+    {
+        std::string perr;
+        const bool ok = planar_is_a_permutation(f, blob, perr);
+        std::printf("          (P) the planar conversion is a byte permutation: %s\n",
+                    ok ? "verified, 2560 x 20 blocks" : perr.c_str());
+        if (!ok) {
+            std::printf("          *** THE LAYOUT IS WRONG: %s ***\n", perr.c_str());
+            ++failures;
+        }
+    }
     const int nchunk = (int) (FF / 32);          // 20 chunks of 32 values per FF-wide activation
     // the 3060's q8_1 blocks from that image: qs verbatim, d = fp16(scale), s = 0 (unused by type 20)
     std::vector<Q81Block> xq((size_t) nt * nchunk);
@@ -249,17 +310,17 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         int8_t* d_faq = nullptr;
         float* d_fasc = nullptr;
         float* d_out = nullptr;
-        cudaMalloc(&d_blob, blob.size());
+        cudaMalloc(&d_blob, planar.size());
         cudaMalloc(&d_jobs, jobs.size() * 4);
         cudaMalloc(&d_faq, h_faq.size());
         cudaMalloc(&d_fasc, h_fasc.size() * 4);
         cudaMalloc(&d_out, got.size() * 4);
-        cudaMemcpy(d_blob, blob.data(), blob.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_blob, planar.data(), planar.size(), cudaMemcpyHostToDevice);
         cudaMemcpy(d_jobs, jobs.data(), jobs.size() * 4, cudaMemcpyHostToDevice);
         cudaMemcpy(d_faq, h_faq.data(), h_faq.size(), cudaMemcpyHostToDevice);
         cudaMemcpy(d_fasc, h_fasc.data(), h_fasc.size() * 4, cudaMemcpyHostToDevice);
         strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_async(
-            d_blob, d_jobs, nt, d_faq, d_fasc, d_out, f.bytes, f.down_off, f.d_row, nullptr, 0, nchunk);
+            d_blob, d_jobs, nt, d_faq, d_fasc, d_out, f.bytes, dg.codes_off, dg.scales_off, nullptr, 0, nchunk);
         const cudaError_t e = cudaDeviceSynchronize();
         if (e != cudaSuccess) {
             std::printf("%s: the M10 iq4nl down failed: %s\n", label.c_str(), cudaGetErrorString(e));
@@ -294,7 +355,7 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         float* d_out = nullptr;
         uint16_t* d_out16 = nullptr;
         std::vector<float> mt((size_t) nt * H), f16back((size_t) nt * H);
-        cudaMalloc(&d_blob, blob.size());
+        cudaMalloc(&d_blob, planar.size());
         cudaMalloc(&d_jobs, jobs.size() * 4);
         cudaMalloc(&d_runs, runs.size() * 4);
         cudaMalloc(&d_ent, entries.size() * 4);
@@ -302,14 +363,15 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         cudaMalloc(&d_fasc, h_fasc.size() * 4);
         cudaMalloc(&d_out, mt.size() * 4);
         cudaMalloc(&d_out16, f16back.size() * 2);
-        cudaMemcpy(d_blob, blob.data(), blob.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_blob, planar.data(), planar.size(), cudaMemcpyHostToDevice);
         cudaMemcpy(d_jobs, jobs.data(), jobs.size() * 4, cudaMemcpyHostToDevice);
         cudaMemcpy(d_runs, runs.data(), runs.size() * 4, cudaMemcpyHostToDevice);
         cudaMemcpy(d_ent, entries.data(), entries.size() * 4, cudaMemcpyHostToDevice);
         cudaMemcpy(d_faq, h_faq.data(), h_faq.size(), cudaMemcpyHostToDevice);
         cudaMemcpy(d_fasc, h_fasc.data(), h_fasc.size() * 4, cudaMemcpyHostToDevice);
         strata::kernels::cuda::iq4nl_expert_maxwell_down_mt_async(
-            d_blob, f.bytes, f.down_off, d_runs, d_ent, 1, d_jobs, d_faq, d_fasc, d_out, nullptr, 0, nchunk);
+            d_blob, f.bytes, dg.codes_off, dg.scales_off, d_runs, d_ent, 1, d_jobs, d_faq, d_fasc, d_out,
+            nullptr, 0, nchunk);
         cudaError_t e = cudaDeviceSynchronize();
         if (e != cudaSuccess) {
             std::printf("%s: the M10 iq4nl MT down failed: %s\n", label.c_str(), cudaGetErrorString(e));
@@ -317,7 +379,7 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         }
         cudaMemcpy(mt.data(), d_out, mt.size() * 4, cudaMemcpyDeviceToHost);
         strata::kernels::cuda::iq4nl_expert_maxwell_down_batch_f16_async(
-            d_blob, d_jobs, nt, d_faq, d_fasc, d_out16, f.bytes, f.down_off, f.d_row, nullptr, 0, nchunk);
+            d_blob, d_jobs, nt, d_faq, d_fasc, d_out16, f.bytes, dg.codes_off, dg.scales_off, nullptr, 0, nchunk);
         e = cudaDeviceSynchronize();
         if (e != cudaSuccess) {
             std::printf("%s: the M10 iq4nl f16 down failed: %s\n", label.c_str(), cudaGetErrorString(e));
@@ -362,7 +424,7 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         std::printf("          (5) down vs the float reference (raw acts, reported): rel %.2e\n",
                     n / (d + 1e-30));
     }
-    if (dump) dump_down_section(dump, f, blob, down_geo_of(f), h_faq, h_fasc, got, label);
+    if (dump) dump_down_section(dump, f, planar, dg, h_faq, h_fasc, got, label);
     return failures;
 }
 

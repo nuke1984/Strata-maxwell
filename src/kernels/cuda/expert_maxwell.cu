@@ -1702,15 +1702,24 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
 // fp16 in the 3060's quantizer.
 constexpr int kIq4nlBlocks = FF / 32;                        // 20 IQ4_NL blocks per down row (one chunk each)
 constexpr int kIq4nlDownSmem = FF + (FF / 32) * 4 + 16 + 128 * (int) sizeof(float);
+// The PLANAR form (include/strata/kernels/cuda/expert_maxwell_iq4nl.hpp): the 16 code bytes of a block
+// are a 16-byte aligned int4 and the block's fp16 scale lives in a separate plane, 40 bytes per row.
+// Codes plane: stride 320 = 20 blocks * 16 B; scales plane: stride 40 = 20 blocks * 2 B.  The two
+// planes together are the raw region's 921,600 bytes: the layout costs nothing and moves no value.
+constexpr int kIq4nlCodesRow = kIq4nlBlocks * 16;            // 320 B
+constexpr int kIq4nlScalesRow = kIq4nlBlocks * 2;            // 40 B
 
 // The 8 activation-word payloads of one IQ4_NL block: p[w] is expanded from the nibbles that the
-// reference dots against the activation's word w (see iq4nl_dot_block's pairing).
-__device__ __forceinline__ void iq4nl_load_block(const uint8_t* __restrict__ qs4,   // bq4->qs
+// reference dots against the activation's word w (see iq4nl_dot_block's pairing).  `q4` is the block's
+// 16 code bytes loaded as ONE 128-bit vector: the planar layout guarantees the 16-byte alignment that
+// makes that load legal.  q4.x/y/z/w are the same four 32-bit words get_int_b2 used to assemble from
+// the interleaved form (little-endian), so the expansion below is unchanged arithmetically.
+__device__ __forceinline__ void iq4nl_load_block(const int4 q4,
                                                  const int8_t* __restrict__ kvalues_sh, int (&p)[8]) {
-    const int2 v0 = get_int_from_table_16(get_int_b2(qs4, 0), kvalues_sh);
-    const int2 v1 = get_int_from_table_16(get_int_b2(qs4, 1), kvalues_sh);
-    const int2 v2 = get_int_from_table_16(get_int_b2(qs4, 2), kvalues_sh);
-    const int2 v3 = get_int_from_table_16(get_int_b2(qs4, 3), kvalues_sh);
+    const int2 v0 = get_int_from_table_16(q4.x, kvalues_sh);
+    const int2 v1 = get_int_from_table_16(q4.y, kvalues_sh);
+    const int2 v2 = get_int_from_table_16(q4.z, kvalues_sh);
+    const int2 v3 = get_int_from_table_16(q4.w, kvalues_sh);
     p[0] = v0.x; p[4] = v0.y;
     p[1] = v1.x; p[5] = v1.y;
     p[2] = v2.x; p[6] = v2.y;
@@ -1751,7 +1760,7 @@ __device__ __forceinline__ void iq4nl_stage_act(int8_t* __restrict__ sq, float* 
 template <int SPLIT, bool F16>
 __device__ __forceinline__ void iq4nl_down_body(const int vb, char* smem,
                                                 const uint8_t* __restrict__ blobs, size_t blob_stride,
-                                                size_t d_codes_off, size_t d_row_stride,
+                                                size_t d_codes_off, size_t d_scales_off,
                                                 const MaxJob* __restrict__ jobs, int njobs,
                                                 const int8_t* __restrict__ faq,
                                                 const float* __restrict__ fasc, float* __restrict__ out,
@@ -1774,15 +1783,18 @@ __device__ __forceinline__ void iq4nl_down_body(const int vb, char* smem,
     if (idx >= njobs * H) return;
     const int row = idx - j * H;
     const int part = (int) (threadIdx.x % SPLIT);
-    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * kIq4nlCodesRow;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * kIq4nlScalesRow;
     float acc = 0.f;
     for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
-        const uint8_t* blk = dc + (size_t) (b - blk_base) * 18;
+        // The block's 16 code bytes as ONE int4: legal because the planar codes plane keeps every block
+        // 16-byte aligned (the raw form's 2-byte alignment is exactly what forced eight U16 loads).
+        const int4 q4 = ((const int4*) dc)[b - blk_base];
         int p[8];
-        iq4nl_load_block(blk + 2, shl, p);            // +2: past the fp16 d; qs is 2-byte aligned
+        iq4nl_load_block(q4, shl, p);
         int s0 = 0, s1 = 0;
         iq4nl_dot_block(p, sq + (size_t) b * 32, s0, s1);
-        const float dd = read_scale(blk, 0) * ssc[b];
+        const float dd = read_scale(ds, b - blk_base) * ssc[b];
         acc += dd * (float) s0;
         acc += dd * (float) s1;
     }
@@ -1798,12 +1810,12 @@ __device__ __forceinline__ void iq4nl_down_body(const int vb, char* smem,
 
 template <int SPLIT, bool F16 = false>
 __global__ void expert_iq4nl_down_batch(const uint8_t* __restrict__ blobs, size_t blob_stride,
-                                        size_t d_codes_off, size_t d_row_stride,
+                                        size_t d_codes_off, size_t d_scales_off,
                                         const MaxJob* __restrict__ jobs, int njobs,
                                         const int8_t* __restrict__ faq, const float* __restrict__ fasc,
                                         float* __restrict__ out, int blk_base, int blks) {
     __shared__ __align__(16) char smem[kIq4nlDownSmem];
-    iq4nl_down_body<SPLIT, F16>((int) blockIdx.x, smem, blobs, blob_stride, d_codes_off, d_row_stride,
+    iq4nl_down_body<SPLIT, F16>((int) blockIdx.x, smem, blobs, blob_stride, d_codes_off, d_scales_off,
                                 jobs, njobs, faq, fasc, out, blk_base, blks);
 }
 
@@ -1814,7 +1826,7 @@ __global__ void expert_iq4nl_down_batch(const uint8_t* __restrict__ blobs, size_
 // the host's run-width cap (all three are 4 today).
 template <int SPLIT = 2, int THREADS = 128, int E_MAX = 4>
 __global__ void expert_iq4nl_down_mt(const uint8_t* __restrict__ blobs, size_t blob_stride,
-                                     size_t d_codes_off, size_t d_row_stride,
+                                     size_t d_codes_off, size_t d_scales_off,
                                      const int32_t* __restrict__ runs,      // [nruns x 4]: slot, count, entries_off, unused
                                      const int32_t* __restrict__ entries,   // [total x 2]: tok, sorted position
                                      const MaxJob* __restrict__ jobs,
@@ -1845,15 +1857,16 @@ __global__ void expert_iq4nl_down_mt(const uint8_t* __restrict__ blobs, size_t b
     __syncthreads();
     const int row = vb * PER_BLOCK + (int) (threadIdx.x / SPLIT);
     const int part = (int) (threadIdx.x % SPLIT);
-    const uint8_t* dc = blob + d_codes_off + (size_t) row * d_row_stride;
+    const uint8_t* dc = blob + d_codes_off + (size_t) row * kIq4nlCodesRow;
+    const uint8_t* ds = blob + d_scales_off + (size_t) row * kIq4nlScalesRow;
     float acc[E_MAX];
 #pragma unroll
     for (int e = 0; e < E_MAX; ++e) acc[e] = 0.f;
     for (int b = blk_base + part; b < blk_base + blks; b += SPLIT) {
-        const uint8_t* blk = dc + (size_t) (b - blk_base) * 18;
+        const int4 q4 = ((const int4*) dc)[b - blk_base];
         int p[8];
-        iq4nl_load_block(blk + 2, shl, p);
-        const float dw = read_scale(blk, 0);
+        iq4nl_load_block(q4, shl, p);
+        const float dw = read_scale(ds, b - blk_base);
 #pragma unroll
         for (int e = 0; e < E_MAX; ++e) {
             if (e >= E) break;
@@ -1884,29 +1897,30 @@ __global__ void expert_iq4nl_down_mt(const uint8_t* __restrict__ blobs, size_t b
 
 void iq4nl_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                            const int8_t* d_faq, const float* d_fasc, float* d_out,
-                                           size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                           size_t blob_stride, size_t d_codes_off, size_t d_scales_off,
                                            cudaStream_t stream, int blk_base, int blks) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2, PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
     expert_iq4nl_down_batch<SPLIT><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-        d_blobs, blob_stride, d_codes_off, d_row_stride, (const MaxJob*) d_jobs, njobs,
+        d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
         d_faq, d_fasc, d_out, blk_base, blks);
 }
 
 void iq4nl_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                                const int8_t* d_faq, const float* d_fasc, uint16_t* d_out16,
-                                               size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                               size_t blob_stride, size_t d_codes_off, size_t d_scales_off,
                                                cudaStream_t stream, int blk_base, int blks) {
     if (njobs <= 0) return;
     constexpr int SPLIT = 2, PER_BLOCK = 128 / SPLIT;
     const int rows = njobs * H;
     expert_iq4nl_down_batch<SPLIT, true><<<(rows + PER_BLOCK - 1) / PER_BLOCK, 128, 0, stream>>>(
-        d_blobs, blob_stride, d_codes_off, d_row_stride, (const MaxJob*) d_jobs, njobs,
+        d_blobs, blob_stride, d_codes_off, d_scales_off, (const MaxJob*) d_jobs, njobs,
         d_faq, d_fasc, (float*) d_out16, blk_base, blks);
 }
 
 void iq4nl_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride, size_t d_codes_off,
+                                        size_t d_scales_off,
                                         const int32_t* d_runs, const int32_t* d_entries, int nruns,
                                         const int32_t* d_jobs,
                                         const int8_t* d_faq, const float* d_fasc, float* d_out,
@@ -1914,10 +1928,11 @@ void iq4nl_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stri
     if (nruns <= 0) return;
     constexpr int SPLIT = 2, THREADS = 128, PER_BLOCK = THREADS / SPLIT;
     const int blocks = nruns * (H / PER_BLOCK);
-    // The row stride is fixed by the format (20 blocks * 18 B); the IQ4_NL blob cannot vary it.
-    const size_t d_row_stride = (size_t) kIq4nlBlocks * 18;
+    // The row strides are the PLANAR form's constants (320 codes + 40 scales per row, in two planes),
+    // not a per-call parameter: the layout is fixed by the format, and hard-wiring the raw 360-byte
+    // stride here is exactly the bug this rewrite removes.  The kernel body reads the same constants.
     expert_iq4nl_down_mt<SPLIT, THREADS, 4><<<blocks, THREADS, 0, stream>>>(
-        d_blobs, blob_stride, d_codes_off, d_row_stride, d_runs, d_entries, (const MaxJob*) d_jobs,
+        d_blobs, blob_stride, d_codes_off, d_scales_off, d_runs, d_entries, (const MaxJob*) d_jobs,
         d_faq, d_fasc, d_out, blk_base, blks);
 }
 

@@ -13,6 +13,7 @@
 #include "strata/core/peer_experts.hpp"
 
 #include "strata/kernels/cuda/expert_maxwell.hpp"
+#include "strata/kernels/cuda/expert_maxwell_iq4nl.hpp"
 #include "strata/kernels/cpu/expert.hpp"
 #include "strata/kernels/cpu/expert_layout.hpp"
 
@@ -35,6 +36,7 @@ namespace strata::core {
 namespace {
 
 using namespace strata::kernels::cuda::expert_maxwell_geo;
+namespace iq4nl = strata::kernels::cuda::expert_maxwell_iq4nl;
 using strata::kernels::cuda::s2_expert_maxwell_gup_async;
 using strata::kernels::cuda::s2_expert_maxwell_down_async;
 using strata::kernels::cuda::s2_expert_maxwell_gup_batch_async;
@@ -65,12 +67,13 @@ constexpr int H = 2560;
 constexpr int FF = 640;
 
 // ---- the down stage's dispatch: ONE entry point for every call site -------------------------------
-// A native pack's down is Q2_0 (42, S2 planar, the shipped IQ2_XS path) or IQ4_NL (20, raw 18-byte
-// blocks, the IQ3_S pack).  The two families are separate kernels; this routes on the layer's own
-// d_type so each call site stays a single call and the Q2_0 branch is the same code it always was.
-// The namespaces of the two argument lists differ only by what the format actually uses:
-//   Q2_0 : d_scales_off, d_scale_stride, fahx, and (batch only) the E1 completion tail;
-//   IQ4_NL: d_codes_off/d_row_stride, no fahx, no scale plane, no E1 tail (refused at arming).
+// A native pack's down is Q2_0 (42, S2 planar, the shipped IQ2_XS path) or IQ4_NL (20, PLANAR codes +
+// a separate scale plane since Iteration 7, the IQ3_S pack).  The two families are separate kernels;
+// this routes on the layer's own d_type so each call site stays a single call and the Q2_0 branch is
+// the same code it always was.  The two argument lists are now the same shape:
+//   Q2_0 : d_codes_off, d_scales_off, d_scale_stride, fahx, and (batch only) the E1 completion tail;
+//   IQ4_NL: d_codes_off, d_scales_off (the scale plane), no fahx, no E1 tail (refused at arming).
+// The IQ4_NL row strides are compile-time constants of its format (320 + 40), so they are not passed.
 namespace mwdown {
 struct Args {
     const float* fahx = nullptr;
@@ -92,7 +95,7 @@ inline void batch(const G& g, const uint8_t* blobs, const int32_t* jobs, int njo
                   const float* fasc, const Args& a, float* out, cudaStream_t s) {
     if (g.d_type == 20)
         iq4nl_expert_maxwell_down_batch_async(blobs + g.base, jobs, njobs, faq, fasc, out, g.blob_bytes,
-                                              g.d_codes_off, g.d_row_stride, s, 0, kDBlocksIq4nl);
+                                              g.d_codes_off, g.d_scales_off, s, 0, kDBlocksIq4nl);
     else
         s2_expert_maxwell_down_batch_async(blobs + g.base, jobs, njobs, faq, fasc, a.fahx, out,
                                            g.blob_bytes, g.d_codes_off, g.d_scales_off, s,
@@ -106,7 +109,7 @@ inline void batch_f16(const G& g, const uint8_t* blobs, const int32_t* jobs, int
                       cudaStream_t s) {
     if (g.d_type == 20)
         iq4nl_expert_maxwell_down_batch_f16_async(blobs + g.base, jobs, njobs, faq, fasc, out16,
-                                                  g.blob_bytes, g.d_codes_off, g.d_row_stride, s,
+                                                  g.blob_bytes, g.d_codes_off, g.d_scales_off, s,
                                                   0, kDBlocksIq4nl);
     else
         s2_expert_maxwell_down_batch_f16_async(blobs + g.base, jobs, njobs, faq, fasc, a.fahx, out16,
@@ -119,8 +122,9 @@ inline void mt(const G& g, const uint8_t* blobs, const int32_t* runs, const int3
                int nruns, const int32_t* jobs, const int8_t* faq, const float* fasc, const Args& a,
                float* out, cudaStream_t s) {
     if (g.d_type == 20)
-        iq4nl_expert_maxwell_down_mt_async(blobs + g.base, g.blob_bytes, g.d_codes_off, runs, entries,
-                                           nruns, jobs, faq, fasc, out, s, 0, kDBlocksIq4nl);
+        iq4nl_expert_maxwell_down_mt_async(blobs + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
+                                           runs, entries, nruns, jobs, faq, fasc, out, s, 0,
+                                           kDBlocksIq4nl);
     else
         s2_expert_maxwell_down_mt_async(blobs + g.base, g.blob_bytes, g.d_codes_off, g.d_scales_off,
                                         runs, entries, nruns, jobs, faq, fasc, a.fahx, out, s,
@@ -356,9 +360,12 @@ bool MaxwellExperts::open(int device,
                 g.gu_row = f.gu_row;
                 g.d_codes_off = f.down_off;
                 if (f.d_type == 20) {
-                    // IQ4_NL: the pack's raw 18-byte blocks, no de-interleaving, 20 blocks per row of
-                    // FF = 640 values.  d_scales_off/d_scale_stride keep their defaults and are unused.
-                    g.d_row_stride = (size_t) 20 * 18;
+                    // IQ4_NL: the PLANAR form (expert_maxwell_iq4nl.hpp).  The codes plane starts where
+                    // the raw region did and every row is 320 B of 16-byte-aligned blocks; the scales
+                    // plane follows it, 40 B per row.  Same bytes, same total, no VRAM cost.
+                    g.d_row_stride = iq4nl::kCodesRow;
+                    g.d_scales_off = f.down_off + (size_t) H * iq4nl::kCodesRow;
+                    g.d_scale_stride = iq4nl::kScalesRow;
                 } else {
                     g.d_scales_off = f.down_off + (size_t) H * ROW_D;   // S2 planar: codes then scales
                 }
@@ -489,8 +496,17 @@ bool MaxwellExperts::open(int device,
                 } else {
                 std::memcpy(staging.data(), src, f.down_off);
                 if (f.d_type == 20) {
-                    // IQ4_NL down: RAW, verbatim - 2560 rows * 20 blocks * 18 B, no de-interleaving.
-                    std::memcpy(staging.data() + g.d_codes_off, src + f.down_off, (size_t) H * g.d_row_stride);
+                    // IQ4_NL down: raw -> PLANAR (codes then scales), THE SAME FUNCTION THE PARITY TOOL
+                    // CALLS.  Same bytes in, same bytes out, no value recomputed; only the addresses move.
+                    // ALIGNMENT: the codes plane must be 16-byte aligned, or the int4 load is illegal.
+                    // down_off = 2*FF*gu_row and every gu_row is a whole number of 16-byte blocks, so the
+                    // guard below can only fire on a format this build was never handed.
+                    if ((g.d_codes_off % 16) != 0) {
+                        err = "MaxwellExperts: the IQ4_NL down region is not 16-byte aligned";
+                        close();
+                        return false;
+                    }
+                    iq4nl::planarize(src + f.down_off, staging.data() + g.d_codes_off, (int) H);
                 } else {
                     for (int r = 0; r < H; ++r) {
                         const uint8_t* srow = src + f.down_off + (size_t) r * f.d_row;

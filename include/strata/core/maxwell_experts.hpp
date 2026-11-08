@@ -151,12 +151,13 @@ private:
     // A native pack's per-layer blob geometry (open() builds it): each layer's experts are contiguous
     // in their own region of d_blobs_ (its blobs differ in size from other layers'), the gate/up rows
     // keep their RAW GGUF block layouts for the IQ kernel (o_gate/o_up/gu_row).  The down rows are
-    // planar (Q2_0, d_type 42: de-interleaved at d_codes_off/d_scales_off) or raw (IQ4_NL, d_type 20:
-    // 18-byte blocks at d_codes_off, d_row_stride = 360, d_scales_off unused).  Empty = the canonical
-    // Q2_0 pack: the flat store, the compile-time S2 geometry (the 42/s2_ defaults).
+    // planar in BOTH formats: Q2_0 (d_type 42, de-interleaved at d_codes_off/d_scales_off, 160 + 20 B
+    // per row) and IQ4_NL (d_type 20, 320 B of codes at d_codes_off then 40 B of fp16 scales per row
+    // from d_scales_off - the same 360 bytes as the raw blocks, permuted at load(), Iteration 7).
+    // Empty = the canonical Q2_0 pack: the flat store, the compile-time S2 geometry (the 42/s2_ defaults).
     struct LayerGeo {
         int gu_type = 42;
-        int d_type = 42;                                        ///< 42 = Q2_0 (S2 planar), 20 = IQ4_NL (raw)
+        int d_type = 42;                                        ///< 42 = Q2_0 (S2 planar), 20 = IQ4_NL (planar)
         size_t base = 0;                                        ///< the region's offset inside d_blobs_
         size_t blob_bytes = (size_t) strata::kernels::cuda::expert_maxwell_geo::BLOB;
         size_t o_gate = 0, o_up = 0, gu_row = 0;                ///< the raw GGUF gate/up rows (i-quant layers)

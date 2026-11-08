@@ -154,27 +154,31 @@ void s2_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_
 
 /// ---- IQ4_NL down (ggml type 20) -------------------------------------------------------------
 /// The IQ3_S pack keeps 39 of its 48 layers' down projection in IQ4_NL (block_iq4_nl, QK=32, 18 B:
-/// fp16 scale + 16 code bytes), stored RAW in the blob: no de-interleaving, row stride 20*18 = 360 B
-/// for FF = 640, and the block's `qs` is 2-byte aligned - the dots read it with get_int_b2, never a
-/// vector load.  Separate kernels from the S2 family by design: the Q2_0 path stays byte-identical.
+/// fp16 scale + 16 code bytes).  The blob stores it in the PLANAR form described in
+/// expert_maxwell_iq4nl.hpp: the 16 code bytes of a block are one 16-byte aligned int4 in the codes
+/// plane (stride 320 B per row), and the block's fp16 scales live in a second plane that starts at
+/// `d_scales_off` (stride 40 B per row).  The two planes are the raw region's exact byte count, so the
+/// layout costs no VRAM and moves no value: it is a permutation performed at load().
+/// Separate kernels from the S2 family by design: the Q2_0 path stays byte-identical.
 /// They consume faq + fasc and IGNORE fahx: IQ4_NL's kvalues_iq4nl are signed and centred on zero, so
 /// there is no affine `hx` term to subtract (unlike Q2_0's biased codes).
 /// The activation scale is rounded to fp16 (f2h_rn + low2f_dev) exactly as the gup arm does, so the
 /// 1e-5 parity gate against the 3060's iq_mmvq(type 20) is an honest comparison.
 void iq4nl_expert_maxwell_down_batch_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                            const int8_t* d_faq, const float* d_fasc, float* d_out,
-                                           size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                           size_t blob_stride, size_t d_codes_off, size_t d_scales_off,
                                            cudaStream_t stream = 0,
                                            int blk_base = 0, int blks = expert_maxwell_geo::SC_D);
 /// fp16 rows: `d_out16` holds H halves per entry.
 void iq4nl_expert_maxwell_down_batch_f16_async(const uint8_t* d_blobs, const int32_t* d_jobs, int njobs,
                                                const int8_t* d_faq, const float* d_fasc, uint16_t* d_out16,
-                                               size_t blob_stride, size_t d_codes_off, size_t d_row_stride,
+                                               size_t blob_stride, size_t d_codes_off, size_t d_scales_off,
                                                cudaStream_t stream = 0,
                                                int blk_base = 0, int blks = expert_maxwell_geo::SC_D);
 /// STRATA_MW_MT (the prefill arm's hot path): one RUN per block-group, the run table the gup arm
 /// built; each (row, block)'s 16 code bytes are expanded ONCE and dotted against every entry's faq.
 void iq4nl_expert_maxwell_down_mt_async(const uint8_t* d_blobs, size_t blob_stride, size_t d_codes_off,
+                                        size_t d_scales_off,
                                         const int32_t* d_runs, const int32_t* d_entries, int nruns,
                                         const int32_t* d_jobs,
                                         const int8_t* d_faq, const float* d_fasc, float* d_out,
