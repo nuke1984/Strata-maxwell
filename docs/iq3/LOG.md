@@ -2359,3 +2359,150 @@ contenuto vuoto — i 48 token erano finiti nel `reasoning_content`. Non è un d
 atteso, ed è la ragione per cui i banchi di qualità usano `--no-thinking`.
 
 ---
+
+## Iterazione 7 — passi 1–3: il down IQ4_NL è planare, e il contratto è rispettato
+
+**Eseguito 2026-11-08, senza fermare la produzione.** La produzione gira su un **altro checkout e un
+altro binario** (`/root/Strata-maxwell/engine-mw8/strata`, avviato il 5 novembre): tutte le misure di
+questa sezione sono state fatte su `/root/Strata-iq3`, e il servizio è rimasto `active` con
+`NRestarts=0` e health `qwen3.8-flash-next-iq2_xs` per l'intera durata. Nessun limite di potenza è
+stato toccato: 3060 **120,00 W**, M10 **30,00 W** prima, durante e dopo.
+
+Questa sezione copre **i tre passi di codice e verifica**. Non copre la velocità: la misura µs/L e il
+banco A/B sono la finestra successiva, con la soglia di stop già dichiarata nel design (sotto ~200 µs/L
+non si spende, sotto ~161 µs/L il banco si fa). **Il criterio a 55 tok/s resta non deciso.**
+
+### Passo 1 — `--dump`, il riferimento di HEAD
+
+`maxwell_iq_parity` acquisisce `--dump <file>` (commit `1a3286cd`): per ogni down di tipo 20 scrive i
+**bit IEEE-754 grezzi** dell'uscita (nt × H float, otto per riga) più i checksum **FNV-1a-64** dei tre
+ingressi da cui è stata calcolata — il piano dei codici *come lo indicizza il kernel*, `faq`, `fasc`.
+I checksum sono ciò che rende «stessi ingressi» un **gate** invece di un'assunzione.
+
+Il dump di riferimento è stato catturato **prima di toccare il layout** (`e4fca67c`,
+`results/45-down-iq4nl-dump-head.txt`, 277 667 B, sha256 `f5e75e04…`), sui quattro layer tipo 20 —
+0 (18/20), 17 (21/20), 2 (22/20), 47 (23/20). Due dettagli che lo rendono un riferimento valido:
+
+- **riproducibile**: una seconda esecuzione dello stesso binario ha prodotto un file **byte-identico**
+  (stesso sha256);
+- **innocuo**: i numeri di parity di quel run coincidono cifra per cifra con `results/04-down-iq4nl-real.txt`
+  (9,53 / 9,12 / 9,59 / 9,46e-08), quindi `--dump` non ha cambiato l'aritmetica.
+
+### Passo 2 — il layout planare, e una sola conversione condivisa
+
+Commit `7e6fb01e`. La conversione vive in **un header condiviso**,
+`include/strata/kernels/cuda/expert_maxwell_iq4nl.hpp`, ed è chiamata **sia da `open()` in produzione sia
+dal tool di parity**: il tool esercita il codice che la produzione esegue, non una copia. È codice host
+puro (niente tipi CUDA, niente allocazioni), così i due compilatori costruiscono la stessa routine.
+
+La forma: per ogni riga, i 16 byte di codici di un blocco diventano un `int4` **allineato a 16 byte**
+(piano da 320 B per riga) e la fp16 di scala va in un **piano separato** (40 B per riga). 320 + 40 = 360,
+esattamente i byte della forma grezza: **permutazione, nessun valore ricalcolato, nessuna VRAM in più**.
+
+Nel kernel `iq4nl_load_block` prende l'`int4` per valore ed espande `q4.x/y/z/w` — le stesse quattro
+parole a 32 bit che `get_int_b2` assemblava dalla forma grezza. I tre launcher passano `d_scales_off`, e
+**il launcher MT non cabla più `20·18`** (rischio R2 del design): quel numero era il difetto che avrebbe
+fatto leggere l'MT a stride sbagliato.
+
+Nel tool esistono **due blob, di proposito**: il kernel M10 legge il planare, mentre `iq_mmvq(type 20)`
+della 3060 e `to_float` di ggml continuano a leggere i blocchi GGUF **grezzi** — il riferimento non deve
+muoversi con la variabile sotto test. Le righe gate/up sono identiche nei due. Un nuovo check **(P)**
+verifica la permutazione byte per byte prima che qualsiasi lavoro GPU vi dipenda.
+
+### Passo 3 — le quattro misure
+
+**1. La permutazione** — check (P): `verified, 2560 × 20 blocks` su **tutti e quattro** i layer. Verifica
+anche che i byte gate/up non siano stati toccati e che la dimensione della regione non cambi.
+
+**2. Parity su pesi reali** — `results/48-parity-i7-planar.txt`:
+
+| layer | gu | down | (4) parity vs `iq_mmvq(20)` | (4b) MT vs batch / f16 vs round |
+|---|---|---|---|---|
+| 0 | 18 iq3_xxs | 20 | **9,53e-08** | 0 / 0 di 7680 |
+| 17 | 21 iq3_s | 20 | **9,12e-08** | 0 / 0 di 7680 |
+| 2 | 22 iq2_s | 20 | **9,59e-08** | 0 / 0 di 7680 |
+| 47 | 23 iq4_xs | 20 | **9,46e-08** | 0 / 0 di 7680 |
+
+Sono **gli stessi numeri di HEAD, cifra per cifra** — non «sotto la soglia 1e-5»: identici.
+`maxwell_iq_parity: 0 failures`.
+
+**3. Bit-identità HEAD vs branch** — il punto che il design chiedeva misurato e non argomentato:
+
+| layer | float | diversi | `faq` | `fasc` | immagine codici |
+|---|---|---|---|---|---|
+| 0 | 7680 | **0** | SAME | SAME | differisce per costruzione |
+| 17 | 7680 | **0** | SAME | SAME | differisce per costruzione |
+| 2 | 7680 | **0** | SAME | SAME | differisce per costruzione |
+| 47 | 7680 | **0** | SAME | SAME | differisce per costruzione |
+
+**0 float diversi su 30 720**, con `faq` e `fasc` identici: stessi ingressi *e* stessi bit. Il checksum
+dei codici differisce per costruzione, ed è la prova che i due binari hanno consumato due immagini
+ciascuna ben definita. Anche il dump planare è riproducibile (sha256 `ef717b25…`).
+
+**4. SASS** — `results/46-sass-i7-compare.txt` e `results/47-sass-i7-instructions.txt`. Oggetto di HEAD
+ricompilato da `git show 83580f58:…` con **gli stessi flag** che CMake registra e **gli stessi percorsi
+relativi** (l'hash del namespace anonimo deriva dal percorso: la prima compilazione, fatta da un nome
+diverso, non era confrontabile — corretto e rifatto).
+
+| | valore |
+|---|---|
+| kernel HEAD / NEW | 153 / 153 |
+| condivisi | 153, di cui **150 bit-identici** |
+| solo in HEAD / solo in NEW | 0 / 0 |
+| **differiscono** | **3** — `expert_iq4nl_down_{batch, batch_f16, mt}` |
+
+Sul percorso dei codici, la sostituzione è visibile e localizzata:
+
+| kernel | `LDG.U16` | `LDG.128` | istruzioni |
+|---|---|---|---|
+| batch (f32) | **8 → 0** | **29 → 30** | 540 → 540 |
+| batch (f16) | **8 → 0** | **29 → 30** | 564 → 564 |
+| MT | **8 → 0** | **30 → 31** | 804 → 810 |
+
+Per `batch (f32)` la posizione è **provata direttamente**: le otto `LDG.E.CI.U16` a `0x0ec8…0x10f0`
+spariscono e una `LDG.E.CI.128` compare a `0x0ee8`, nella stessa finestra di programma. Per f16 e MT la
+stessa collocazione è **inferita** dai conteggi (+1 `LDG.128`, −8 `U16`, staging identico), ed è
+dichiarata come inferenza nel file. Le due `LDG.U8` che restano in entrambi sono `read_scale` che legge
+la fp16 byte per byte: non sono sul percorso dei codici.
+
+**Il percorso di produzione IQ2_XS è bit-identico**: `expert_s2_stage2_mt_batch` 1,
+`expert_s2_stage2_batch_v2` 5, `expert_s2_stage1` 7, `expert_s2_stage2` 8 — **21 istanze, tutte
+identiche** — e il gate esatto «ogni kernel condiviso che non sia iq4nl» dà 150 su 150.
+
+### Un bug nel mio harness, trovato e corretto qui
+
+Il primo run stampava `expert_iq 135 instantiations bit-identical = False`. Era un **over-match di
+sottostringa**: il pattern generico `expert_iq` è contenuto in `expert_iq4nl_down_*`, cioè nei tre
+kernel che questa iterazione cambia **di proposito**. Il gate è stato sostituito con l'affermazione
+esatta («ogni kernel condiviso non-iq4nl è bit-identico», 150/150 vero). **Nessun oggetto e nessuna
+misura sono cambiati**: 150 identici / 3 diversi erano già il risultato giusto. `46` registra il bug,
+la correzione e il run corretto, così il report archiviato non si contraddice.
+
+### Scostamenti dal testo di design, dichiarati
+
+| design diceva | implementato | perché |
+|---|---|---|
+| le 3 firme prendono `d_scales_off` **e** `d_scale_stride` | passano solo `d_scales_off`; gli stride sono **costanti di formato** nel `.cu` | 320 e 40 sono proprietà del tipo 20, non del chiamante: un parametro in più è una superficie d'errore in più, ed è la classe di bug di R2 |
+| nuovo helper `read_scale_u16` accanto a `read_scale` | **`read_scale` riusato, intatto** | è già `uint16_t` costruito da due byte; NON toccarlo è la mitigazione vera di R5. Costo: 2 `LDG.U8`, **presenti identiche in HEAD**, quindi non attribuibili a questa modifica |
+| funzione libera `iq4nl_planarize(...)` | `iq4nl::planarize(...)` in namespace, in header | stessa funzione condivisa, nome qualificato per non inquinare lo scope globale |
+
+### Cosa questa sezione non dice
+
+Non dice che il criterio è raggiunto, e non lo suggerisce: **non è stata misurata alcuna velocità**.
+I passi 1–3 provano che il layout è corretto (permutazione, parity identica, bit-identità) e che il
+codegen fa ciò che il design pretendeva (zero `U16`, `LDG.128` presente, S2 intatto). Se il guadagno
+ci sarà, lo dirà la misura µs/L; se il down-20 restasse a 296 µs/L, la causa non era il load e la
+variabile successiva (la LUT in shared) si misurerà da sola.
+
+### File archiviati
+
+| file | contenuto |
+|---|---|
+| `results/45-down-iq4nl-dump-head.txt` | il dump di riferimento di HEAD, 4 layer, sha256 `f5e75e04…` |
+| `results/46-sass-i7-compare.txt` | confronto SASS, gate corretti, i 3 kernel diversi in chiaro |
+| `results/47-sass-i7-instructions.txt` | mistura istruzioni e **dove** è finito l'`LDG.128` |
+| `results/48-parity-i7-planar.txt` | parity, check (P) e confronto bit-identico |
+
+Committati come `91170f33`, push su `iq3`. La produzione non è stata toccata in nessuno dei tre passi.
+
+---
