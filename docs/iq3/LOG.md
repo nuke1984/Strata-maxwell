@@ -23,6 +23,7 @@ Indice:
 - [Iterazione 7 — design: down IQ4_NL planare](#iterazione-7--design-down-iq4_nl-planare-da-rivedere-prima-del-codice)
 - [Iterazione 7 — limite noto: gli application clock delle M10 non sono impostabili](#iterazione-7--limite-noto-gli-application-clock-delle-m10-non-sono-impostabili)
 - [Iterazione 7 — protocollo: la 3060 a 140 W, A/B](#iterazione-7--protocollo-la-3060-a-140-w-ab-una-variabile)
+- [Iterazione 7 — la 3060 a 140 W, misurata: non è sul percorso critico](#iterazione-7--la-3060-a-140-w-misurata-non-è-sul-percorso-critico)
 
 ---
 
@@ -2047,9 +2048,16 @@ Il protocollo qui sotto usa **6 run** e il clock come endpoint primario.
 ### Il banco, e perché A/B nella stessa finestra
 
 `tools/iq3_bench.py` con `--labels city,code`, **6 run per etichetta**, `--max-tokens 600`,
-`--no-thinking`, `--vram-gpu 4` (la 3060 è l'indice NVML 4 — verificato dai CSV: è l'unica a 120 W).
-Si legge il decode tok/s **dal log del motore**, non dal client. Il clock SM della 3060, campionato a
-500 ms per tutta la fase, è **l'endpoint primario**.
+**thinking attivo** (nessun `--no-thinking`), `--vram-gpu 4` (la 3060 è l'indice NVML 4 — verificato
+dai CSV: è l'unica a 120 W). Si legge il decode tok/s **dal log del motore**, non dal client. Il clock
+SM della 3060, campionato a 500 ms per tutta la fase, è **l'endpoint primario**.
+
+> **Perché thinking attivo, e non spento.** Nel protocollo iniziale avevo scritto `--no-thinking`,
+> copiandolo dai banchi di *qualità*. È sbagliato per questa finestra, per due ragioni misurate:
+> con `--no-thinking` il modello chiude la risposta in ~238 token invece di 600 (banco qualità I6,
+> città), quindi ogni run dura ~5 s invece di ~12 e misura un transitorio, non il carico sostenuto;
+> e i numeri dichiarati come riferimento (42,7 e 57,2) vengono dai banchi di velocità di I6, che
+> giravano **con thinking attivo**. Correzione fatta prima di misurare, non dopo.
 
 L'ordine è **A/B/A**, non A poi B, perché il tempo e la temperatura della stanza cambiano:
 
@@ -2217,5 +2225,137 @@ Il tempo totale stimato: A1 + B + A2 = 3 fasi × 2 modelli × (load + ~5 min di 
 più i cambi di limite dell'operatore. Se l'operatore vuole accorciare, si taglia prima A2 (dichiarando
 che il confronto perde la barra d'errore interna), **non** i run: 3 run rendono la finestra cieca
 sull'endpoint del tok/s (vedi sopra).
+
+---
+
+## Iterazione 7 — la 3060 a 140 W, misurata: non è sul percorso critico
+
+**Finestra eseguita 2026-11-08** con l'OK dell'operatore, che ha fermato la produzione per la durata e
+ha **impostato lui** il limite della 3060 (120 → 140 → 120 W). Il limite delle M10 non è mai stato
+toccato: **30 W prima, durante e dopo**, verificato a ogni fase da un abort automatico in caso
+contrario. Tre fasi **A1 / B / A2**, una variabile sola.
+
+**Perimetro effettivamente misurato.** L'operatore ha **annullato le tre fasi IQ3_S a 140 W** dopo aver
+visto l'esito su IQ2_XS: «con IQ3_S il percorso Maxwell pesa ancora di più, quindi la 3060 è ancora meno
+critica». Il ragionamento è corretto ed è verificabile: il kernel Maxwell è 403 µs/L con IQ3_S contro
+282 con IQ2_XS, e il clock della 3060 a 120 W è **identico** nei due modelli (1777 MHz mediani). Un
+modello più lento sulle M10 non può rendere la 3060 più rilevante. La finestra misura quindi **IQ2_XS**,
+e la conclusione si estende all'IQ3_S per disuguaglianza, non per misura: **dichiarato**.
+
+### Il banco
+
+`iq3_bench.py`, 6 run per etichetta (città, codice), `max_tokens 600`, **thinking attivo** — la stessa
+forma dei banchi di velocità dell'Iterazione 6, per confrontabilità. Config **senza profilazione**
+(`STRATA_MW_LAYERPROF` assente: il suo 4,7% sarebbe una seconda variabile). Stesso binario
+(`build-iq3/strata`), stesso processo in tutte e tre le fasi.
+
+Ogni fase ha **registrato `power.limit` prima di toccare qualsiasi cosa**, e ha abortito se il valore
+non corrispondeva a quello confermato dall'operatore o se una M10 si muoveva:
+
+| fase | `power.limit` letto | confermato dall'operatore | M10 |
+|---|---|---|---|
+| A1 | **120,00 W** | 120 | 30,00 W × 8 |
+| B | **140,00 W** | 140 | 30,00 W × 8 |
+| A2 | **120,00 W** | 120 | 30,00 W × 8 |
+
+### Il clock: il meccanismo funziona
+
+3060, solo campioni attivi (`GpuIdle` escluso), intervallo 500 ms:
+
+| | **A1 (120 W)** | **B (140 W)** | **A2 (120 W)** |
+|---|---|---|---|
+| campioni attivi | 244 | 244 | 245 |
+| draw mediana | 119,0 W | **135,1 W** | 118,9 W |
+| draw p90 | 119,6 W | **139,2 W** | 119,7 W |
+| draw max | 120,1 W | **139,7 W** | 120,2 W |
+| **clock SM mediana** | **1777 MHz** | **1875 MHz** | **1777 MHz** |
+| clock SM media | 1789,0 | 1862,5 | 1788,4 |
+| clock SM p90 | 1852 | 1897 | 1867 |
+| `SwPowerCap` | 82,8% | **64,8%** | 81,6% |
+| temp max | 66 °C | 72 °C | 69 °C |
+| ventola max | 39% | 55% | 48% |
+| bit termici / brake | **0%** | **0%** | **0%** |
+
+La catena causale è completa, non ipotizzata: **+20 W di limite → +16,1 W di draw mediano → −18 punti
+di `SwPowerCap` → +98 MHz di clock mediano (+5,5%)**. E i bit termici restano a zero anche a 140 W: 72 °C
+massimi con la ventola al 55% sono margine, non saturazione.
+
+**Il controllo che rende solida la misura:** A1 e A2 sono **identici al MHz** (1777 mediani entrambi,
+draw 119,0 contro 118,9). La variabile misurata non deriva.
+
+### I tok/s: non cambiano
+
+| | **A1 (120 W)** | **B (140 W)** | **A2 (120 W)** | \|A1−A2\| |
+|---|---|---|---|---|
+| città (6 run) | 57,00 (sd 1,17) | 57,82 (sd 1,25) | 56,52 (sd 1,75) | 0,48 |
+| codice (6 run) | 61,83 (sd 3,93) | 60,67 (sd 5,86) | 61,08 (sd 2,89) | 0,75 |
+| **media 12 run** | **59,4** | **59,2** | **58,8** | **0,6** |
+
+**B − media(A1, A2) = +0,1 tok/s su una barra di ±0,6.** Cioè zero, con un segno che non è nemmeno
+quello atteso.
+
+La barra d'errore è la notizia metodologica della finestra: **±0,6 tok/s (1,0%)**, contro il 3,8% di
+dispersione run-to-run misurato sui banchi storici. La ragione è che qui **A1, B e A2 sono lo stesso
+processo** — stesso tier, stessa cache già calda, stesso binario — mentre i banchi storici erano sessioni
+diverse. Vale la pena ricordarlo per le finestre future: **sei run nello stesso processo valgono più di
+sei run in tre sessioni.**
+
+### Conclusione
+
+**La 3060 non è sul percorso critico.** Alzare il suo limite di potenza del **+17%** le dà **+16 W** di
+draw, **+98 MHz** di clock e **−18 punti** di `SwPowerCap`, e i tok/s restano **59,2 contro 59,1**
+(media di A1 e A2). Un guadagno di clock del 5,5% sulla scheda che il limite lo tocca davvero si traduce
+in **+0,2%** di decode: non è una correlazione debole, è **indipendenza**.
+
+La lettura corretta è diversa da quella scritta nel protocollo, e la sostituisce. Avevo ipotizzato che
+il residuo host (~148 µs/L su IQ3_S, ~95 su IQ2_XS) contenesse la 3060 e che quindi una scheda più
+veloce avrebbe accorciato il token. **Falso.** Il residuo contiene **attese**, non lavoro della 3060: il
+suo calcolo è **sovrapposto** a quello delle M10, e accelerarlo non sposta il collo di bottiglia. Non
+«la 3060 pesa poco», ma **«la 3060 non detta il passo»** — e la differenza conta, perché la prima
+suggerirebbe di cercare margine nel tempo host, la seconda dice che l'unica leva è il **percorso
+Maxwell**.
+
+**Il limite resta a 120 W.** Verificato a fine finestra: 3060 a 120,00 W, otto M10 a 30,00 W.
+
+### Cosa questo chiude, e cosa no
+
+Chiude **la potenza come leva**, per la terza e definitiva volta, e con un meccanismo invece che con una
+correlazione: Iterazione 6 diceva «le M10 non sono power-capped», 6b «la 3060 sì, ed è potenza non
+calore», questa dice **«e anche alzandola non cambia nulla, perché la 3060 non è sul percorso
+critico»**. Le tre cose insieme esauriscono la domanda.
+
+Non chiude il criterio: **IQ2_XS fa 59,4 tok/s, IQ3_S 42,7** (Iterazione 6, cache 988). Resta il divario
+del 22% e resta il criterio a 55. L'**unica leva** è il down IQ4_NL planare dell'Iterazione 7.
+
+### Risultati
+
+Archiviati in `docs/iq3/results/` (sei file, verificati privi di `api_key`/`Bearer`/materiale della
+chiave):
+
+| file | contenuto |
+|---|---|
+| `39-bench-iq2_xs-140w-a1.json` | banco A1, 12 run |
+| `40-bench-iq2_xs-140w-b.json` | banco B, 12 run |
+| `41-bench-iq2_xs-140w-a2.json` | banco A2, 12 run |
+| `42-power-iq2_xs-140w-a1.csv` | campioni profondi A1 (520 totali, 244 attivi) |
+| `43-power-iq2_xs-140w-b.csv` | campioni profondi B (518, 244) |
+| `44-power-iq2_xs-140w-a2.csv` | campioni profondi A2 (518, 245) |
+
+### Ripristino produzione — verificato
+
+| controllo | esito |
+|---|---|
+| servizio | `active`, `NRestarts=0` |
+| health | `qwen3.8-flash-next-iq2_xs`, `loaded: true` |
+| tier Maxwell | **8**, da 2837 a 2838 esperti, 3,80–3,82 GiB per die |
+| cache 3060 | **1874 slot**, pre-filled 1874/1874, slot 0 verificato |
+| VRAM 3060 | **2247 MiB liberi** a regime, coerente con l'Iterazione 6 (2247) |
+| limiti | **3060 120,00 W, M10 30,00 W** |
+| AER | bridge `0000:09:11.0` a **14**, tutte e 9 le GPU a **0** |
+| decode vivo | con thinking off: «Il cielo di giorno è azzurro.» (11 token, `finish: stop`) |
+
+Nota: la prima prova di decode, con thinking attivo e `max_tokens 48`, ha restituito `finish: length` e
+contenuto vuoto — i 48 token erano finiti nel `reasoning_content`. Non è un difetto: è il comportamento
+atteso, ed è la ragione per cui i banchi di qualità usano `--no-thinking`.
 
 ---
