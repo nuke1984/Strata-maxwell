@@ -6,6 +6,11 @@
 //                                                          IQ1_M; down is Q2_0 everywhere)
 //     build/maxwell_iq_parity --synthetic <gu>/<down> ...   random weights quantized by ggml (e.g. iq3_s/q2_0)
 //
+// --dump <file> may precede either form: it appends, for every type-20 (IQ4_NL) down, the block's output
+// as raw IEEE-754 bit patterns plus FNV-1a checksums of the three inputs it was computed from (the down
+// region AS THE KERNEL READS IT, faq, fasc).  Two binaries comparing their dumps therefore prove both
+// "same inputs" and "same bits", which is Iteration 7's contract point 3.
+//
 // The IQ3_S file's gate/up encodings (18 IQ3_XXS, 21 IQ3_S, 23 IQ4_XS) are checked the same way.  Its
 // layers 12, 20, 30 (18/42) and 21 (21/42) are real rows this tool reads; layer 47 is 23/20 and the
 // down IQ4_NL is Iteration 3, so 23 is checked on synthetic weights only.
@@ -128,13 +133,77 @@ static_assert(sizeof(Q81Block) == 36, "block_q8_1 is 36 bytes");
 
 int g_m10 = -1, g_ref = -1;   // the devices the two sides run on
 
+// FNV-1a 64: the dumps below record a checksum of the INPUTS they were computed from.  Bit identity
+// of two outputs proves nothing if the two runs did not start from the same bytes, so the comparison
+// gates the checksums first and the values second.
+uint64_t fnv1a64(const void* data, size_t n) {
+    const uint8_t* p = (const uint8_t*) data;
+    uint64_t h = 1469598103934665603ull;
+    for (size_t i = 0; i < n; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+    return h;
+}
+
+// ---- Iteration 7, contract point 3: THE DOWN OUTPUT, bit for bit.  HEAD (raw 18-byte blocks, the
+//      kernel of today) and the branch (planar codes + scale plane, the new kernel) are run on the
+//      same weights and the same faq/fasc, and their dumps must differ in ZERO floats - not in 1e-5.
+//      The batch form is enough: check (4b) already pins MT and f16 to the batch bits *within* each
+//      binary, so batch identity across binaries plus (4b) is the whole surface.
+//      Values are the raw IEEE-754 bit patterns, eight per line, in (job, row) order.
+//
+// The checksums make "same inputs" a gate instead of an assumption.  `codes_stride` is the row stride
+// the KERNEL uses, so the codes checksum is layout-dependent by construction (raw 360 interleaved vs
+// planar 320 + a separate 40-byte scale plane): it is there to prove the two binaries each consumed a
+// well-defined image, not to be equal across them.  faq and fasc MUST be equal across them.
+struct DownGeo {
+    size_t codes_off = 0, codes_stride = 0;    // the codes plane, as the kernel indexes it
+    size_t scales_off = 0, scale_stride = 0;   // 0 = scales interleaved in the block (the raw form)
+};
+
+void dump_down_section(std::FILE* fp, const cpu::NativeFmt& f, const std::vector<uint8_t>& blob,
+                       const DownGeo& dg, const std::vector<int8_t>& h_faq,
+                       const std::vector<float>& h_fasc, const std::vector<float>& got,
+                       const std::string& label) {
+    std::fprintf(fp, "## %s\n", label.c_str());
+    std::fprintf(fp, "# gu %d (%s)  down %d (%s)  H %lld  nt %zu\n", f.gu_type,
+                 ggml_type_name((ggml_type) f.gu_type), f.d_type,
+                 ggml_type_name((ggml_type) f.d_type), (long long) H, (size_t) (got.size() / (size_t) H));
+    std::fprintf(fp, "# fnv1a-64 codes %016llx  (off %zu, stride %zu, %lld rows)\n",
+                 (unsigned long long) fnv1a64(blob.data() + dg.codes_off, (size_t) H * dg.codes_stride),
+                 dg.codes_off, dg.codes_stride, (long long) H);
+    if (dg.scale_stride)
+        std::fprintf(fp, "# fnv1a-64 scales %016llx  (off %zu, stride %zu, %lld rows)\n",
+                     (unsigned long long) fnv1a64(blob.data() + dg.scales_off, (size_t) H * dg.scale_stride),
+                     dg.scales_off, dg.scale_stride, (long long) H);
+    else
+        std::fprintf(fp, "# fnv1a-64 scales interleaved\n");
+    std::fprintf(fp, "# fnv1a-64 faq %016llx\n", (unsigned long long) fnv1a64(h_faq.data(), h_faq.size()));
+    std::fprintf(fp, "# fnv1a-64 fasc %016llx\n", (unsigned long long) fnv1a64(h_fasc.data(), h_fasc.size() * 4));
+    std::fprintf(fp, "values %zu\n", got.size());
+    for (size_t i = 0; i < got.size(); ++i) {
+        uint32_t b = 0;
+        std::memcpy(&b, &got[i], 4);
+        std::fprintf(fp, "%08x%s", b, ((i % 8) == 7 || i + 1 == got.size()) ? "\n" : " ");
+    }
+}
+
+// The layout of the down region the tool HANDS the kernel.  ONE place describes it: step 2 of Iteration 7
+// flips this from the raw form to the planar one, and nothing else in the tool moves.
+DownGeo down_geo_of(const cpu::NativeFmt& f) {
+    DownGeo g;
+    g.codes_off = f.down_off;
+    g.codes_stride = f.d_row;      // raw: 20 blocks * 18 B, codes and fp16 scales interleaved
+    g.scales_off = 0;
+    g.scale_stride = 0;            // 0 = scales live inside the block
+    return g;
+}
+
 // The DOWN stage (IQ4_NL, ggml type 20): the M10's iq4nl kernel against the 3060's own production
 // dots (iq_mmvq type 20) on the SAME activation image (the faq/fasc the gup above produced), plus
 // the float reference.  This is the check the design promises: same faq/fasc, same fp16-rounded
 // activation scale, gate 1e-5.
 int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt,
                const std::vector<int8_t>& h_faq, const std::vector<float>& h_fasc,
-               const std::string& label) {
+               const std::string& label, std::FILE* dump) {
     int failures = 0;
     const int nchunk = (int) (FF / 32);          // 20 chunks of 32 values per FF-wide activation
     // the 3060's q8_1 blocks from that image: qs verbatim, d = fp16(scale), s = 0 (unused by type 20)
@@ -293,11 +362,13 @@ int check_down(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int nt
         std::printf("          (5) down vs the float reference (raw acts, reported): rel %.2e\n",
                     n / (d + 1e-30));
     }
+    if (dump) dump_down_section(dump, f, blob, down_geo_of(f), h_faq, h_fasc, got, label);
     return failures;
 }
 
 // One blob's gate/up: the kernel on the M10 against the 3060's production dots; returns failed checks.
-int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int seed, const std::string& label) {
+int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int seed, const std::string& label,
+               std::FILE* dump) {
     int failures = 0;
     // ---- the activation: the engine's own ActQ (what the dispatch hands the tier) on the host, and the
     //      device quantizer's q8_1 blocks on the 3060 (what its native path consumes).
@@ -490,7 +561,7 @@ int check_blob(const cpu::NativeFmt& f, const std::vector<uint8_t>& blob, int se
     // ---- (4) + (5): the DOWN stage, when this layer keeps an IQ4_NL (ggml type 20) one.  Feed it the
     //          faq/fasc the gup above produced: the design's chain - the tier's own activation image into
     //          the tier's own down kernel, against the 3060's production dots on the same image.
-    if (f.d_type == 20) failures += check_down(f, blob, NT, h_faq, h_fasc, label);
+    if (f.d_type == 20) failures += check_down(f, blob, NT, h_faq, h_fasc, label, dump);
     return failures;
 }
 
@@ -545,6 +616,37 @@ int main(int argc, char** argv) {
     }
     std::printf("maxwell_iq_parity: M10 is device %d, the reference card is device %d\n", g_m10, g_ref);
     int failures = 0;
+    // --dump <file>: the down output of every type-20 layer, bit for bit (Iteration 7, contract point 3).
+    // It is CONSUMED here, so the mode dispatch below sees a clean argument list.
+    std::FILE* dump = nullptr;
+    std::string dump_path;
+    {
+        std::vector<char*> keep;
+        keep.push_back(argv[0]);
+        for (int i = 1; i < argc; ++i) {
+            if (std::strcmp(argv[i], "--dump") == 0) {
+                if (i + 1 >= argc) {
+                    std::fprintf(stderr, "maxwell_iq_parity: --dump needs a file name\n");
+                    return 2;
+                }
+                dump_path = argv[++i];
+                continue;
+            }
+            keep.push_back(argv[i]);
+        }
+        argc = (int) keep.size();
+        for (int i = 0; i < argc; ++i) argv[i] = keep[(size_t) i];
+    }
+    if (!dump_path.empty()) {
+        dump = std::fopen(dump_path.c_str(), "w");
+        if (!dump) {
+            std::fprintf(stderr, "maxwell_iq_parity: cannot write %s\n", dump_path.c_str());
+            return 2;
+        }
+        std::fprintf(dump, "# maxwell_iq_parity down dump - raw IEEE-754 bit patterns, eight per line\n");
+        std::fprintf(dump, "# the tool is the authority on the LAYOUT: the region checksum above is the\n"
+                           "# down bytes AS THE KERNEL READS THEM, so raw and planar differ here by design.\n");
+    }
     if (argc > 1 && std::strcmp(argv[1], "--synthetic") == 0) {
         for (int i = 2; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -571,7 +673,7 @@ int main(int argc, char** argv) {
                 ++failures;
                 continue;
             }
-            failures += check_blob(f, synthetic_blob(f, i), i, "synthetic " + arg);
+            failures += check_blob(f, synthetic_blob(f, i), i, "synthetic " + arg, dump);
         }
     } else if (argc > 1) {
         const strata::GgufModel model(strata::gguf_split_paths(argv[1]));
@@ -609,13 +711,15 @@ int main(int argc, char** argv) {
             std::memcpy(blob.data() + f.up_off, data[1] + (size_t) E * f.up_off, f.up_off);
             std::memcpy(blob.data() + f.down_off, data[2] + (size_t) E * (f.bytes - f.down_off),
                         f.bytes - f.down_off);
-            failures += check_blob(f, blob, l, "layer " + std::to_string(l));
+            failures += check_blob(f, blob, l, "layer " + std::to_string(l), dump);
         }
     } else {
-        std::fprintf(stderr, "usage: maxwell_iq_parity <shard1.gguf> [layer ...]\n"
-                             "       maxwell_iq_parity --synthetic <gu>/<down> ...  (ggml type names)\n");
+        std::fprintf(stderr, "usage: maxwell_iq_parity [--dump <file>] <shard1.gguf> [layer ...]\n"
+                             "       maxwell_iq_parity [--dump <file>] --synthetic <gu>/<down> ...  (ggml type names)\n");
+        if (dump) std::fclose(dump);
         return 2;
     }
+    if (dump) std::fclose(dump);
     std::printf("maxwell_iq_parity: %d failures\n", failures);
     return failures ? 1 : 0;
 }
