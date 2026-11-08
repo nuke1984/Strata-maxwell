@@ -1,0 +1,65 @@
+# Iteration 7 - contract points 1, 2 and 3, measured at 7e6fb01e (planar) on the four type-20 layers.
+# date: 2026-11-08T03:53:14Z  host: strata
+# The parity numbers are compared against results/04-down-iq4nl-real.txt (HEAD, raw): they must be
+# IDENTICAL, not merely under the 1e-5 gate.
+
+## point 2: parity on real weights
+
+maxwell_iq_parity: M10 is device 1, the reference card is device 0
+layer 0: iq3_xxs gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.66e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 4.78e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.27e-03
+          (P) the planar conversion is a byte permutation: verified, 2560 x 20 blocks
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.53e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.01e-04
+layer 17: iq3_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.79e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 5.19e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.33e-03
+          (P) the planar conversion is a byte permutation: verified, 2560 x 20 blocks
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.12e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.07e-04
+layer 2: iq2_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.65e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 5.21e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 9.02e-03
+          (P) the planar conversion is a byte permutation: verified, 2560 x 20 blocks
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.59e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.17e-04
+layer 47: iq4_xs gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.82e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 4.73e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.86e-03
+          (P) the planar conversion is a byte permutation: verified, 2560 x 20 blocks
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.46e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.10e-04
+maxwell_iq_parity: 0 failures
+
+## point 3: HEAD vs BRANCH, bit for bit
+# HEAD   : results/45-down-iq4nl-dump-head.txt   (raw, kernel of 83580f58)
+# BRANCH : /root/i7-down-dump-planar.txt         (planar, kernel of 7e6fb01e)
+
+section        floats   differ  faq       fasc      codes image   
+----------------------------------------------------------------------
+layer 0          7680        0  SAME      SAME      differs (by design)
+layer 17         7680        0  SAME      SAME      differs (by design)
+layer 2          7680        0  SAME      SAME      differs (by design)
+layer 47         7680        0  SAME      SAME      differs (by design)
+
+TOTAL differing floats: 0 of 30720
+VERDICT: BIT-IDENTICAL
+
+## point 1: the conversion is a byte permutation
+check (P) verified, 2560 x 20 blocks, on each of the four layers (see the parity text above).
+Nothing is inverted and no value is recomputed: the planar codes ARE the raw block's 16 code
+bytes and the planar scale IS its fp16 d.  The check also asserts the gate/up bytes are
+untouched and that the region's size is unchanged.
