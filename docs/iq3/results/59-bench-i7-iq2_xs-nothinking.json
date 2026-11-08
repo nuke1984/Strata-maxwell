@@ -1,0 +1,116 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 0,
+   "read": 34,
+   "prefill_ms": 507,
+   "prefill_tps": 67.1,
+   "generated": 221,
+   "decode_ms": 5702,
+   "decode_tps": 38.8,
+   "drafts_accepted": 92,
+   "drafts_total": 235
+  },
+  "seconds": 6.22,
+  "generated": 221,
+  "client_tps": 35.5,
+  "text": "Firenze, capitale del Rinascimento italiano, è una città che incanta per la sua straordinaria fusione di storia, arte e cultura. Fondata dai Romani e trasformata dalla famiglia Medici, ha dato i natali a geni come Dante Alighieri, Michelangelo e Leonardo da Vinci. Il suo centro storico, patrimonio UNESCO, offre un viaggio nel tempo attraverso monumenti iconici.\n\nDa visitare assolutamente sono il Duomo di Santa Maria del Fiore con la cupola di Brunelleschi, la Galleria degli Uffizi che custodisce capolavori di Botticelli e Caravaggio, e il Ponte Vecchio, unico ponte medievale sopravvissuto alla guerra. Non si può ignorare Piazza della Signoria, dominata dal Palazzo Vecchio e dalla statua di David. Passeggiando per le sue vie strette e piazze suggestive, come Santa Croce o San Lorenzo, si respira un’atmosfera unica, dove l’arte non è solo da ammirare, ma da vivere. Firenze resta un simbolo eterno di bellezza e creatività."
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 27,
+   "read": 7,
+   "prefill_ms": 228,
+   "prefill_tps": 30.7,
+   "generated": 231,
+   "decode_ms": 5669,
+   "decode_tps": 40.7,
+   "drafts_accepted": 95,
+   "drafts_total": 223
+  },
+  "seconds": 5.9,
+  "generated": 231,
+  "client_tps": 39.1,
+  "text": "Firenze, capitale del Rinascimento italiano, è una città che incanta con la sua ricca storia e il suo patrimonio artistico senza pari. Fondata dai Romani e trasformata dalla famiglia Medici, ha ospitato geni come Leonardo da Vinci, Michelangelo e Dante Alighieri, lasciando un’impronta indelebile nella cultura mondiale.\n\nIl cuore della città è dominato dal Duomo di Santa Maria del Fiore, con la sua celebre cupola di Brunelleschi, e dalla Piazza della Signoria, adornata dalle statue degli Uffizi. Da non perdere il Ponte Vecchio, unico ponte medievale sopravvissuto alla guerra, e le Gallerie degli Uffizi, che custodiscono capolavori di Botticelli e Caravaggio. Passeggiare per le sue strade significa immergersi in un museo a cielo aperto, dove ogni angolo racconta secoli di arte e architettura. Firenze offre anche una vivace scena gastronomica e paesaggi collinari mozzafiato, rendendola una meta imperdibile per chiunque desideri vivere l’essenza dell’Italia classica."
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 27,
+   "read": 7,
+   "prefill_ms": 198,
+   "prefill_tps": 35.3,
+   "generated": 215,
+   "decode_ms": 5205,
+   "decode_tps": 41.3,
+   "drafts_accepted": 88,
+   "drafts_total": 196
+  },
+  "seconds": 5.41,
+  "generated": 215,
+  "client_tps": 39.8,
+  "text": "Firenze, capitale del Rinascimento italiano, è una città che incanta per la sua straordinaria fusione di storia, arte e cultura. Fondata dai Romani e trasformata dalla famiglia Medici, ha dato i natali a geni come Dante Alighieri, Leonardo da Vinci e Michelangelo. Il suo centro storico, patrimonio UNESCO, offre un viaggio nel tempo attraverso monumenti iconici. Da non perdere la Cattedrale di Santa Maria del Fiore con la maestosa cupola di Brunelleschi, il Palazzo Vecchio e la Galleria degli Uffizi, che custodisce capolavori di Botticelli e Caravaggio. Passeggiare lungo il Ponte Vecchio o salire al Piazzale Michelangelo regala panorami mozzafiato sulla città. Firenze non è solo un museo a cielo aperto, ma un luogo vivo dove l’arte si respira nelle piazze, nei caffè storici e nell’atmosfera unica delle sue strade lastricate, rendendola una meta imperdibile per ogni amante della bellezza."
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 77,
+   "reused": 0,
+   "read": 77,
+   "prefill_ms": 922,
+   "prefill_tps": 83.5,
+   "generated": 530,
+   "decode_ms": 6972,
+   "decode_tps": 76.0,
+   "drafts_accepted": 410,
+   "drafts_total": 548
+  },
+  "seconds": 7.9,
+  "generated": 530,
+  "client_tps": 67.1,
+  "text": "```python\nfrom typing import List\n\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"Merge overlapping or adjacent intervals into non-overlapping intervals.\n\n    Given a list of intervals [start, end], merges those that overlap or are\n    adjacent (i.e., the end of one interval equals the start of another).\n    Returns a sorted list of merged intervals.\n\n    Args:\n        intervals: A list of intervals, each represented as [start, end].\n\n    Returns:\n        A sorted list of merged, non-overlapping intervals.\n\n    Examples:\n        >>> merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n        [[1, 6], [8, 10], [15, 18]]\n\n        >>> merge_intervals([[1, 4], [4, 5]])\n        [[1, 5]]\n    \"\"\"\n    if not intervals:\n        return []\n\n    # Sort intervals by start time\n    sorted_intervals = sorted(intervals, key=lambda x: x[0])\n\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            # Overlapping or adjacent: extend the current interval\n            current_end = max(current_end, end)\n        else:\n            # No overlap: add the current interval and start a new one\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n\n    # Add the last interval\n    merged.append([current_start, current_end])\n\n    return merged\n\n\n# Test cases\nif __name__ == \"__main__\":\n    # Test case 1: overlapping intervals\n    result1 = merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n    assert result1 == [[1, 6], [8, 10], [15, 18]], f\"Test case 1 failed: {result1}\"\n\n    # Test case 2: adjacent intervals\n    result2 = merge_intervals([[1, 4], [4, 5]])\n    assert result2 == [[1, 5]], f\"Test case 2 failed: {result2}\"\n\n    print(\"All tests passed.\")\n```"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 77,
+   "reused": 70,
+   "read": 7,
+   "prefill_ms": 229,
+   "prefill_tps": 30.6,
+   "generated": 535,
+   "decode_ms": 6669,
+   "decode_tps": 80.2,
+   "drafts_accepted": 420,
+   "drafts_total": 535
+  },
+  "seconds": 6.9,
+  "generated": 535,
+  "client_tps": 77.5,
+  "text": "```python\nfrom typing import List\n\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"Merge overlapping or adjacent intervals into non-overlapping intervals.\n\n    Given a list of intervals [start, end], merges those that overlap or are\n    adjacent (i.e., the end of one interval equals the start of another).\n    Returns a sorted list of merged intervals.\n\n    Args:\n        intervals: A list of intervals, each represented as [start, end].\n\n    Returns:\n        A sorted list of merged, non-overlapping intervals.\n\n    Examples:\n        >>> merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n        [[1, 6], [8, 10], [15, 18]]\n\n        >>> merge_intervals([[1, 4], [4, 5]])\n        [[1, 5]]\n    \"\"\"\n    if not intervals:\n        return []\n\n    # Sort intervals by start time\n    sorted_intervals = sorted(intervals, key=lambda x: x[0])\n\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n\n    for interval in sorted_intervals[1:]:\n        start, end = interval\n\n        if start <= current_end:\n            # Overlapping or adjacent: extend the current interval\n            current_end = max(current_end, end)\n        else:\n            # No overlap: add the current interval and start a new one\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n\n    # Add the last interval\n    merged.append([current_start, current_end])\n\n    return merged\n\n\n# Test cases\nif __name__ == \"__main__\":\n    # Test case 1: overlapping intervals\n    result1 = merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n    assert result1 == [[1, 6], [8, 10], [15, 18]], f\"Test case 1 failed: {result1}\"\n\n    # Test case 2: adjacent intervals\n    result2 = merge_intervals([[1, 4], [4, 5]])\n    assert result2 == [[1, 5]], f\"Test case 2 failed: {result2}\"\n\n    print(\"All tests passed.\")\n```"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 77,
+   "reused": 70,
+   "read": 7,
+   "prefill_ms": 200,
+   "prefill_tps": 35.0,
+   "generated": 535,
+   "decode_ms": 6733,
+   "decode_tps": 79.5,
+   "drafts_accepted": 419,
+   "drafts_total": 542
+  },
+  "seconds": 6.94,
+  "generated": 535,
+  "client_tps": 77.1,
+  "text": "```python\nfrom typing import List\n\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"Merge overlapping or adjacent intervals into non-overlapping intervals.\n\n    Given a list of intervals [start, end], merges those that overlap or are\n    adjacent (i.e., the end of one interval equals the start of another).\n    Returns a sorted list of merged intervals.\n\n    Args:\n        intervals: A list of intervals, each represented as [start, end].\n\n    Returns:\n        A sorted list of merged, non-overlapping intervals.\n\n    Examples:\n        >>> merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n        [[1, 6], [8, 10], [15, 18]]\n\n        >>> merge_intervals([[1, 4], [4, 5]])\n        [[1, 5]]\n    \"\"\"\n    if not intervals:\n        return []\n\n    # Sort intervals by start time\n    sorted_intervals = sorted(intervals, key=lambda x: x[0])\n\n    merged = []\n    current_start, current_end = sorted_intervals[0]\n\n    for interval in sorted_intervals[1:]:\n        start, end = interval\n\n        if start <= current_end:\n            # Overlapping or adjacent: extend the current interval\n            current_end = max(current_end, end)\n        else:\n            # No overlap: add the current interval and start a new one\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n\n    # Add the last interval\n    merged.append([current_start, current_end])\n\n    return merged\n\n\n# Test cases\nif __name__ == \"__main__\":\n    # Test case 1: overlapping intervals\n    result1 = merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]])\n    assert result1 == [[1, 6], [8, 10], [15, 18]], f\"Test case 1 failed: {result1}\"\n\n    # Test case 2: adjacent intervals\n    result2 = merge_intervals([[1, 4], [4, 5]])\n    assert result2 == [[1, 5]], f\"Test case 2 failed: {result2}\"\n\n    print(\"All tests passed.\")\n```"
+ }
+]

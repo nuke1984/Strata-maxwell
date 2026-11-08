@@ -1036,7 +1036,7 @@ void usage() {
                  "                       0 = the prompt path stays on the primary)\n"
                  "  --maxwell-devices A,B  Maxwell (sm_50, e.g. Tesla M10) GPUs as FIXED expert tiers, replacing\n"
                  "                       CPU work for the profile-ranked experts they hold (e.g. --maxwell-devices\n"
-                 "                       1,2,3,4).  Each card holds a slice of the experts the primary cache does\n"
+                 "                       1,2,3,4,5,6,7,8).  Each card holds a slice of the experts the primary cache does\n"
                  "                       not hold, computed with the scalar Maxwell kernel.  Experimental.\n"
                  "  --maxwell-split M    how the cards hold the experts: expert (default, whole experts\n"
                  "                       round-robin) or tensor - ONE virtual Meta tier, every expert sharded\n"
@@ -6899,7 +6899,7 @@ int main(int argc, char** argv) {
     // Maxwell (sm_50) tiers are declared here so their held pairs can exclude RAM duplication below.
     // The actual open() calls are further down (after profile/xcache are ready); maxwell_pairs collects
     // every resident pair for pin_cache_complement's additional_gpu_pairs.
-    std::array<strata::core::MaxwellExperts, 4> maxwell_experts;
+    std::array<strata::core::MaxwellExperts, 8> maxwell_experts;
     strata::core::MaxwellMetaTier maxwell_meta;
     std::vector<std::pair<int32_t, int32_t>> maxwell_pairs;
 
@@ -6926,8 +6926,8 @@ int main(int argc, char** argv) {
                 at = comma + 1;
             }
         }
-        if (maxwell_devs.empty() || maxwell_devs.size() > 4) {
-            std::fprintf(stderr, "strata generate: --maxwell-devices takes 1-4 CUDA devices, e.g. 1,2,3,4\n");
+        if (maxwell_devs.empty() || maxwell_devs.size() > 8) {
+            std::fprintf(stderr, "strata generate: --maxwell-devices takes 1-8 CUDA devices, e.g. 1,2,3,4,5,6,7,8\n");
             return 1;
         }
         // SPLIT_MODE_TENSOR: the cards become ONE virtual tier - every card holds a tensor SHARD of every
@@ -9617,6 +9617,14 @@ int main(int argc, char** argv) {
             // kernel raises the tier flags itself, so the graph's multi-wait consumes them (mode 0
             // then runs like mode 1 - the pool's finish keeps the honest host flag wait).
             const bool e1_on = e1 >= 1 || maxwell_experts[0].persist_armed();
+            // The E1 completion-flag path is 4-way by construction (the verifier allocates four flags and
+            // the tensor assembly is four-way).  The whole-expert split above 4 devices does not use it.
+            if (e1_on && drive.d.maxwell_count > 4) {
+                std::fprintf(stderr, "strata generate: at most 4 Maxwell devices with the E1 completion flags "
+                                     "(STRATA_MW_GPUFLAG or STRATA_MW_PERSIST); got %d\n",
+                             (int) drive.d.maxwell_count);
+                return 1;
+            }
             if (e1_on) {
                 for (int m = 0; m < drive.d.maxwell_count; ++m)
                     maxwell_experts[m].set_completion_flag(ver.mw_flags(m));

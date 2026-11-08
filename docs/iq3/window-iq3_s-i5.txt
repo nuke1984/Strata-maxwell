@@ -1,0 +1,1077 @@
+[strata] 2026-11-07 19:02:11 engine started: /root/Strata-iq3/build-iq3/strata --serve --pack /root/Strata-data/packs/iq3_s --native /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --ple-gguf /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf --expert-profile /root/Strata-maxwell/data/expert-profile.bin --expert-cache auto --prefill auto --spec 6 --spec-min-p 0.5 --mtp /root/Strata-data/mtp/rt --max-context 128000 --kv k8v4 --mmap-experts --maxwell-devices 1,2,3,4,5,6,7,8 --maxwell-reserve-mib 250 --spec-split
+strata generate: memory guard: limit 24.0 GiB (source: meminfo), current 0.5 GiB, reclaimable cache credited 0.0 GiB; available 23.5 GiB (MemAvailable 23.5 GiB), floor 2560 MiB
+strata generate: PCIe probe: 11.2 GB/s host->device (best of 11.2 11.2 11.2 11.2) -> pcie_frac 0.31 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: /root/Strata-data/packs/iq3_s experts (largest blob 2.66 MB), token embedding IQ4_XS in VRAM (322 MiB, 0.6 s)
+strata generate: 1466 MiB of weights loaded from /root/Strata-data/packs/iq3_s in 0.9 s (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 2018.88 MiB of weights, in 3.4 s
+strata generate: WARNING: --ple-io direct measures slow here (11472 rows/s, about 47 MB/s of random 4 KiB reads): a prompt can spend minutes reading layer 1 and trip the stall watchdog (#1425, #1629). --ple-io mmap was 40-100x faster on some DRAM-less NVMe drives but 7x slower on a SATA SSD (#2040), so it is not chosen for you; --ple-io ram needs the RAM for the table (kept direct: pass --ple-io mmap or --ple-io ram to change it; in a config file's "args" they are two entries: "--ple-io", "mmap")
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: profile /root/Strata-maxwell/data/expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: PLE on, table 320001536 rows of /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf
+strata mtp: draft layer loaded, 948 MiB of VRAM (experts 675, dense 111), files read in 0.56 s (1407 MiB/s)
+strata generate: experimental native Q5_K head, 521472000 bytes, in 1.2 s
+strata generate: GPU 0: NVIDIA GeForce RTX 3060, compute capability 8.6
+strata generate: experts via mmap (--mmap-experts; the A/B arm of R2.1)
+strata generate: file tier (experts.bin): io prefetch stays off by default here: the page cache has room for 50% of the experts (it helps from 55%: 32 GB-class RAM, decode +20..34% measured); STRATA_IO_PREFETCH=1 turns it on anyway
+strata generate: GPU host-callback thread started before host-core pinning
+strata generate: CPU pool tasks/phase: 12 (automatic), participating threads: 4
+strata generate: CPU pool: 3 workers by default (4 physical cores, 8 logical processors; bounded by every physical core but the host's)
+strata generate: 3 pool workers on logical processors 1,2,3, the host thread on 0 (draining too) (--host-core first)
+strata generate: CPU workers on logical processors 1,2,3 (3 workers, one per physical core; host on 0)
+strata aux cpus: threads that are neither pool workers nor the host go to CPUs 4 (off at start; a request's aux_cpus=1 turns it on)
+strata generate: expert cache auto: 4.59 GiB free, 700 MiB reserved (+220 MiB for the draft head) -> 1357 slots
+strata generate: expert cache 1749 slots, 3.36 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: the profile fill asks for 256 pairs ahead (STRATA_FILL_AHEAD)
+strata generate: pre-filled 1749 of 1749 slots from the profile in 5.9 s (610 MB/s); slot 0 verified
+strata maxwell: sub-batch window 256 tokens (STRATA_MW_NTM; 64 is the default)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA1): round-trip gate layer 46 expert 239 (iq3_xxs): rel 1.23e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 9 expert 245 (iq2_s): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 27 expert 402 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 13 expert 334 (iq2_s): rel 1.19e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 12 expert 218 (iq3_xxs): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 21 expert 48 (iq3_s): rel 1.07e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 47 expert 272 (iq4_xs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 1: 2854 experts, 5.45 GiB (filled in 23.6 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA2): round-trip gate layer 1 expert 229 (iq2_s): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 11 expert 207 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 27 expert 449 (iq3_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 38 expert 414 (iq3_xxs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 12 expert 432 (iq3_xxs): rel 1.07e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 47 expert 416 (iq4_xs): rel 1.26e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 21 expert 298 (iq3_s): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.26e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 2: 2854 experts, 5.44 GiB (filled in 23.1 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA3): round-trip gate layer 3 expert 289 (iq2_s): rel 1.04e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 12 expert 127 (iq3_xxs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 29 expert 427 (iq3_s): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 38 expert 273 (iq3_xxs): rel 1.01e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 10 expert 378 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 21 expert 56 (iq3_s): rel 1.00e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 47 expert 55 (iq4_xs): rel 1.26e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 3: 2854 experts, 5.43 GiB (filled in 23.0 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA4): round-trip gate layer 3 expert 408 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 17 expert 499 (iq3_s): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 16 expert 332 (iq3_xxs): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 12 expert 98 (iq3_xxs): rel 1.05e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 10 expert 328 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 47 expert 27 (iq4_xs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 21 expert 150 (iq3_s): rel 1.19e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.19e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 4: 2853 experts, 5.44 GiB (filled in 23.4 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA5): round-trip gate layer 4 expert 257 (iq2_s): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 20 expert 95 (iq3_xxs): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 45 expert 324 (iq3_s): rel 9.29e-03 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 41 expert 145 (iq3_xxs): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 21 expert 115 (iq3_s): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 47 expert 269 (iq4_xs): rel 1.03e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 13 expert 318 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.18e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 5: 2853 experts, 5.43 GiB (filled in 23.9 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA6): round-trip gate layer 4 expert 414 (iq2_s): rel 1.20e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 20 expert 436 (iq3_xxs): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 37 expert 88 (iq3_xxs): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 35 expert 24 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 8 expert 204 (iq2_s): rel 1.09e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 47 expert 281 (iq4_xs): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 21 expert 369 (iq3_s): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 6: 2853 experts, 5.43 GiB (filled in 24.1 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA7): round-trip gate layer 5 expert 297 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 37 expert 168 (iq3_xxs): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 35 expert 127 (iq3_s): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 8 expert 414 (iq2_s): rel 1.21e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 47 expert 349 (iq4_xs): rel 1.20e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 30 expert 203 (iq3_xxs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 21 expert 100 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.27e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 7: 2853 experts, 5.43 GiB (filled in 23.9 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA8): round-trip gate layer 6 expert 281 (iq2_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 27 expert 103 (iq3_s): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 37 expert 340 (iq3_xxs): rel 1.28e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 8 expert 292 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 47 expert 407 (iq4_xs): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 30 expert 241 (iq3_xxs): rel 1.21e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 21 expert 54 (iq3_s): rel 1.09e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.28e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 8: 2853 experts, 5.42 GiB (filled in 23.3 s)
+strata generate: Maxwell pairs in the 3060 cache: 0 of 22827
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 3 expert-pool workers + the host thread (created on the first CPU expert batch)
+strata generate: session is up (engine 0.1.51)
+strata generate: token graph hit path: 1749 resident experts, decided on the device
+strata: the CPU prefill share is not armed by default: the experts it would read are 43.5 GiB of file pages and only 22.9 GiB of RAM is free to keep them. STRATA_PREFILL_CPU_SHARE=auto turns it on anyway
+strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+strata prefill: 8 Maxwell tier(s) compute their experts' rows of every prompt chunk (the arena is not read for them)
+strata serve: arena release skipped: release_arena is not supported by this expert source
+strata serve: expert file cache not dropped: FileExpertSource: no mapped experts
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 8 tokens, 86.6 MiB of device buffers
+strata mtp: draft head over 106299 tokens (212.9 MiB)
+strata serve: conversation cache sized from the free RAM: 7424 MiB for up to 4 parked conversations, so an agent's next turn reuses its prompt (--conversation-cache-mib N sets it, 0 turns it off)
+strata serve: STRATA_ROUTE_TAIL_SKIP=7 is ON (default): a missed expert that every token of a verify window routes at rank 7 or lower is skipped (+10..20% decode on 12-16 GB cards that miss experts, answers differ slightly from 0.1.41); STRATA_ROUTE_TAIL_SKIP=0 turns it off
+strata serve: adaptive overlap: off: the adaptive tier is off
+strata serve: 396 MiB of VRAM free with everything loaded
+strata serve: WARNING: only 396 MiB of VRAM free at the start of this request (below 512 MiB): when the card is this full the driver can page GPU memory to system RAM, decode falls to a few tok/s and a window may never finish (#2065). Add --vram-reserve-mib 832 to the config's args, or lower --max-context / --batch
+strata maxwell: multi-token prefill gup (STRATA_MW_MT)
+strata maxwell: two-phase prefill finish (STRATA_MW_TWOPHASE)
+strata verify: capturing the 4-token window (356 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: capturing the 1-token window (318 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata verify: capturing the 6-token window (298 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error)
+strata verify: capturing the 2-token window (254 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata verify: capturing the 3-token window (218 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error)
+Maxwell STAT jobs/layer histogram (n=20000): [1]=6822 [2]=5412 [3]=3403 [4]=2010 [5]=1090 [6]=500 [7]=210 [8]=101 [9]=41 [10]=17 [11]=5 [12]=5 [14]=1
+strata verify: capturing the 5-token window (178 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error)
+Maxwell STAT jobs/layer histogram (n=40000): [1]=14188 [2]=10900 [3]=6524 [4]=3716 [5]=2080 [6]=1117 [7]=558 [8]=263 [9]=143 [10]=65 [11]=26 [12]=13 [13]=8 [14]=13 [15]=1
+Maxwell STAT jobs/layer histogram (n=60000): [1]=20353 [2]=16195 [3]=9886 [4]=5821 [5]=3416 [6]=1948 [7]=986 [8]=487 [9]=276 [10]=120 [11]=60 [12]=24 [13]=15 [14]=17 [15]=3
+Maxwell STAT jobs/layer histogram (n=80000): [1]=28095 [2]=22344 [3]=12906 [4]=7424 [5]=4173 [6]=2350 [7]=1163 [8]=569 [9]=305 [10]=143 [11]=69 [12]=27 [13]=16 [14]=17 [15]=4
+Maxwell STAT jobs/layer histogram (n=100000): [1]=32675 [2]=27018 [3]=16742 [4]=10213 [5]=5918 [6]=3485 [7]=1790 [8]=885 [9]=475 [10]=224 [11]=98 [12]=42 [13]=19 [14]=17 [15]=4
+Maxwell STAT jobs/layer histogram (n=120000): [1]=37845 [2]=32001 [3]=20625 [4]=12795 [5]=7519 [6]=4434 [7]=2254 [8]=1105 [9]=566 [10]=261 [11]=110 [12]=49 [13]=20 [14]=17 [15]=4
+strata serve: prompt 74 tokens = 0 reused + 74 read in 983 ms (75.3 tok/s), 600 generated in 13719 ms (43.7 tok/s), drafts accepted 370 of 578, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (41200 hits / 41200 lookups); 346640 more read by the GPU over PCIe or from another GPU (89.4% of all 387840 routed)
+strata serve: expert tiers: GPU 41200 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 113424.9 MB from storage (13061605 major faults) for 50408.5 MB of expert reads
+strata serve: suffix drafts: 7 windows, 16 of 21 drafts accepted
+strata serve: WARNING: only 140 MiB of VRAM free at the start of this request (below 512 MiB): when the card is this full the driver can page GPU memory to system RAM, decode falls to a few tok/s and a window may never finish (#2065). Add --vram-reserve-mib 1088 to the config's args, or lower --max-context / --batch
+strata serve: conversation cache: parked 673 tokens in 176.5 ms; parked=1 bytes=244505168 evictions=0 snapshot_bytes=244505168 reused_kv_bytes=0
+strata verify: capturing the 8-token window (140 MiB of VRAM free)
+strata verify: captured the 8-token window (upload no error, sync no error)
+Maxwell STAT jobs/layer histogram (n=140000): [1]=42765 [2]=36778 [3]=24422 [4]=15472 [5]=9285 [6]=5456 [7]=2796 [8]=1378 [9]=703 [10]=317 [11]=130 [12]=53 [13]=25 [14]=21 [15]=4
+Maxwell STAT jobs/layer histogram (n=160000): [1]=49978 [2]=42273 [3]=27584 [4]=17332 [5]=10349 [6]=6037 [7]=3104 [8]=1549 [9]=770 [10]=356 [11]=148 [12]=60 [13]=28 [14]=25 [15]=9
+Maxwell STAT jobs/layer histogram (n=180000): [1]=56856 [2]=47824 [3]=30780 [4]=19249 [5]=11414 [6]=6736 [7]=3441 [8]=1715 [9]=876 [10]=390 [11]=178 [12]=64 [13]=39 [14]=28 [15]=10
+Maxwell STAT jobs/layer histogram (n=200000): [1]=63442 [2]=53316 [3]=34111 [4]=21205 [5]=12517 [6]=7454 [7]=3809 [8]=1926 [9]=990 [10]=446 [11]=206 [12]=77 [13]=44 [14]=38 [15]=13
+Maxwell STAT jobs/layer histogram (n=220000): [1]=70166 [2]=58652 [3]=37511 [4]=23235 [5]=13680 [6]=8076 [7]=4172 [8]=2112 [9]=1086 [10]=487 [11]=229 [12]=87 [13]=48 [14]=40 [15]=13
+Maxwell STAT jobs/layer histogram (n=240000): [1]=74662 [2]=63449 [3]=41405 [4]=26008 [5]=15506 [6]=9174 [7]=4798 [8]=2383 [9]=1206 [10]=556 [11]=247 [12]=97 [13]=50 [14]=40 [15]=13
+Maxwell STAT jobs/layer histogram (n=260000): [1]=78857 [2]=68071 [3]=45351 [4]=29009 [5]=17348 [6]=10385 [7]=5429 [8]=2691 [9]=1355 [10]=613 [11]=273 [12]=103 [13]=54 [14]=40 [15]=15
+strata serve: prompt 74 tokens = 69 reused + 5 read in 244 ms (20.5 tok/s), 600 generated in 13907 ms (43.1 tok/s), drafts accepted 371 of 612, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (43016 hits / 43016 lookups); 362104 more read by the GPU over PCIe or from another GPU (89.4% of all 405120 routed)
+strata serve: expert tiers: GPU 43016 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1003.7 MB from storage (25 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 21 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=0
+strata serve: conversation cache: parked 676 tokens in 123.0 ms; parked=1 bytes=244511324 evictions=0 snapshot_bytes=244511324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=280000): [1]=85169 [2]=73278 [3]=48921 [4]=31302 [5]=18709 [6]=11063 [7]=5749 [8]=2833 [9]=1427 [10]=643 [11]=280 [12]=110 [13]=55 [14]=40 [15]=15
+Maxwell STAT jobs/layer histogram (n=300000): [1]=92872 [2]=79151 [3]=52013 [4]=32887 [5]=19555 [6]=11501 [7]=5981 [8]=2954 [9]=1483 [10]=671 [11]=289 [12]=116 [13]=58 [14]=47 [15]=15
+Maxwell STAT jobs/layer histogram (n=320000): [1]=99274 [2]=84905 [3]=55343 [4]=34951 [5]=20624 [6]=12181 [7]=6321 [8]=3123 [9]=1575 [10]=731 [11]=310 [12]=124 [13]=60 [14]=51 [15]=16
+Maxwell STAT jobs/layer histogram (n=340000): [1]=106782 [2]=90594 [3]=58522 [4]=36624 [5]=21466 [6]=12727 [7]=6597 [8]=3266 [9]=1652 [10]=767 [11]=321 [12]=135 [13]=66 [14]=52 [15]=16
+Maxwell STAT jobs/layer histogram (n=360000): [1]=111790 [2]=95245 [3]=62264 [4]=39392 [5]=23225 [6]=13714 [7]=7164 [8]=3550 [9]=1803 [10]=815 [11]=342 [12]=145 [13]=69 [14]=53 [15]=16
+Maxwell STAT jobs/layer histogram (n=380000): [1]=115907 [2]=99710 [3]=66212 [4]=42375 [5]=25260 [6]=14950 [7]=7824 [8]=3873 [9]=1951 [10]=869 [11]=360 [12]=156 [13]=70 [14]=54 [15]=16
+strata serve: prompt 74 tokens = 69 reused + 5 read in 202 ms (24.8 tok/s), 600 generated in 13200 ms (45.5 tok/s), drafts accepted 379 of 585, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (41176 hits / 41176 lookups); 346184 more read by the GPU over PCIe or from another GPU (89.4% of all 387360 routed)
+strata serve: expert tiers: GPU 41176 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1584.7 MB from storage (2 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 10 of 10 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=0
+strata serve: conversation cache: parked 674 tokens in 122.8 ms; parked=1 bytes=244505172 evictions=0 snapshot_bytes=244505172 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=400000): [1]=120436 [2]=104521 [3]=70025 [4]=45037 [5]=27015 [6]=15948 [7]=8368 [8]=4166 [9]=2075 [10]=921 [11]=382 [12]=164 [13]=75 [14]=54 [15]=17
+Maxwell STAT jobs/layer histogram (n=420000): [1]=127576 [2]=109569 [3]=73228 [4]=47062 [5]=28209 [6]=16638 [7]=8755 [8]=4333 [9]=2163 [10]=961 [11]=391 [12]=169 [13]=79 [14]=54 [15]=17
+Maxwell STAT jobs/layer histogram (n=440000): [1]=134270 [2]=114545 [3]=76561 [4]=49128 [5]=29502 [6]=17419 [7]=9168 [8]=4570 [9]=2280 [10]=1009 [11]=413 [12]=180 [13]=85 [14]=56 [15]=18
+Maxwell STAT jobs/layer histogram (n=460000): [1]=137487 [2]=118425 [3]=80422 [4]=52369 [5]=31879 [6]=18954 [7]=10040 [8]=5087 [9]=2566 [10]=1131 [11]=472 [12]=205 [13]=90 [14]=59 [15]=18
+Maxwell STAT jobs/layer histogram (n=480000): [1]=140605 [2]=122292 [3]=84556 [4]=55808 [5]=34339 [6]=20361 [7]=10858 [8]=5489 [9]=2788 [10]=1219 [11]=504 [12]=211 [13]=93 [14]=61 [15]=20
+strata serve: prompt 117 tokens = 0 reused + 117 read in 985 ms (118.8 tok/s), 600 generated in 11738 ms (51.1 tok/s), drafts accepted 423 of 596, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (54948 hits / 54948 lookups); 317532 more read by the GPU over PCIe or from another GPU (85.2% of all 372480 routed)
+strata serve: expert tiers: GPU 54948 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1793.6 MB from storage (26 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 14 windows, 56 of 69 drafts accepted
+strata serve: conversation cache: parked 719 tokens in 179.6 ms; parked=2 bytes=489555592 evictions=0 snapshot_bytes=245050420 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=500000): [1]=145518 [2]=126883 [3]=88348 [4]=58569 [5]=36110 [6]=21392 [7]=11443 [8]=5799 [9]=2931 [10]=1291 [11]=526 [12]=214 [13]=99 [14]=61 [15]=20
+Maxwell STAT jobs/layer histogram (n=520000): [1]=152137 [2]=131826 [3]=91615 [4]=60799 [5]=37469 [6]=22167 [7]=11896 [8]=6011 [9]=3024 [10]=1327 [11]=533 [12]=215 [13]=102 [14]=61 [15]=22
+Maxwell STAT jobs/layer histogram (n=540000): [1]=158736 [2]=137295 [3]=94870 [4]=62858 [5]=38714 [6]=22880 [7]=12247 [8]=6180 [9]=3107 [10]=1361 [11]=545 [12]=222 [13]=105 [14]=62 [15]=22
+Maxwell STAT jobs/layer histogram (n=560000): [1]=164772 [2]=142149 [3]=98294 [4]=65268 [5]=40198 [6]=23774 [7]=12721 [8]=6414 [9]=3229 [10]=1394 [11]=572 [12]=228 [13]=107 [14]=62 [15]=22
+Maxwell STAT jobs/layer histogram (n=580000): [1]=172432 [2]=147298 [3]=101343 [4]=67119 [5]=41291 [6]=24413 [7]=13039 [8]=6556 [9]=3286 [10]=1420 [11]=585 [12]=231 [13]=107 [14]=62 [15]=22
+Maxwell STAT jobs/layer histogram (n=600000): [1]=179383 [2]=152518 [3]=104548 [4]=69199 [5]=42494 [6]=25114 [7]=13395 [8]=6713 [9]=3358 [10]=1450 [11]=599 [12]=238 [13]=109 [14]=64 [15]=22
+strata serve: prompt 117 tokens = 112 reused + 5 read in 246 ms (20.3 tok/s), 600 generated in 12789 ms (46.9 tok/s), drafts accepted 368 of 526, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (65324 hits / 65324 lookups); 298996 more read by the GPU over PCIe or from another GPU (82.1% of all 364320 routed)
+strata serve: expert tiers: GPU 65324 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1135.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 20 windows, 63 of 96 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=1
+strata serve: conversation cache: parked 717 tokens in 123.4 ms; parked=2 bytes=489555584 evictions=0 snapshot_bytes=245050412 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=620000): [1]=185749 [2]=157698 [3]=107958 [4]=71410 [5]=43795 [6]=25890 [7]=13827 [8]=6910 [9]=3437 [10]=1482 [11]=609 [12]=242 [13]=109 [14]=64 [15]=24
+Maxwell STAT jobs/layer histogram (n=640000): [1]=192940 [2]=162686 [3]=111213 [4]=73486 [5]=44990 [6]=26568 [7]=14157 [8]=7076 [9]=3518 [10]=1514 [11]=612 [12]=244 [13]=112 [14]=64 [15]=24
+Maxwell STAT jobs/layer histogram (n=660000): [1]=199706 [2]=167696 [3]=114511 [4]=75589 [5]=46236 [6]=27303 [7]=14574 [8]=7279 [9]=3637 [10]=1568 [11]=644 [12]=252 [13]=118 [14]=66 [15]=25
+Maxwell STAT jobs/layer histogram (n=680000): [1]=204287 [2]=172062 [3]=118194 [4]=78288 [5]=48186 [6]=28512 [7]=15269 [8]=7695 [9]=3861 [10]=1667 [11]=686 [12]=276 [13]=127 [14]=67 [15]=27
+Maxwell STAT jobs/layer histogram (n=700000): [1]=207644 [2]=176144 [3]=122106 [4]=81518 [5]=50463 [6]=29949 [7]=16111 [8]=8132 [9]=4102 [10]=1771 [11]=739 [12]=293 [13]=135 [14]=69 [15]=28
+Maxwell STAT jobs/layer histogram (n=720000): [1]=211936 [2]=180391 [3]=125968 [4]=84537 [5]=52476 [6]=31225 [7]=16797 [8]=8479 [9]=4250 [10]=1846 [11]=756 [12]=304 [13]=139 [14]=72 [15]=28
+strata serve: prompt 117 tokens = 112 reused + 5 read in 201 ms (24.9 tok/s), 600 generated in 11861 ms (50.6 tok/s), drafts accepted 416 of 596, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (52188 hits / 52188 lookups); 322212 more read by the GPU over PCIe or from another GPU (86.1% of all 374400 routed)
+strata serve: expert tiers: GPU 52188 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 358.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 12 windows, 50 of 56 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=1
+strata serve: conversation cache: parked 716 tokens in 123.0 ms; parked=2 bytes=489512188 evictions=0 snapshot_bytes=245007016 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=740000): [1]=218493 [2]=185685 [3]=129487 [4]=86647 [5]=53584 [6]=31790 [7]=17048 [8]=8600 [9]=4307 [10]=1867 [11]=764 [12]=305 [13]=142 [14]=73 [15]=28
+Maxwell STAT jobs/layer histogram (n=760000): [1]=227819 [2]=191303 [3]=132162 [4]=87947 [5]=54180 [6]=32066 [7]=17168 [8]=8655 [9]=4326 [10]=1873 [11]=768 [12]=308 [13]=144 [14]=73 [15]=28
+Maxwell STAT jobs/layer histogram (n=780000): [1]=237361 [2]=197059 [3]=134838 [4]=89073 [5]=54682 [6]=32288 [7]=17269 [8]=8701 [9]=4346 [10]=1876 [11]=773 [12]=309 [13]=144 [14]=73 [15]=28
+Maxwell STAT jobs/layer histogram (n=800000): [1]=247720 [2]=202687 [3]=137128 [4]=90071 [5]=55088 [6]=32477 [7]=17329 [8]=8738 [9]=4366 [10]=1882 [11]=776 [12]=312 [13]=145 [14]=73 [15]=28
+Maxwell STAT jobs/layer histogram (n=820000): [1]=254130 [2]=207565 [3]=140460 [4]=92398 [5]=56513 [6]=33312 [7]=17754 [8]=8943 [9]=4457 [10]=1924 [11]=793 [12]=323 [13]=146 [14]=74 [15]=28
+Maxwell STAT jobs/layer histogram (n=840000): [1]=264123 [2]=213213 [3]=142802 [4]=93507 [5]=57016 [6]=33546 [7]=17869 [8]=8972 [9]=4474 [10]=1931 [11]=795 [12]=324 [13]=146 [14]=74 [15]=28
+strata serve: prompt 84 tokens = 0 reused + 84 read in 785 ms (107.1 tok/s), 600 generated in 13712 ms (43.8 tok/s), drafts accepted 316 of 444, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (84555 hits / 84555 lookups); 264885 more read by the GPU over PCIe or from another GPU (75.8% of all 349440 routed)
+strata serve: expert tiers: GPU 84555 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1778.0 MB from storage (4 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 1 of 11 drafts accepted
+strata serve: conversation cache: parked 683 tokens in 180.4 ms; parked=3 bytes=734116508 evictions=0 snapshot_bytes=244604320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=860000): [1]=271710 [2]=218638 [3]=145806 [4]=95285 [5]=58090 [6]=34099 [7]=18146 [8]=9128 [9]=4547 [10]=1969 [11]=811 [12]=331 [13]=153 [14]=76 [15]=28
+Maxwell STAT jobs/layer histogram (n=880000): [1]=280707 [2]=224328 [3]=148573 [4]=96660 [5]=58747 [6]=34393 [7]=18275 [8]=9185 [9]=4563 [10]=1982 [11]=813 [12]=333 [13]=154 [14]=76 [15]=28
+Maxwell STAT jobs/layer histogram (n=900000): [1]=288907 [2]=230197 [3]=151628 [4]=98140 [5]=59486 [6]=34756 [7]=18447 [8]=9265 [9]=4590 [10]=1991 [11]=818 [12]=333 [13]=155 [14]=76 [15]=28
+Maxwell STAT jobs/layer histogram (n=920000): [1]=298217 [2]=235802 [3]=154236 [4]=99435 [5]=60142 [6]=35068 [7]=18569 [8]=9321 [9]=4611 [10]=2005 [11]=819 [12]=333 [13]=155 [14]=76 [15]=28
+Maxwell STAT jobs/layer histogram (n=940000): [1]=308140 [2]=241829 [3]=156631 [4]=100472 [5]=60549 [6]=35207 [7]=18623 [8]=9329 [9]=4615 [10]=2011 [11]=819 [12]=333 [13]=155 [14]=76 [15]=28
+Maxwell STAT jobs/layer histogram (n=960000): [1]=313713 [2]=246555 [3]=160180 [4]=103059 [5]=62188 [6]=36188 [7]=19113 [8]=9576 [9]=4738 [10]=2064 [11]=836 [12]=344 [13]=158 [14]=77 [15]=28
+Maxwell STAT jobs/layer histogram (n=980000): [1]=322443 [2]=252433 [3]=162965 [4]=104373 [5]=62851 [6]=36541 [7]=19247 [8]=9644 [9]=4781 [10]=2079 [11]=847 [12]=346 [13]=159 [14]=77 [15]=29
+strata serve: prompt 84 tokens = 79 reused + 5 read in 246 ms (20.3 tok/s), 600 generated in 14120 ms (42.5 tok/s), drafts accepted 320 of 508, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (83753 hits / 83753 lookups); 294487 more read by the GPU over PCIe or from another GPU (77.9% of all 378240 routed)
+strata serve: expert tiers: GPU 83753 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1352.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 10 windows, 18 of 32 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=2
+strata serve: conversation cache: parked 683 tokens in 122.5 ms; parked=3 bytes=734116508 evictions=0 snapshot_bytes=244604320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1000000): [1]=329701 [2]=258031 [3]=166435 [4]=106257 [5]=63816 [6]=37014 [7]=19445 [8]=9736 [9]=4812 [10]=2100 [11]=853 [12]=347 [13]=161 [14]=78 [15]=29
+Maxwell STAT jobs/layer histogram (n=1020000): [1]=338924 [2]=263572 [3]=169166 [4]=107518 [5]=64472 [6]=37337 [7]=19589 [8]=9801 [9]=4845 [10]=2113 [11]=860 [12]=350 [13]=161 [14]=78 [15]=29
+Maxwell STAT jobs/layer histogram (n=1040000): [1]=348641 [2]=269451 [3]=171665 [4]=108622 [5]=64930 [6]=37531 [7]=19680 [8]=9832 [9]=4861 [10]=2119 [11]=862 [12]=351 [13]=162 [14]=79 [15]=29
+Maxwell STAT jobs/layer histogram (n=1060000): [1]=358385 [2]=275612 [3]=174097 [4]=109568 [5]=65330 [6]=37690 [7]=19759 [8]=9873 [9]=4878 [10]=2130 [11]=866 [12]=356 [13]=162 [14]=80 [15]=29
+Maxwell STAT jobs/layer histogram (n=1080000): [1]=368058 [2]=281249 [3]=176645 [4]=110747 [5]=65858 [6]=37930 [7]=19881 [8]=9917 [9]=4893 [10]=2138 [11]=871 [12]=357 [13]=162 [14]=80 [15]=29
+Maxwell STAT jobs/layer histogram (n=1100000): [1]=378685 [2]=286827 [3]=178756 [4]=111660 [5]=66270 [6]=38137 [7]=19971 [8]=9961 [9]=4906 [10]=2143 [11]=871 [12]=357 [13]=162 [14]=80 [15]=29
+strata serve: prompt 84 tokens = 79 reused + 5 read in 200 ms (25.1 tok/s), 600 generated in 13768 ms (43.6 tok/s), drafts accepted 309 of 429, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (85887 hits / 85887 lookups); 260193 more read by the GPU over PCIe or from another GPU (75.2% of all 346080 routed)
+strata serve: expert tiers: GPU 85887 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 846.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 8 windows, 9 of 19 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=2
+strata serve: conversation cache: parked 684 tokens in 223.3 ms; parked=3 bytes=734122656 evictions=0 snapshot_bytes=244610468 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1120000): [1]=385500 [2]=290819 [3]=180618 [4]=112581 [5]=66725 [6]=38366 [7]=20086 [8]=10015 [9]=4928 [10]=2159 [11]=878 [12]=363 [13]=162 [14]=81 [15]=30
+Maxwell STAT jobs/layer histogram (n=1140000): [1]=385500 [2]=290819 [3]=180618 [4]=112581 [5]=66725 [6]=38366 [7]=20086 [8]=10015 [9]=4928 [10]=2159 [11]=878 [12]=363 [13]=162 [14]=81 [15]=30
+Maxwell STAT jobs/layer histogram (n=1160000): [1]=385500 [2]=290819 [3]=180618 [4]=112581 [5]=66725 [6]=38366 [7]=20086 [8]=10015 [9]=4928 [10]=2159 [11]=878 [12]=363 [13]=162 [14]=81 [15]=30
+strata serve: prompt 32135 tokens = 0 reused + 32135 read in 175578 ms (183.0 tok/s), 64 generated in 1100 ms (58.2 tok/s), drafts accepted 53 of 63, 2 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (11823 hits / 11823 lookups); 25617 more read by the GPU over PCIe or from another GPU (68.4% of all 37440 routed)
+strata serve: expert tiers: GPU 11823 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 39401.8 MB from storage (84 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 9 of 12 drafts accepted
+strata serve: conversation cache: parked 32202 tokens in 554.4 ms; parked=4 bytes=1487453880 evictions=0 snapshot_bytes=753331224 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1180000): [1]=387944 [2]=293185 [3]=182505 [4]=113826 [5]=67456 [6]=38793 [7]=20305 [8]=10121 [9]=4969 [10]=2180 [11]=883 [12]=368 [13]=164 [14]=82 [15]=31
+Maxwell STAT jobs/layer histogram (n=1200000): [1]=387944 [2]=293185 [3]=182505 [4]=113826 [5]=67456 [6]=38793 [7]=20305 [8]=10121 [9]=4969 [10]=2180 [11]=883 [12]=368 [13]=164 [14]=82 [15]=31
+Maxwell STAT jobs/layer histogram (n=1220000): [1]=387944 [2]=293185 [3]=182505 [4]=113826 [5]=67456 [6]=38793 [7]=20305 [8]=10121 [9]=4969 [10]=2180 [11]=883 [12]=368 [13]=164 [14]=82 [15]=31
+Maxwell STAT jobs/layer histogram (n=1240000): [1]=387944 [2]=293185 [3]=182505 [4]=113826 [5]=67456 [6]=38793 [7]=20305 [8]=10121 [9]=4969 [10]=2180 [11]=883 [12]=368 [13]=164 [14]=82 [15]=31
+Maxwell STAT jobs/layer histogram (n=1260000): [1]=387944 [2]=293185 [3]=182505 [4]=113826 [5]=67456 [6]=38793 [7]=20305 [8]=10121 [9]=4969 [10]=2180 [11]=883 [12]=368 [13]=164 [14]=82 [15]=31
+strata serve: prompt 62703 tokens = 0 reused + 62703 read in 342906 ms (182.9 tok/s), 64 generated in 1182 ms (54.2 tok/s), drafts accepted 47 of 62, 4 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (12682 hits / 12682 lookups); 25238 more read by the GPU over PCIe or from another GPU (66.6% of all 37920 routed)
+strata serve: expert tiers: GPU 12682 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 34029.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 7 of 8 drafts accepted
+strata serve: conversation cache: parked 62766 tokens in 1012.8 ms; parked=4 bytes=2611484156 evictions=0 snapshot_bytes=1368535448 reused_kv_bytes=0
+strata serve: conversation cache: restored 69 tokens (checkpoint) in 43.7 ms; parked=4 bytes=2619859796
+Maxwell STAT jobs/layer histogram (n=1280000): [1]=391969 [2]=296680 [3]=185090 [4]=115401 [5]=68395 [6]=39314 [7]=20544 [8]=10218 [9]=5004 [10]=2206 [11]=885 [12]=371 [13]=164 [14]=84 [15]=31
+Maxwell STAT jobs/layer histogram (n=1300000): [1]=398713 [2]=301999 [3]=188533 [4]=117512 [5]=69606 [6]=39955 [7]=20821 [8]=10360 [9]=5060 [10]=2233 [11]=899 [12]=379 [13]=166 [14]=88 [15]=31
+Maxwell STAT jobs/layer histogram (n=1320000): [1]=406057 [2]=307671 [3]=191647 [4]=119251 [5]=70528 [6]=40573 [7]=21104 [8]=10496 [9]=5150 [10]=2275 [11]=919 [12]=385 [13]=174 [14]=92 [15]=31
+Maxwell STAT jobs/layer histogram (n=1340000): [1]=413202 [2]=313417 [3]=194825 [4]=121068 [5]=71481 [6]=41140 [7]=21369 [8]=10665 [9]=5231 [10]=2317 [11]=938 [12]=394 [13]=174 [14]=94 [15]=34
+strata serve: prompt 74 tokens = 69 reused + 5 read in 1126 ms (4.4 tok/s), 300 generated in 8123 ms (36.9 tok/s), drafts accepted 150 of 295, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21188 hits / 21188 lookups); 193852 more read by the GPU over PCIe or from another GPU (90.1% of all 215040 routed)
+strata serve: expert tiers: GPU 21188 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 686.4 MB from storage (6 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 1 windows, 4 of 4 drafts accepted
+strata serve: conversation cache: parked 376 tokens in 122.6 ms; parked=4 bytes=2610981120 evictions=1 snapshot_bytes=244503980 reused_kv_bytes=842112
+Maxwell STAT jobs/layer histogram (n=1360000): [1]=421180 [2]=319253 [3]=197840 [4]=122592 [5]=72299 [6]=41577 [7]=21569 [8]=10772 [9]=5273 [10]=2340 [11]=952 [12]=400 [13]=174 [14]=94 [15]=34
+Maxwell STAT jobs/layer histogram (n=1380000): [1]=427673 [2]=324621 [3]=201327 [4]=124801 [5]=73561 [6]=42195 [7]=21869 [8]=10924 [9]=5326 [10]=2376 [11]=960 [12]=405 [13]=176 [14]=98 [15]=37
+Maxwell STAT jobs/layer histogram (n=1400000): [1]=434770 [2]=330301 [3]=204493 [4]=126584 [5]=74550 [6]=42823 [7]=22171 [8]=11085 [9]=5421 [10]=2426 [11]=989 [12]=416 [13]=181 [14]=100 [15]=39
+Maxwell STAT jobs/layer histogram (n=1420000): [1]=441157 [2]=336142 [3]=207871 [4]=128725 [5]=75639 [6]=43440 [7]=22442 [8]=11221 [9]=5499 [10]=2454 [11]=1006 [12]=422 [13]=181 [14]=104 [15]=43
+strata serve: prompt 74 tokens = 69 reused + 5 read in 202 ms (24.8 tok/s), 300 generated in 8106 ms (37.0 tok/s), drafts accepted 152 of 309, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22057 hits / 22057 lookups); 197303 more read by the GPU over PCIe or from another GPU (89.9% of all 219360 routed)
+strata serve: expert tiers: GPU 22057 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 637.8 MB from storage (1 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 6 of 6 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.6 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1440000): [1]=447632 [2]=341601 [3]=211392 [4]=130835 [5]=76791 [6]=44048 [7]=22795 [8]=11385 [9]=5587 [10]=2492 [11]=1023 [12]=432 [13]=186 [14]=104 [15]=43
+Maxwell STAT jobs/layer histogram (n=1460000): [1]=453930 [2]=346753 [3]=214866 [4]=133094 [5]=78152 [6]=44777 [7]=23159 [8]=11582 [9]=5663 [10]=2525 [11]=1052 [12]=445 [13]=192 [14]=110 [15]=46
+Maxwell STAT jobs/layer histogram (n=1480000): [1]=461525 [2]=352430 [3]=217947 [4]=134672 [5]=79042 [6]=45373 [7]=23419 [8]=11741 [9]=5757 [10]=2553 [11]=1075 [12]=450 [13]=201 [14]=112 [15]=46
+Maxwell STAT jobs/layer histogram (n=1500000): [1]=467952 [2]=357825 [3]=221297 [4]=136732 [5]=80203 [6]=46158 [7]=23796 [8]=11944 [9]=5871 [10]=2623 [11]=1093 [12]=471 [13]=208 [14]=114 [15]=48
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 8069 ms (37.2 tok/s), drafts accepted 155 of 312, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21388 hits / 21388 lookups); 198932 more read by the GPU over PCIe or from another GPU (90.3% of all 220320 routed)
+strata serve: expert tiers: GPU 21388 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 391.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 1 windows, 7 of 7 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.5 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1520000): [1]=475092 [2]=363278 [3]=224592 [4]=138606 [5]=81224 [6]=46714 [7]=24131 [8]=12110 [9]=5959 [10]=2665 [11]=1112 [12]=479 [13]=211 [14]=114 [15]=48
+Maxwell STAT jobs/layer histogram (n=1540000): [1]=482411 [2]=368806 [3]=227774 [4]=140512 [5]=82283 [6]=47221 [7]=24386 [8]=12245 [9]=6016 [10]=2690 [11]=1123 [12]=485 [13]=212 [14]=122 [15]=48
+Maxwell STAT jobs/layer histogram (n=1560000): [1]=490467 [2]=374606 [3]=230737 [4]=142028 [5]=83000 [6]=47699 [7]=24618 [8]=12344 [9]=6098 [10]=2711 [11]=1142 [12]=489 [13]=219 [14]=126 [15]=48
+Maxwell STAT jobs/layer histogram (n=1580000): [1]=496914 [2]=379928 [3]=234016 [4]=144003 [5]=84244 [6]=48498 [7]=25049 [8]=12592 [9]=6226 [10]=2777 [11]=1172 [12]=498 [13]=224 [14]=135 [15]=51
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7861 ms (38.2 tok/s), drafts accepted 156 of 293, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19763 hits / 19763 lookups); 190957 more read by the GPU over PCIe or from another GPU (90.6% of all 210720 routed)
+strata serve: expert tiers: GPU 19763 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 198.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 12 of 12 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.3 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1600000): [1]=503509 [2]=385409 [3]=237570 [4]=146058 [5]=85358 [6]=49087 [7]=25371 [8]=12752 [9]=6298 [10]=2805 [11]=1189 [12]=508 [13]=227 [14]=135 [15]=51
+Maxwell STAT jobs/layer histogram (n=1620000): [1]=510480 [2]=390723 [3]=240820 [4]=148074 [5]=86555 [6]=49697 [7]=25685 [8]=12941 [9]=6361 [10]=2843 [11]=1203 [12]=516 [13]=233 [14]=143 [15]=51
+Maxwell STAT jobs/layer histogram (n=1640000): [1]=518087 [2]=396340 [3]=243915 [4]=149685 [5]=87456 [6]=50278 [7]=25960 [8]=13074 [9]=6466 [10]=2880 [11]=1219 [12]=521 [13]=241 [14]=148 [15]=51
+Maxwell STAT jobs/layer histogram (n=1660000): [1]=523656 [2]=401409 [3]=247469 [4]=152103 [5]=88936 [6]=51201 [7]=26461 [8]=13317 [9]=6578 [10]=2950 [11]=1249 [12]=532 [13]=247 [14]=151 [15]=55
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 8055 ms (37.2 tok/s), drafts accepted 159 of 318, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20486 hits / 20486 lookups); 201274 more read by the GPU over PCIe or from another GPU (90.8% of all 221760 routed)
+strata serve: expert tiers: GPU 20486 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 307.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 8 of 8 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.9 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1680000): [1]=530556 [2]=406757 [3]=250678 [4]=153988 [5]=90068 [6]=51885 [7]=26854 [8]=13540 [9]=6692 [10]=3006 [11]=1283 [12]=546 [13]=249 [14]=154 [15]=55
+Maxwell STAT jobs/layer histogram (n=1700000): [1]=538299 [2]=412274 [3]=253821 [4]=155710 [5]=90968 [6]=52361 [7]=27119 [8]=13663 [9]=6756 [10]=3023 [11]=1295 [12]=553 [13]=250 [14]=158 [15]=58
+Maxwell STAT jobs/layer histogram (n=1720000): [1]=544897 [2]=417882 [3]=257155 [4]=157658 [5]=92096 [6]=53074 [7]=27435 [8]=13838 [9]=6847 [10]=3064 [11]=1318 [12]=563 [13]=257 [14]=162 [15]=60
+Maxwell STAT jobs/layer histogram (n=1740000): [1]=552709 [2]=423930 [3]=260238 [4]=159247 [5]=92850 [6]=53432 [7]=27618 [8]=13929 [9]=6883 [10]=3093 [11]=1329 [12]=564 [13]=258 [14]=164 [15]=61
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8165 ms (36.7 tok/s), drafts accepted 146 of 289, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18234 hits / 18234 lookups); 194406 more read by the GPU over PCIe or from another GPU (91.4% of all 212640 routed)
+strata serve: expert tiers: GPU 18234 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 636.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 12 of 14 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.7 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1760000): [1]=559524 [2]=429220 [3]=263613 [4]=161212 [5]=94005 [6]=54096 [7]=27993 [8]=14109 [9]=6992 [10]=3132 [11]=1345 [12]=574 [13]=260 [14]=166 [15]=63
+Maxwell STAT jobs/layer histogram (n=1780000): [1]=566672 [2]=434630 [3]=266913 [4]=163180 [5]=95045 [6]=54637 [7]=28305 [8]=14265 [9]=7061 [10]=3157 [11]=1357 [12]=581 [13]=263 [14]=172 [15]=64
+Maxwell STAT jobs/layer histogram (n=1800000): [1]=574189 [2]=440255 [3]=269980 [4]=164814 [5]=95986 [6]=55239 [7]=28579 [8]=14449 [9]=7156 [10]=3190 [11]=1370 [12]=587 [13]=268 [14]=174 [15]=64
+Maxwell STAT jobs/layer histogram (n=1820000): [1]=579811 [2]=445478 [3]=273416 [4]=167130 [5]=97424 [6]=56132 [7]=29090 [8]=14714 [9]=7310 [10]=3252 [11]=1408 [12]=601 [13]=277 [14]=181 [15]=68
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8140 ms (36.9 tok/s), drafts accepted 157 of 308, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19357 hits / 19357 lookups); 199523 more read by the GPU over PCIe or from another GPU (91.2% of all 218880 routed)
+strata serve: expert tiers: GPU 19357 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 369.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 12 of 12 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 122.5 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1840000): [1]=587176 [2]=450957 [3]=276553 [4]=168904 [5]=98454 [6]=56677 [7]=29410 [8]=14881 [9]=7396 [10]=3307 [11]=1436 [12]=610 [13]=282 [14]=181 [15]=68
+Maxwell STAT jobs/layer histogram (n=1860000): [1]=594564 [2]=456566 [3]=279794 [4]=170714 [5]=99426 [6]=57166 [7]=29669 [8]=14995 [9]=7454 [10]=3339 [11]=1446 [12]=618 [13]=285 [14]=187 [15]=68
+Maxwell STAT jobs/layer histogram (n=1880000): [1]=601182 [2]=462490 [3]=283103 [4]=172651 [5]=100456 [6]=57779 [7]=29929 [8]=15152 [9]=7531 [10]=3382 [11]=1465 [12]=622 [13]=287 [14]=191 [15]=68
+Maxwell STAT jobs/layer histogram (n=1900000): [1]=608420 [2]=468407 [3]=286302 [4]=174460 [5]=101292 [6]=58306 [7]=30167 [8]=15262 [9]=7596 [10]=3419 [11]=1474 [12]=630 [13]=290 [14]=192 [15]=69
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 7576 ms (39.6 tok/s), drafts accepted 164 of 288, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19496 hits / 19496 lookups); 185464 more read by the GPU over PCIe or from another GPU (90.5% of all 204960 routed)
+strata serve: expert tiers: GPU 19496 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 126.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 13 of 13 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.5 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=1920000): [1]=614824 [2]=473618 [3]=289803 [4]=176645 [5]=102515 [6]=59002 [7]=30560 [8]=15447 [9]=7697 [10]=3465 [11]=1503 [12]=646 [13]=297 [14]=194 [15]=70
+Maxwell STAT jobs/layer histogram (n=1940000): [1]=621730 [2]=479175 [3]=293087 [4]=178637 [5]=103614 [6]=59582 [7]=30854 [8]=15601 [9]=7765 [10]=3500 [11]=1516 [12]=651 [13]=300 [14]=202 [15]=70
+Maxwell STAT jobs/layer histogram (n=1960000): [1]=628898 [2]=484724 [3]=296218 [4]=180447 [5]=104619 [6]=60254 [7]=31169 [8]=15767 [9]=7865 [10]=3536 [11]=1542 [12]=658 [13]=306 [14]=207 [15]=71
+Maxwell STAT jobs/layer histogram (n=1980000): [1]=635312 [2]=490212 [3]=299541 [4]=182461 [5]=105879 [6]=60981 [7]=31533 [8]=15962 [9]=7979 [10]=3593 [11]=1562 [12]=663 [13]=310 [14]=214 [15]=73
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8007 ms (37.5 tok/s), drafts accepted 158 of 312, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20725 hits / 20725 lookups); 198635 more read by the GPU over PCIe or from another GPU (90.6% of all 219360 routed)
+strata serve: expert tiers: GPU 20725 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 49.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 17 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.5 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2000000): [1]=641730 [2]=495595 [3]=303141 [4]=184645 [5]=107103 [6]=61577 [7]=31848 [8]=16119 [9]=8043 [10]=3624 [11]=1577 [12]=673 [13]=313 [14]=214 [15]=73
+Maxwell STAT jobs/layer histogram (n=2020000): [1]=649108 [2]=501094 [3]=306279 [4]=186465 [5]=108122 [6]=62137 [7]=32151 [8]=16260 [9]=8116 [10]=3663 [11]=1586 [12]=679 [13]=320 [14]=219 [15]=74
+Maxwell STAT jobs/layer histogram (n=2040000): [1]=656720 [2]=506890 [3]=309359 [4]=188041 [5]=108955 [6]=62687 [7]=32418 [8]=16398 [9]=8206 [10]=3692 [11]=1595 [12]=689 [13]=324 [14]=220 [15]=74
+Maxwell STAT jobs/layer histogram (n=2060000): [1]=662817 [2]=511971 [3]=312647 [4]=190191 [5]=110251 [6]=63659 [7]=32942 [8]=16675 [9]=8369 [10]=3770 [11]=1624 [12]=708 [13]=332 [14]=225 [15]=78
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 7881 ms (38.1 tok/s), drafts accepted 161 of 307, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22251 hits / 22251 lookups); 193269 more read by the GPU over PCIe or from another GPU (89.7% of all 215520 routed)
+strata serve: expert tiers: GPU 22251 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 221.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 3 windows, 11 of 11 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 123.9 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2080000): [1]=668699 [2]=517118 [3]=316252 [4]=192629 [5]=111689 [6]=64413 [7]=33320 [8]=16857 [9]=8471 [10]=3817 [11]=1642 [12]=714 [13]=335 [14]=225 [15]=78
+Maxwell STAT jobs/layer histogram (n=2100000): [1]=676428 [2]=522638 [3]=319310 [4]=194245 [5]=112603 [6]=64983 [7]=33613 [8]=16992 [9]=8554 [10]=3859 [11]=1662 [12]=721 [13]=340 [14]=229 [15]=80
+Maxwell STAT jobs/layer histogram (n=2120000): [1]=682506 [2]=527863 [3]=322672 [4]=196508 [5]=113853 [6]=65862 [7]=34059 [8]=17232 [9]=8689 [10]=3925 [11]=1685 [12]=734 [13]=345 [14]=234 [15]=85
+Maxwell STAT jobs/layer histogram (n=2140000): [1]=689568 [2]=533775 [3]=325844 [4]=198413 [5]=114762 [6]=66418 [7]=34316 [8]=17344 [9]=8744 [10]=3955 [11]=1699 [12]=743 [13]=345 [14]=237 [15]=86
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8144 ms (36.8 tok/s), drafts accepted 149 of 300, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20953 hits / 20953 lookups); 195527 more read by the GPU over PCIe or from another GPU (90.3% of all 216480 routed)
+strata serve: expert tiers: GPU 20953 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 352.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 14 of 16 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.6 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2160000): [1]=696030 [2]=539053 [3]=329203 [4]=200573 [5]=116055 [6]=67131 [7]=34694 [8]=17533 [9]=8841 [10]=4002 [11]=1710 [12]=748 [13]=349 [14]=239 [15]=87
+Maxwell STAT jobs/layer histogram (n=2180000): [1]=703522 [2]=544835 [3]=332325 [4]=202218 [5]=116965 [6]=67627 [7]=34945 [8]=17679 [9]=8912 [10]=4048 [11]=1727 [12]=755 [13]=351 [14]=250 [15]=88
+Maxwell STAT jobs/layer histogram (n=2200000): [1]=710131 [2]=550704 [3]=335698 [4]=204196 [5]=117960 [6]=68239 [7]=35218 [8]=17832 [9]=8978 [10]=4089 [11]=1744 [12]=761 [13]=353 [14]=252 [15]=90
+Maxwell STAT jobs/layer histogram (n=2220000): [1]=717291 [2]=556525 [3]=338878 [4]=206028 [5]=118891 [6]=68774 [7]=35490 [8]=17980 [9]=9033 [10]=4126 [11]=1757 [12]=770 [13]=355 [14]=252 [15]=91
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7780 ms (38.6 tok/s), drafts accepted 156 of 292, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19578 hits / 19578 lookups); 189702 more read by the GPU over PCIe or from another GPU (90.6% of all 209280 routed)
+strata serve: expert tiers: GPU 19578 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 95.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.5 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2240000): [1]=724066 [2]=561960 [3]=342338 [4]=208051 [5]=120051 [6]=69361 [7]=35786 [8]=18123 [9]=9103 [10]=4156 [11]=1769 [12]=775 [13]=356 [14]=254 [15]=91
+Maxwell STAT jobs/layer histogram (n=2260000): [1]=732078 [2]=567777 [3]=345218 [4]=209552 [5]=120822 [6]=69870 [7]=36021 [8]=18240 [9]=9195 [10]=4188 [11]=1781 [12]=784 [13]=362 [14]=257 [15]=93
+Maxwell STAT jobs/layer histogram (n=2280000): [1]=737226 [2]=572615 [3]=348792 [4]=212105 [5]=122371 [6]=70933 [7]=36629 [8]=18571 [9]=9374 [10]=4265 [11]=1815 [12]=804 [13]=369 [14]=262 [15]=100
+Maxwell STAT jobs/layer histogram (n=2300000): [1]=744102 [2]=578070 [3]=352096 [4]=214030 [5]=123427 [6]=71597 [7]=36969 [8]=18744 [9]=9490 [10]=4320 [11]=1836 [12]=813 [13]=372 [14]=264 [15]=100
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8020 ms (37.4 tok/s), drafts accepted 158 of 310, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21202 hits / 21202 lookups); 197198 more read by the GPU over PCIe or from another GPU (90.3% of all 218400 routed)
+strata serve: expert tiers: GPU 21202 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 248.0 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 15 of 21 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.6 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2320000): [1]=751053 [2]=583381 [3]=355386 [4]=216050 [5]=124647 [6]=72184 [7]=37293 [8]=18896 [9]=9561 [10]=4355 [11]=1851 [12]=828 [13]=375 [14]=266 [15]=103
+Maxwell STAT jobs/layer histogram (n=2340000): [1]=759097 [2]=589549 [3]=358268 [4]=217386 [5]=125352 [6]=72624 [7]=37495 [8]=19003 [9]=9626 [10]=4384 [11]=1862 [12]=833 [13]=377 [14]=267 [15]=103
+Maxwell STAT jobs/layer histogram (n=2360000): [1]=766107 [2]=595207 [3]=361527 [4]=219235 [5]=126328 [6]=73236 [7]=37783 [8]=19174 [9]=9702 [10]=4440 [11]=1882 [12]=843 [13]=382 [14]=271 [15]=106
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7553 ms (39.7 tok/s), drafts accepted 161 of 273, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20056 hits / 20056 lookups); 179624 more read by the GPU over PCIe or from another GPU (90.0% of all 199680 routed)
+strata serve: expert tiers: GPU 20056 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 281.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 21 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 377 tokens in 122.5 ms; parked=4 bytes=2607315460 evictions=1 snapshot_bytes=240838320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2380000): [1]=773428 [2]=600815 [3]=364856 [4]=220962 [5]=127307 [6]=73728 [7]=38060 [8]=19309 [9]=9769 [10]=4478 [11]=1893 [12]=854 [13]=387 [14]=271 [15]=106
+Maxwell STAT jobs/layer histogram (n=2400000): [1]=779868 [2]=605980 [3]=368297 [4]=223117 [5]=128647 [6]=74432 [7]=38430 [8]=19508 [9]=9870 [10]=4515 [11]=1912 [12]=867 [13]=391 [14]=281 [15]=107
+Maxwell STAT jobs/layer histogram (n=2420000): [1]=788169 [2]=611778 [3]=371173 [4]=224459 [5]=129381 [6]=74892 [7]=38660 [8]=19623 [9]=9953 [10]=4545 [11]=1922 [12]=875 [13]=396 [14]=284 [15]=108
+Maxwell STAT jobs/layer histogram (n=2440000): [1]=794371 [2]=617012 [3]=374448 [4]=226566 [5]=130610 [6]=75798 [7]=39135 [8]=19894 [9]=10103 [10]=4620 [11]=1951 [12]=895 [13]=404 [14]=290 [15]=113
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 7894 ms (38.0 tok/s), drafts accepted 160 of 312, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22932 hits / 22932 lookups); 194988 more read by the GPU over PCIe or from another GPU (89.5% of all 217920 routed)
+strata serve: expert tiers: GPU 22932 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 55.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 14 of 18 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.9 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2460000): [1]=799928 [2]=622061 [3]=378003 [4]=229015 [5]=132115 [6]=76702 [7]=39642 [8]=20126 [9]=10232 [10]=4680 [11]=1982 [12]=907 [13]=411 [14]=292 [15]=113
+Maxwell STAT jobs/layer histogram (n=2480000): [1]=807338 [2]=627582 [3]=381122 [4]=230857 [5]=133131 [6]=77236 [7]=39923 [8]=20276 [9]=10299 [10]=4709 [11]=1995 [12]=912 [13]=413 [14]=301 [15]=113
+Maxwell STAT jobs/layer histogram (n=2500000): [1]=814813 [2]=633221 [3]=384268 [4]=232469 [5]=134047 [6]=77816 [7]=40204 [8]=20445 [9]=10398 [10]=4748 [11]=2013 [12]=923 [13]=422 [14]=302 [15]=114
+Maxwell STAT jobs/layer histogram (n=2520000): [1]=821397 [2]=638886 [3]=387702 [4]=234436 [5]=135080 [6]=78463 [7]=40547 [8]=20602 [9]=10483 [10]=4797 [11]=2032 [12]=929 [13]=428 [14]=303 [15]=114
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7994 ms (37.5 tok/s), drafts accepted 152 of 300, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20659 hits / 20659 lookups); 194381 more read by the GPU over PCIe or from another GPU (90.4% of all 215040 routed)
+strata serve: expert tiers: GPU 20659 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 202.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 123.1 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2540000): [1]=827974 [2]=644036 [3]=391175 [4]=236460 [5]=136329 [6]=79180 [7]=40944 [8]=20814 [9]=10591 [10]=4855 [11]=2047 [12]=939 [13]=436 [14]=304 [15]=114
+Maxwell STAT jobs/layer histogram (n=2560000): [1]=835159 [2]=649475 [3]=394424 [4]=238340 [5]=137391 [6]=79754 [7]=41251 [8]=20978 [9]=10666 [10]=4887 [11]=2061 [12]=944 [13]=441 [14]=308 [15]=117
+Maxwell STAT jobs/layer histogram (n=2580000): [1]=842440 [2]=655046 [3]=397486 [4]=240069 [5]=138373 [6]=80411 [7]=41585 [8]=21155 [9]=10781 [10]=4929 [11]=2085 [12]=952 [13]=450 [14]=312 [15]=120
+Maxwell STAT jobs/layer histogram (n=2600000): [1]=849125 [2]=660522 [3]=400780 [4]=242032 [5]=139453 [6]=81111 [7]=41962 [8]=21368 [9]=10875 [10]=4995 [11]=2112 [12]=961 [13]=451 [14]=320 [15]=122
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8139 ms (36.9 tok/s), drafts accepted 152 of 308, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20154 hits / 20154 lookups); 199686 more read by the GPU over PCIe or from another GPU (90.8% of all 219840 routed)
+strata serve: expert tiers: GPU 20154 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 180.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.9 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2620000): [1]=856369 [2]=666001 [3]=403987 [4]=243866 [5]=140454 [6]=81686 [7]=42283 [8]=21533 [9]=10976 [10]=5040 [11]=2127 [12]=967 [13]=455 [14]=322 [15]=122
+Maxwell STAT jobs/layer histogram (n=2640000): [1]=863751 [2]=671437 [3]=407171 [4]=245660 [5]=141515 [6]=82239 [7]=42582 [8]=21684 [9]=11048 [10]=5074 [11]=2138 [12]=975 [13]=460 [14]=330 [15]=124
+Maxwell STAT jobs/layer histogram (n=2660000): [1]=870838 [2]=677042 [3]=410396 [4]=247464 [5]=142487 [6]=82906 [7]=42874 [8]=21844 [9]=11152 [10]=5118 [11]=2156 [12]=981 [13]=469 [14]=335 [15]=124
+Maxwell STAT jobs/layer histogram (n=2680000): [1]=876191 [2]=682057 [3]=413948 [4]=249811 [5]=144009 [6]=83901 [7]=43456 [8]=22140 [9]=11319 [10]=5204 [11]=2197 [12]=997 [13]=475 [14]=342 [15]=127
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8412 ms (35.7 tok/s), drafts accepted 153 of 341, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20255 hits / 20255 lookups); 214465 more read by the GPU over PCIe or from another GPU (91.4% of all 234720 routed)
+strata serve: expert tiers: GPU 20255 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 185.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.6 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2700000): [1]=882186 [2]=687402 [3]=417435 [4]=252003 [5]=145321 [6]=84667 [7]=43884 [8]=22371 [9]=11453 [10]=5249 [11]=2234 [12]=1007 [13]=485 [14]=346 [15]=130
+Maxwell STAT jobs/layer histogram (n=2720000): [1]=890338 [2]=693110 [3]=420471 [4]=253565 [5]=146119 [6]=85039 [7]=44096 [8]=22466 [9]=11489 [10]=5263 [11]=2238 [12]=1012 [13]=486 [14]=348 [15]=132
+Maxwell STAT jobs/layer histogram (n=2740000): [1]=897265 [2]=698606 [3]=423593 [4]=255379 [5]=147225 [6]=85784 [7]=44462 [8]=22685 [9]=11608 [10]=5303 [11]=2262 [12]=1020 [13]=494 [14]=350 [15]=135
+Maxwell STAT jobs/layer histogram (n=2760000): [1]=903629 [2]=703944 [3]=426945 [4]=257471 [5]=148363 [6]=86589 [7]=44878 [8]=22897 [9]=11746 [10]=5373 [11]=2301 [12]=1038 [13]=498 [14]=354 [15]=139
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7903 ms (38.0 tok/s), drafts accepted 151 of 281, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (16996 hits / 16996 lookups); 189404 more read by the GPU over PCIe or from another GPU (91.8% of all 206400 routed)
+strata serve: expert tiers: GPU 16996 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 252.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 123.3 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2780000): [1]=910945 [2]=709611 [3]=430151 [4]=259223 [5]=149333 [6]=87127 [7]=45153 [8]=23038 [9]=11820 [10]=5413 [11]=2312 [12]=1040 [13]=503 [14]=356 [15]=139
+Maxwell STAT jobs/layer histogram (n=2800000): [1]=918064 [2]=715054 [3]=433407 [4]=261122 [5]=150467 [6]=87699 [7]=45437 [8]=23194 [9]=11892 [10]=5443 [11]=2331 [12]=1048 [13]=503 [14]=360 [15]=141
+Maxwell STAT jobs/layer histogram (n=2820000): [1]=925070 [2]=720689 [3]=436650 [4]=263011 [5]=151473 [6]=88315 [7]=45724 [8]=23346 [9]=11979 [10]=5484 [11]=2348 [12]=1057 [13]=509 [14]=365 [15]=141
+Maxwell STAT jobs/layer histogram (n=2840000): [1]=931463 [2]=726047 [3]=439990 [4]=265038 [5]=152629 [6]=89122 [7]=46147 [8]=23565 [9]=12117 [10]=5557 [11]=2382 [12]=1069 [13]=512 [14]=368 [15]=144
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7823 ms (38.3 tok/s), drafts accepted 155 of 287, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (17987 hits / 17987 lookups); 189373 more read by the GPU over PCIe or from another GPU (91.3% of all 207360 routed)
+strata serve: expert tiers: GPU 17987 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 233.4 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.5 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2860000): [1]=938117 [2]=731550 [3]=443335 [4]=267102 [5]=153794 [6]=89727 [7]=46499 [8]=23740 [9]=12191 [10]=5592 [11]=2399 [12]=1073 [13]=516 [14]=370 [15]=144
+Maxwell STAT jobs/layer histogram (n=2880000): [1]=945362 [2]=736970 [3]=446547 [4]=268943 [5]=154878 [6]=90307 [7]=46809 [8]=23895 [9]=12265 [10]=5632 [11]=2416 [12]=1082 [13]=519 [14]=375 [15]=147
+Maxwell STAT jobs/layer histogram (n=2900000): [1]=952836 [2]=742790 [3]=449597 [4]=270641 [5]=155754 [6]=90861 [7]=47057 [8]=24027 [9]=12336 [10]=5674 [11]=2430 [12]=1093 [13]=521 [14]=381 [15]=148
+Maxwell STAT jobs/layer histogram (n=2920000): [1]=959699 [2]=748548 [3]=452885 [4]=272548 [5]=156705 [6]=91498 [7]=47341 [8]=24181 [9]=12412 [10]=5717 [11]=2446 [12]=1104 [13]=525 [14]=384 [15]=149
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8222 ms (36.5 tok/s), drafts accepted 150 of 315, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22060 hits / 22060 lookups); 201140 more read by the GPU over PCIe or from another GPU (90.1% of all 223200 routed)
+strata serve: expert tiers: GPU 22060 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 318.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 14 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.9 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=2940000): [1]=965843 [2]=753605 [3]=456367 [4]=274799 [5]=158059 [6]=92317 [7]=47769 [8]=24412 [9]=12540 [10]=5784 [11]=2471 [12]=1110 [13]=529 [14]=387 [15]=149
+Maxwell STAT jobs/layer histogram (n=2960000): [1]=973162 [2]=759088 [3]=459528 [4]=276591 [5]=159081 [6]=92925 [7]=48063 [8]=24578 [9]=12622 [10]=5818 [11]=2486 [12]=1121 [13]=534 [14]=391 [15]=150
+Maxwell STAT jobs/layer histogram (n=2980000): [1]=979528 [2]=764475 [3]=462709 [4]=278780 [5]=160308 [6]=93724 [7]=48472 [8]=24787 [9]=12757 [10]=5861 [11]=2506 [12]=1139 [13]=538 [14]=396 [15]=154
+Maxwell STAT jobs/layer histogram (n=3000000): [1]=986142 [2]=769737 [3]=466031 [4]=280766 [5]=161478 [6]=94485 [7]=48887 [8]=24996 [9]=12904 [10]=5923 [11]=2531 [12]=1148 [13]=545 [14]=400 [15]=156
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7692 ms (39.0 tok/s), drafts accepted 164 of 301, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22152 hits / 22152 lookups); 189048 more read by the GPU over PCIe or from another GPU (89.5% of all 211200 routed)
+strata serve: expert tiers: GPU 22152 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 46.0 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.3 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3020000): [1]=992077 [2]=774852 [3]=469569 [4]=283131 [5]=162952 [6]=95274 [7]=49278 [8]=25208 [9]=13015 [10]=5964 [11]=2550 [12]=1153 [13]=547 [14]=402 [15]=156
+Maxwell STAT jobs/layer histogram (n=3040000): [1]=1000194 [2]=780474 [3]=472504 [4]=284627 [5]=163709 [6]=95786 [7]=49531 [8]=25347 [9]=13106 [10]=6000 [11]=2566 [12]=1161 [13]=552 [14]=413 [15]=157
+Maxwell STAT jobs/layer histogram (n=3060000): [1]=1006096 [2]=785872 [3]=476000 [4]=286909 [5]=164973 [6]=96638 [7]=49925 [8]=25546 [9]=13217 [10]=6049 [11]=2595 [12]=1167 [13]=563 [14]=415 [15]=157
+Maxwell STAT jobs/layer histogram (n=3080000): [1]=1013382 [2]=791435 [3]=479164 [4]=288675 [5]=165943 [6]=97255 [7]=50222 [8]=25711 [9]=13309 [10]=6089 [11]=2618 [12]=1175 [13]=566 [14]=416 [15]=158
+strata serve: prompt 74 tokens = 69 reused + 5 read in 203 ms (24.6 tok/s), 300 generated in 8071 ms (37.2 tok/s), drafts accepted 153 of 303, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20620 hits / 20620 lookups); 196340 more read by the GPU over PCIe or from another GPU (90.5% of all 216960 routed)
+strata serve: expert tiers: GPU 20620 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 80.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 123.0 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3100000): [1]=1019926 [2]=796750 [3]=482582 [4]=290771 [5]=167199 [6]=97904 [7]=50583 [8]=25895 [9]=13403 [10]=6137 [11]=2636 [12]=1181 [13]=569 [14]=423 [15]=158
+Maxwell STAT jobs/layer histogram (n=3120000): [1]=1027058 [2]=802338 [3]=485695 [4]=292532 [5]=168214 [6]=98551 [7]=50916 [8]=26076 [9]=13528 [10]=6185 [11]=2663 [12]=1193 [13]=576 [14]=431 [15]=158
+Maxwell STAT jobs/layer histogram (n=3140000): [1]=1033127 [2]=807572 [3]=489129 [4]=294660 [5]=169515 [6]=99428 [7]=51351 [8]=26345 [9]=13645 [10]=6254 [11]=2693 [12]=1204 [13]=588 [14]=435 [15]=161
+Maxwell STAT jobs/layer histogram (n=3160000): [1]=1040288 [2]=813200 [3]=492291 [4]=296367 [5]=170487 [6]=100073 [7]=51666 [8]=26535 [9]=13751 [10]=6307 [11]=2718 [12]=1221 [13]=594 [14]=442 [15]=163
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8056 ms (37.2 tok/s), drafts accepted 160 of 317, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (17474 hits / 17474 lookups); 203326 more read by the GPU over PCIe or from another GPU (92.1% of all 220800 routed)
+strata serve: expert tiers: GPU 17474 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 336.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 123.0 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3180000): [1]=1047060 [2]=818516 [3]=495686 [4]=298391 [5]=171695 [6]=100699 [7]=52001 [8]=26705 [9]=13837 [10]=6344 [11]=2732 [12]=1228 [13]=597 [14]=446 [15]=164
+Maxwell STAT jobs/layer histogram (n=3200000): [1]=1055407 [2]=824382 [3]=498537 [4]=299760 [5]=172407 [6]=101116 [7]=52201 [8]=26819 [9]=13898 [10]=6383 [11]=2743 [12]=1232 [13]=601 [14]=446 [15]=167
+Maxwell STAT jobs/layer histogram (n=3220000): [1]=1062033 [2]=829940 [3]=501779 [4]=301703 [5]=173476 [6]=101862 [7]=52587 [8]=27048 [9]=14006 [10]=6429 [11]=2766 [12]=1242 [13]=603 [14]=450 [15]=169
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7771 ms (38.6 tok/s), drafts accepted 155 of 273, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19443 hits / 19443 lookups); 182637 more read by the GPU over PCIe or from another GPU (90.4% of all 202080 routed)
+strata serve: expert tiers: GPU 19443 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 224.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.6 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3240000): [1]=1069288 [2]=835610 [3]=505010 [4]=303453 [5]=174471 [6]=102395 [7]=52872 [8]=27185 [9]=14092 [10]=6457 [11]=2787 [12]=1249 [13]=605 [14]=450 [15]=169
+Maxwell STAT jobs/layer histogram (n=3260000): [1]=1076576 [2]=841149 [3]=508146 [4]=305253 [5]=175544 [6]=102958 [7]=53163 [8]=27343 [9]=14169 [10]=6497 [11]=2801 [12]=1254 [13]=611 [14]=458 [15]=170
+Maxwell STAT jobs/layer histogram (n=3280000): [1]=1083401 [2]=846888 [3]=511365 [4]=307120 [5]=176551 [6]=103624 [7]=53484 [8]=27509 [9]=14279 [10]=6544 [11]=2819 [12]=1257 [13]=616 [14]=459 [15]=172
+Maxwell STAT jobs/layer histogram (n=3300000): [1]=1090565 [2]=852657 [3]=514528 [4]=308918 [5]=177457 [6]=104186 [7]=53800 [8]=27655 [9]=14367 [10]=6592 [11]=2839 [12]=1268 [13]=617 [14]=460 [15]=174
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7589 ms (39.5 tok/s), drafts accepted 164 of 291, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20054 hits / 20054 lookups); 186346 more read by the GPU over PCIe or from another GPU (90.3% of all 206400 routed)
+strata serve: expert tiers: GPU 20054 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 39.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.4 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3320000): [1]=1096877 [2]=857884 [3]=518029 [4]=311069 [5]=178701 [6]=104919 [7]=54215 [8]=27864 [9]=14483 [10]=6647 [11]=2860 [12]=1276 [13]=620 [14]=464 [15]=174
+Maxwell STAT jobs/layer histogram (n=3340000): [1]=1103969 [2]=863263 [3]=521289 [4]=313049 [5]=179772 [6]=105540 [7]=54511 [8]=28030 [9]=14548 [10]=6682 [11]=2872 [12]=1285 [13]=625 [14]=470 [15]=175
+Maxwell STAT jobs/layer histogram (n=3360000): [1]=1111577 [2]=868909 [3]=524359 [4]=314600 [5]=180648 [6]=106164 [7]=54805 [8]=28167 [9]=14660 [10]=6721 [11]=2886 [12]=1297 [13]=636 [14]=471 [15]=175
+Maxwell STAT jobs/layer histogram (n=3380000): [1]=1118093 [2]=874349 [3]=527587 [4]=316641 [5]=181785 [6]=106934 [7]=55229 [8]=28375 [9]=14783 [10]=6774 [11]=2912 [12]=1309 [13]=642 [14]=477 [15]=179
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7763 ms (38.6 tok/s), drafts accepted 160 of 305, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22472 hits / 22472 lookups); 191128 more read by the GPU over PCIe or from another GPU (89.5% of all 213600 routed)
+strata serve: expert tiers: GPU 22472 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 43.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.6 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3400000): [1]=1123806 [2]=879383 [3]=531160 [4]=319032 [5]=183249 [6]=107777 [7]=55704 [8]=28635 [9]=14919 [10]=6831 [11]=2950 [12]=1317 [13]=647 [14]=479 [15]=179
+Maxwell STAT jobs/layer histogram (n=3420000): [1]=1131496 [2]=885041 [3]=534188 [4]=320613 [5]=184163 [6]=108290 [7]=56008 [8]=28780 [9]=15006 [10]=6874 [11]=2964 [12]=1324 [13]=651 [14]=487 [15]=181
+Maxwell STAT jobs/layer histogram (n=3440000): [1]=1138384 [2]=890561 [3]=537281 [4]=322464 [5]=185238 [6]=108994 [7]=56421 [8]=28991 [9]=15142 [10]=6928 [11]=2993 [12]=1332 [13]=657 [14]=492 [15]=183
+Maxwell STAT jobs/layer histogram (n=3460000): [1]=1145613 [2]=896197 [3]=540509 [4]=324243 [5]=186122 [6]=109608 [7]=56729 [8]=29141 [9]=15225 [10]=6978 [11]=3014 [12]=1338 [13]=665 [14]=494 [15]=184
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7816 ms (38.4 tok/s), drafts accepted 162 of 302, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19919 hits / 19919 lookups); 192721 more read by the GPU over PCIe or from another GPU (90.6% of all 212640 routed)
+strata serve: expert tiers: GPU 19919 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 168.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 2 windows, 12 of 14 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.3 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3480000): [1]=1151495 [2]=901245 [3]=544004 [4]=326647 [5]=187589 [6]=110423 [7]=57158 [8]=29374 [9]=15336 [10]=7052 [11]=3039 [12]=1346 [13]=671 [14]=496 [15]=184
+Maxwell STAT jobs/layer histogram (n=3500000): [1]=1159576 [2]=906749 [3]=546956 [4]=328097 [5]=188420 [6]=110960 [7]=57449 [8]=29529 [9]=15441 [10]=7097 [11]=3055 [12]=1356 [13]=680 [14]=509 [15]=185
+Maxwell STAT jobs/layer histogram (n=3520000): [1]=1166628 [2]=912481 [3]=550133 [4]=329857 [5]=189433 [6]=111573 [7]=57750 [8]=29690 [9]=15551 [10]=7133 [11]=3074 [12]=1370 [13]=684 [14]=510 [15]=187
+Maxwell STAT jobs/layer histogram (n=3540000): [1]=1174195 [2]=918472 [3]=553130 [4]=331508 [5]=190262 [6]=112067 [7]=57967 [8]=29829 [9]=15609 [10]=7165 [11]=3087 [12]=1374 [13]=685 [14]=511 [15]=189
+strata serve: prompt 74 tokens = 69 reused + 5 read in 203 ms (24.6 tok/s), 300 generated in 8132 ms (36.9 tok/s), drafts accepted 147 of 284, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18309 hits / 18309 lookups); 192411 more read by the GPU over PCIe or from another GPU (91.3% of all 210720 routed)
+strata serve: expert tiers: GPU 18309 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 179.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.6 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3560000): [1]=1180890 [2]=923850 [3]=556489 [4]=333596 [5]=191485 [6]=112733 [7]=58269 [8]=29982 [9]=15688 [10]=7202 [11]=3097 [12]=1378 [13]=688 [14]=513 [15]=189
+Maxwell STAT jobs/layer histogram (n=3580000): [1]=1188660 [2]=929527 [3]=559541 [4]=335137 [5]=192361 [6]=113225 [7]=58548 [8]=30123 [9]=15776 [10]=7241 [11]=3118 [12]=1385 [13]=694 [14]=522 [15]=190
+Maxwell STAT jobs/layer histogram (n=3600000): [1]=1195262 [2]=935336 [3]=562830 [4]=337136 [5]=193391 [6]=113878 [7]=58837 [8]=30297 [9]=15856 [10]=7281 [11]=3138 [12]=1393 [13]=695 [14]=525 [15]=190
+Maxwell STAT jobs/layer histogram (n=3620000): [1]=1202651 [2]=941164 [3]=566055 [4]=338905 [5]=194213 [6]=114369 [7]=59066 [8]=30415 [9]=15928 [10]=7310 [11]=3151 [12]=1400 [13]=699 [14]=526 [15]=191
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7736 ms (38.8 tok/s), drafts accepted 160 of 296, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20179 hits / 20179 lookups); 190061 more read by the GPU over PCIe or from another GPU (90.4% of all 210240 routed)
+strata serve: expert tiers: GPU 20179 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 29.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.4 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3640000): [1]=1208922 [2]=946369 [3]=569540 [4]=341189 [5]=195516 [6]=115056 [7]=59446 [8]=30600 [9]=16030 [10]=7359 [11]=3180 [12]=1410 [13]=707 [14]=527 [15]=191
+Maxwell STAT jobs/layer histogram (n=3660000): [1]=1216919 [2]=952503 [3]=572503 [4]=342685 [5]=196244 [6]=115428 [7]=59591 [8]=30690 [9]=16073 [10]=7377 [11]=3188 [12]=1412 [13]=709 [14]=528 [15]=191
+Maxwell STAT jobs/layer histogram (n=3680000): [1]=1223021 [2]=957825 [3]=575830 [4]=344847 [5]=197521 [6]=116289 [7]=60010 [8]=30958 [9]=16209 [10]=7435 [11]=3224 [12]=1422 [13]=719 [14]=529 [15]=194
+Maxwell STAT jobs/layer histogram (n=3700000): [1]=1230682 [2]=963785 [3]=578777 [4]=346411 [5]=198376 [6]=116781 [7]=60264 [8]=31085 [9]=16273 [10]=7476 [11]=3240 [12]=1428 [13]=728 [14]=530 [15]=196
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7674 ms (39.1 tok/s), drafts accepted 158 of 284, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18385 hits / 18385 lookups); 186095 more read by the GPU over PCIe or from another GPU (91.0% of all 204480 routed)
+strata serve: expert tiers: GPU 18385 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 313.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.6 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3720000): [1]=1237777 [2]=969179 [3]=582116 [4]=348311 [5]=199483 [6]=117353 [7]=60571 [8]=31233 [9]=16350 [10]=7517 [11]=3249 [12]=1431 [13]=731 [14]=533 [15]=197
+Maxwell STAT jobs/layer histogram (n=3740000): [1]=1244682 [2]=974686 [3]=585347 [4]=350151 [5]=200566 [6]=118063 [7]=60925 [8]=31402 [9]=16467 [10]=7565 [11]=3265 [12]=1434 [13]=736 [14]=540 [15]=200
+Maxwell STAT jobs/layer histogram (n=3760000): [1]=1251740 [2]=980491 [3]=588534 [4]=351975 [5]=201531 [6]=118627 [7]=61209 [8]=31543 [9]=16557 [10]=7608 [11]=3281 [12]=1443 [13]=745 [14]=540 [15]=203
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7799 ms (38.5 tok/s), drafts accepted 156 of 280, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19345 hits / 19345 lookups); 185615 more read by the GPU over PCIe or from another GPU (90.6% of all 204960 routed)
+strata serve: expert tiers: GPU 19345 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 303.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.5 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3780000): [1]=1258634 [2]=986157 [3]=591971 [4]=353885 [5]=202558 [6]=119156 [7]=61491 [8]=31672 [9]=16630 [10]=7638 [11]=3294 [12]=1451 [13]=746 [14]=541 [15]=203
+Maxwell STAT jobs/layer histogram (n=3800000): [1]=1265655 [2]=991555 [3]=595254 [4]=355836 [5]=203688 [6]=119781 [7]=61782 [8]=31838 [9]=16705 [10]=7668 [11]=3308 [12]=1456 [13]=751 [14]=544 [15]=204
+Maxwell STAT jobs/layer histogram (n=3820000): [1]=1272932 [2]=997236 [3]=598325 [4]=357614 [5]=204612 [6]=120421 [7]=62071 [8]=31990 [9]=16809 [10]=7711 [11]=3326 [12]=1463 [13]=759 [14]=549 [15]=205
+Maxwell STAT jobs/layer histogram (n=3840000): [1]=1279415 [2]=1002646 [3]=601722 [4]=359651 [5]=205707 [6]=121155 [7]=62469 [8]=32187 [9]=16934 [10]=7769 [11]=3355 [12]=1478 [13]=765 [14]=554 [15]=212
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8311 ms (36.1 tok/s), drafts accepted 145 of 303, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20998 hits / 20998 lookups); 199322 more read by the GPU over PCIe or from another GPU (90.5% of all 220320 routed)
+strata serve: expert tiers: GPU 20998 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 140.4 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.5 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3860000): [1]=1287287 [2]=1008503 [3]=604841 [4]=361227 [5]=206448 [6]=121572 [7]=62688 [8]=32279 [9]=16990 [10]=7800 [11]=3363 [12]=1485 [13]=768 [14]=554 [15]=212
+Maxwell STAT jobs/layer histogram (n=3880000): [1]=1294337 [2]=1013848 [3]=608118 [4]=363186 [5]=207535 [6]=122169 [7]=63039 [8]=32458 [9]=17079 [10]=7827 [11]=3379 [12]=1494 [13]=775 [14]=560 [15]=212
+Maxwell STAT jobs/layer histogram (n=3900000): [1]=1301611 [2]=1019496 [3]=611174 [4]=364957 [5]=208485 [6]=122793 [7]=63352 [8]=32656 [9]=17180 [10]=7859 [11]=3397 [12]=1503 [13]=778 [14]=560 [15]=213
+Maxwell STAT jobs/layer histogram (n=3920000): [1]=1308300 [2]=1025078 [3]=614413 [4]=366794 [5]=209607 [6]=123555 [7]=63704 [8]=32873 [9]=17284 [10]=7910 [11]=3419 [12]=1507 [13]=782 [14]=565 [15]=214
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8128 ms (36.9 tok/s), drafts accepted 151 of 308, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19002 hits / 19002 lookups); 200358 more read by the GPU over PCIe or from another GPU (91.3% of all 219360 routed)
+strata serve: expert tiers: GPU 19002 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 197.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.9 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=3940000): [1]=1315031 [2]=1030663 [3]=617710 [4]=368665 [5]=210702 [6]=124215 [7]=64064 [8]=33071 [9]=17386 [10]=7968 [11]=3444 [12]=1518 [13]=782 [14]=567 [15]=216
+Maxwell STAT jobs/layer histogram (n=3960000): [1]=1321475 [2]=1035855 [3]=621159 [4]=370835 [5]=212030 [6]=124913 [7]=64427 [8]=33264 [9]=17477 [10]=8010 [11]=3460 [12]=1521 [13]=786 [14]=573 [15]=216
+Maxwell STAT jobs/layer histogram (n=3980000): [1]=1329379 [2]=1041594 [3]=624155 [4]=372367 [5]=212809 [6]=125429 [7]=64694 [8]=33384 [9]=17556 [10]=8040 [11]=3477 [12]=1527 [13]=792 [14]=577 [15]=217
+Maxwell STAT jobs/layer histogram (n=4000000): [1]=1335189 [2]=1046676 [3]=627592 [4]=374524 [5]=214201 [6]=126415 [7]=65209 [8]=33684 [9]=17715 [10]=8119 [11]=3514 [12]=1543 [13]=805 [14]=579 [15]=224
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8191 ms (36.6 tok/s), drafts accepted 156 of 323, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21686 hits / 21686 lookups); 203914 more read by the GPU over PCIe or from another GPU (90.4% of all 225600 routed)
+strata serve: expert tiers: GPU 21686 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 99.0 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.8 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4020000): [1]=1341746 [2]=1052078 [3]=631060 [4]=376593 [5]=215309 [6]=127093 [7]=65553 [8]=33866 [9]=17808 [10]=8166 [11]=3536 [12]=1558 [13]=813 [14]=580 [15]=228
+Maxwell STAT jobs/layer histogram (n=4040000): [1]=1348205 [2]=1057158 [3]=634444 [4]=378753 [5]=216660 [6]=127864 [7]=65945 [8]=34078 [9]=17913 [10]=8210 [11]=3553 [12]=1567 [13]=818 [14]=589 [15]=229
+Maxwell STAT jobs/layer histogram (n=4060000): [1]=1356559 [2]=1063125 [3]=637299 [4]=380024 [5]=217329 [6]=128318 [7]=66150 [8]=34181 [9]=17990 [10]=8229 [11]=3558 [12]=1575 [13]=827 [14]=591 [15]=230
+Maxwell STAT jobs/layer histogram (n=4080000): [1]=1363244 [2]=1068563 [3]=640506 [4]=381968 [5]=218435 [6]=129088 [7]=66527 [8]=34406 [9]=18114 [10]=8293 [11]=3587 [12]=1588 [13]=832 [14]=594 [15]=234
+Maxwell STAT jobs/layer histogram (n=4100000): [1]=1371692 [2]=1074546 [3]=643289 [4]=383258 [5]=219068 [6]=129481 [7]=66749 [8]=34510 [9]=18192 [10]=8326 [11]=3604 [12]=1594 [13]=837 [14]=596 [15]=236
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8613 ms (34.8 tok/s), drafts accepted 137 of 304, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20681 hits / 20681 lookups); 203959 more read by the GPU over PCIe or from another GPU (90.8% of all 224640 routed)
+strata serve: expert tiers: GPU 20681 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 155.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.7 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4120000): [1]=1378327 [2]=1079647 [3]=646661 [4]=385369 [5]=220367 [6]=130171 [7]=67150 [8]=34716 [9]=18291 [10]=8368 [11]=3628 [12]=1604 [13]=844 [14]=598 [15]=236
+Maxwell STAT jobs/layer histogram (n=4140000): [1]=1386387 [2]=1085463 [3]=649520 [4]=386834 [5]=221129 [6]=130663 [7]=67404 [8]=34849 [9]=18374 [10]=8401 [11]=3648 [12]=1613 [13]=846 [14]=605 [15]=238
+Maxwell STAT jobs/layer histogram (n=4160000): [1]=1393142 [2]=1090793 [3]=652830 [4]=388773 [5]=222222 [6]=131383 [7]=67798 [8]=35061 [9]=18498 [10]=8464 [11]=3675 [12]=1628 [13]=852 [14]=610 [15]=242
+Maxwell STAT jobs/layer histogram (n=4180000): [1]=1401054 [2]=1096566 [3]=655946 [4]=390282 [5]=222990 [6]=131837 [7]=68027 [8]=35173 [9]=18560 [10]=8497 [11]=3690 [12]=1639 [13]=857 [14]=611 [15]=242
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8062 ms (37.2 tok/s), drafts accepted 150 of 283, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20104 hits / 20104 lookups); 189176 more read by the GPU over PCIe or from another GPU (90.4% of all 209280 routed)
+strata serve: expert tiers: GPU 20104 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 179.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 123.0 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4200000): [1]=1407536 [2]=1101645 [3]=659379 [4]=392410 [5]=224314 [6]=132556 [7]=68463 [8]=35370 [9]=18670 [10]=8550 [11]=3711 [12]=1648 [13]=862 [14]=614 [15]=242
+Maxwell STAT jobs/layer histogram (n=4220000): [1]=1415714 [2]=1107653 [3]=662365 [4]=393834 [5]=225012 [6]=132922 [7]=68629 [8]=35464 [9]=18712 [10]=8568 [11]=3718 [12]=1656 [13]=862 [14]=615 [15]=244
+Maxwell STAT jobs/layer histogram (n=4240000): [1]=1423278 [2]=1113257 [3]=665414 [4]=395424 [5]=225929 [6]=133489 [7]=68955 [8]=35622 [9]=18816 [10]=8636 [11]=3741 [12]=1669 [13]=868 [14]=619 [15]=245
+Maxwell STAT jobs/layer histogram (n=4260000): [1]=1430635 [2]=1118882 [3]=668600 [4]=397224 [5]=226898 [6]=134023 [7]=69227 [8]=35744 [9]=18889 [10]=8667 [11]=3762 [12]=1675 [13]=869 [14]=621 [15]=245
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8197 ms (36.6 tok/s), drafts accepted 144 of 294, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21767 hits / 21767 lookups); 194233 more read by the GPU over PCIe or from another GPU (89.9% of all 216000 routed)
+strata serve: expert tiers: GPU 21767 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 185.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 14 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.8 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4280000): [1]=1436431 [2]=1123907 [3]=672238 [4]=399670 [5]=228362 [6]=134844 [7]=69626 [8]=35950 [9]=19005 [10]=8724 [11]=3782 [12]=1679 [13]=873 [14]=624 [15]=245
+Maxwell STAT jobs/layer histogram (n=4300000): [1]=1444539 [2]=1129586 [3]=675165 [4]=401119 [5]=229128 [6]=135330 [7]=69909 [8]=36084 [9]=19088 [10]=8765 [11]=3797 [12]=1689 [13]=880 [14]=632 [15]=247
+Maxwell STAT jobs/layer histogram (n=4320000): [1]=1451002 [2]=1135145 [3]=678377 [4]=403237 [5]=230333 [6]=136003 [7]=70296 [8]=36273 [9]=19186 [10]=8805 [11]=3830 [12]=1697 [13]=885 [14]=634 [15]=249
+Maxwell STAT jobs/layer histogram (n=4340000): [1]=1457408 [2]=1140291 [3]=681738 [4]=405240 [5]=231528 [6]=136856 [7]=70793 [8]=36502 [9]=19358 [10]=8872 [11]=3855 [12]=1715 [13]=899 [14]=640 [15]=253
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8249 ms (36.4 tok/s), drafts accepted 150 of 312, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20845 hits / 20845 lookups); 201395 more read by the GPU over PCIe or from another GPU (90.6% of all 222240 routed)
+strata serve: expert tiers: GPU 20845 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 188.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 123.1 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4360000): [1]=1463871 [2]=1145584 [3]=685251 [4]=407450 [5]=232762 [6]=137530 [7]=71110 [8]=36663 [9]=19435 [10]=8911 [11]=3866 [12]=1716 [13]=902 [14]=642 [15]=254
+Maxwell STAT jobs/layer histogram (n=4380000): [1]=1471724 [2]=1151249 [3]=688269 [4]=408919 [5]=233641 [6]=138058 [7]=71370 [8]=36823 [9]=19511 [10]=8960 [11]=3883 [12]=1729 [13]=906 [14]=644 [15]=257
+Maxwell STAT jobs/layer histogram (n=4400000): [1]=1477988 [2]=1156504 [3]=691639 [4]=410974 [5]=234861 [6]=138918 [7]=71801 [8]=37073 [9]=19671 [10]=9028 [11]=3912 [12]=1743 [13]=911 [14]=651 [15]=263
+Maxwell STAT jobs/layer histogram (n=4420000): [1]=1485212 [2]=1162272 [3]=694919 [4]=412745 [5]=235818 [6]=139403 [7]=72062 [8]=37194 [9]=19737 [10]=9061 [11]=3930 [12]=1753 [13]=915 [14]=652 [15]=264
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8017 ms (37.4 tok/s), drafts accepted 154 of 312, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (23077 hits / 23077 lookups); 196763 more read by the GPU over PCIe or from another GPU (89.5% of all 219840 routed)
+strata serve: expert tiers: GPU 23077 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 149.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.8 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4440000): [1]=1491243 [2]=1167435 [3]=698451 [4]=415104 [5]=237201 [6]=140176 [7]=72441 [8]=37404 [9]=19832 [10]=9109 [11]=3946 [12]=1756 [13]=919 [14]=654 [15]=265
+Maxwell STAT jobs/layer histogram (n=4460000): [1]=1498863 [2]=1172981 [3]=701466 [4]=416736 [5]=238112 [6]=140800 [7]=72726 [8]=37581 [9]=19922 [10]=9156 [11]=3968 [12]=1770 [13]=926 [14]=658 [15]=268
+Maxwell STAT jobs/layer histogram (n=4480000): [1]=1505372 [2]=1178281 [3]=704730 [4]=418741 [5]=239295 [6]=141600 [7]=73161 [8]=37824 [9]=20058 [10]=9220 [11]=3996 [12]=1780 [13]=931 [14]=664 [15]=270
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7765 ms (38.6 tok/s), drafts accepted 161 of 294, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21882 hits / 21882 lookups); 187878 more read by the GPU over PCIe or from another GPU (89.6% of all 209760 routed)
+strata serve: expert tiers: GPU 21882 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 67.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 377 tokens in 123.0 ms; parked=4 bytes=2607315460 evictions=1 snapshot_bytes=240838320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4500000): [1]=1511855 [2]=1183542 [3]=708053 [4]=420799 [5]=240567 [6]=142341 [7]=73580 [8]=38017 [9]=20191 [10]=9288 [11]=4026 [12]=1793 [13]=934 [14]=666 [15]=271
+Maxwell STAT jobs/layer histogram (n=4520000): [1]=1518614 [2]=1188780 [3]=711358 [4]=422844 [5]=241807 [6]=143044 [7]=73924 [8]=38215 [9]=20280 [10]=9327 [11]=4045 [12]=1802 [13]=938 [14]=670 [15]=273
+Maxwell STAT jobs/layer histogram (n=4540000): [1]=1526238 [2]=1194747 [3]=714506 [4]=424388 [5]=242601 [6]=143514 [7]=74132 [8]=38335 [9]=20344 [10]=9360 [11]=4057 [12]=1808 [13]=941 [14]=671 [15]=275
+Maxwell STAT jobs/layer histogram (n=4560000): [1]=1533162 [2]=1200079 [3]=717774 [4]=426116 [5]=243675 [6]=144275 [7]=74540 [8]=38578 [9]=20473 [10]=9424 [11]=4090 [12]=1820 [13]=947 [14]=680 [15]=278
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8295 ms (36.2 tok/s), drafts accepted 149 of 302, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21402 hits / 21402 lookups); 198438 more read by the GPU over PCIe or from another GPU (90.3% of all 219840 routed)
+strata serve: expert tiers: GPU 21402 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 155.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 122.4 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4580000): [1]=1540443 [2]=1205572 [3]=721098 [4]=427939 [5]=244633 [6]=144775 [7]=74863 [8]=38723 [9]=20554 [10]=9459 [11]=4111 [12]=1831 [13]=952 [14]=680 [15]=278
+Maxwell STAT jobs/layer histogram (n=4600000): [1]=1547204 [2]=1210841 [3]=724429 [4]=429953 [5]=245865 [6]=145457 [7]=75222 [8]=38898 [9]=20653 [10]=9500 [11]=4126 [12]=1838 [13]=959 [14]=686 [15]=279
+Maxwell STAT jobs/layer histogram (n=4620000): [1]=1554567 [2]=1216404 [3]=727486 [4]=431626 [5]=246846 [6]=146133 [7]=75539 [8]=39065 [9]=20772 [10]=9544 [11]=4136 [12]=1849 [13]=968 [14]=690 [15]=279
+Maxwell STAT jobs/layer histogram (n=4640000): [1]=1561002 [2]=1221687 [3]=730748 [4]=433678 [5]=247977 [6]=146983 [7]=75987 [8]=39319 [9]=20915 [10]=9613 [11]=4163 [12]=1870 [13]=975 [14]=696 [15]=283
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 7965 ms (37.7 tok/s), drafts accepted 157 of 315, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (23036 hits / 23036 lookups); 196804 more read by the GPU over PCIe or from another GPU (89.5% of all 219840 routed)
+strata serve: expert tiers: GPU 23036 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 33.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.8 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4660000): [1]=1566776 [2]=1226693 [3]=734434 [4]=436088 [5]=249383 [6]=147800 [7]=76440 [8]=39549 [9]=21043 [10]=9660 [11]=4186 [12]=1879 [13]=984 [14]=697 [15]=283
+Maxwell STAT jobs/layer histogram (n=4680000): [1]=1574501 [2]=1232480 [3]=737573 [4]=437745 [5]=250258 [6]=148214 [7]=76664 [8]=39633 [9]=21095 [10]=9683 [11]=4193 [12]=1883 [13]=985 [14]=703 [15]=284
+Maxwell STAT jobs/layer histogram (n=4700000): [1]=1581434 [2]=1238396 [3]=740824 [4]=439587 [5]=251205 [6]=148778 [7]=76923 [8]=39775 [9]=21172 [10]=9722 [11]=4208 [12]=1889 [13]=989 [14]=705 [15]=285
+Maxwell STAT jobs/layer histogram (n=4720000): [1]=1588219 [2]=1244112 [3]=744026 [4]=441548 [5]=252242 [6]=149413 [7]=77266 [8]=39923 [9]=21257 [10]=9774 [11]=4226 [12]=1896 [13]=993 [14]=706 [15]=286
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7818 ms (38.4 tok/s), drafts accepted 159 of 298, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20132 hits / 20132 lookups); 192028 more read by the GPU over PCIe or from another GPU (90.5% of all 212160 routed)
+strata serve: expert tiers: GPU 20132 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 39.1 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.8 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4740000): [1]=1594947 [2]=1249360 [3]=747415 [4]=443590 [5]=253396 [6]=150064 [7]=77661 [8]=40128 [9]=21358 [10]=9820 [11]=4248 [12]=1904 [13]=1001 [14]=708 [15]=286
+Maxwell STAT jobs/layer histogram (n=4760000): [1]=1602661 [2]=1255240 [3]=750495 [4]=445224 [5]=254256 [6]=150490 [7]=77878 [8]=40224 [9]=21403 [10]=9843 [11]=4258 [12]=1909 [13]=1003 [14]=715 [15]=286
+Maxwell STAT jobs/layer histogram (n=4780000): [1]=1608862 [2]=1261058 [3]=753996 [4]=447348 [5]=255353 [6]=151139 [7]=78176 [8]=40391 [9]=21486 [10]=9874 [11]=4278 [12]=1912 [13]=1005 [14]=718 [15]=286
+Maxwell STAT jobs/layer histogram (n=4800000): [1]=1615390 [2]=1266442 [3]=757346 [4]=449328 [5]=256469 [6]=151912 [7]=78575 [8]=40612 [9]=21604 [10]=9946 [11]=4302 [12]=1929 [13]=1012 [14]=725 [15]=286
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7876 ms (38.1 tok/s), drafts accepted 159 of 306, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18718 hits / 18718 lookups); 196322 more read by the GPU over PCIe or from another GPU (91.3% of all 215040 routed)
+strata serve: expert tiers: GPU 18718 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 113.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.6 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4820000): [1]=1621707 [2]=1271777 [3]=760850 [4]=451443 [5]=257722 [6]=152650 [7]=78940 [8]=40804 [9]=21708 [10]=9992 [11]=4321 [12]=1933 [13]=1016 [14]=727 [15]=287
+Maxwell STAT jobs/layer histogram (n=4840000): [1]=1628976 [2]=1277208 [3]=763963 [4]=453293 [5]=258771 [6]=153268 [7]=79255 [8]=40987 [9]=21794 [10]=10036 [11]=4336 [12]=1942 [13]=1022 [14]=736 [15]=288
+Maxwell STAT jobs/layer histogram (n=4860000): [1]=1636521 [2]=1282933 [3]=766972 [4]=454894 [5]=259653 [6]=153861 [7]=79559 [8]=41139 [9]=21900 [10]=10076 [11]=4355 [12]=1951 [13]=1028 [14]=740 [15]=290
+Maxwell STAT jobs/layer histogram (n=4880000): [1]=1642777 [2]=1288377 [3]=770334 [4]=456951 [5]=260831 [6]=154689 [7]=79946 [8]=41373 [9]=22023 [10]=10141 [11]=4387 [12]=1967 [13]=1033 [14]=744 [15]=293
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8169 ms (36.7 tok/s), drafts accepted 155 of 313, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20890 hits / 20890 lookups); 200870 more read by the GPU over PCIe or from another GPU (90.6% of all 221760 routed)
+strata serve: expert tiers: GPU 20890 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 67.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 377 tokens in 122.7 ms; parked=4 bytes=2607315460 evictions=1 snapshot_bytes=240838320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4900000): [1]=1649231 [2]=1293570 [3]=773829 [4]=459032 [5]=262099 [6]=155389 [7]=80332 [8]=41589 [9]=22138 [10]=10189 [11]=4408 [12]=1980 [13]=1041 [14]=745 [15]=293
+Maxwell STAT jobs/layer histogram (n=4920000): [1]=1656531 [2]=1298993 [3]=776985 [4]=460863 [5]=263143 [6]=155971 [7]=80655 [8]=41769 [9]=22215 [10]=10227 [11]=4427 [12]=1988 [13]=1048 [14]=754 [15]=294
+Maxwell STAT jobs/layer histogram (n=4940000): [1]=1663716 [2]=1304740 [3]=780171 [4]=462629 [5]=264092 [6]=156564 [7]=80939 [8]=41915 [9]=22296 [10]=10254 [11]=4441 [12]=1999 [13]=1051 [14]=755 [15]=296
+Maxwell STAT jobs/layer histogram (n=4960000): [1]=1669851 [2]=1310120 [3]=783509 [4]=464741 [5]=265373 [6]=157382 [7]=81381 [8]=42141 [9]=22425 [10]=10332 [11]=4471 [12]=2013 [13]=1058 [14]=756 [15]=300
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8185 ms (36.7 tok/s), drafts accepted 151 of 311, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18067 hits / 18067 lookups); 202733 more read by the GPU over PCIe or from another GPU (91.8% of all 220800 routed)
+strata serve: expert tiers: GPU 18067 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 197.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 123.1 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=4980000): [1]=1676405 [2]=1315703 [3]=786987 [4]=466769 [5]=266486 [6]=158041 [7]=81692 [8]=42284 [9]=22500 [10]=10370 [11]=4479 [12]=2015 [13]=1062 [14]=758 [15]=301
+Maxwell STAT jobs/layer histogram (n=5000000): [1]=1683449 [2]=1321089 [3]=790271 [4]=468718 [5]=267589 [6]=158680 [7]=81977 [8]=42451 [9]=22569 [10]=10401 [11]=4500 [12]=2027 [13]=1063 [14]=762 [15]=304
+Maxwell STAT jobs/layer histogram (n=5020000): [1]=1691135 [2]=1326832 [3]=793237 [4]=470348 [5]=268468 [6]=159215 [7]=82245 [8]=42601 [9]=22660 [10]=10430 [11]=4507 [12]=2031 [13]=1070 [14]=764 [15]=305
+Maxwell STAT jobs/layer histogram (n=5040000): [1]=1697891 [2]=1332437 [3]=796626 [4]=472249 [5]=269559 [6]=159833 [7]=82548 [8]=42754 [9]=22744 [10]=10491 [11]=4520 [12]=2045 [13]=1074 [14]=765 [15]=307
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7987 ms (37.6 tok/s), drafts accepted 153 of 306, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21667 hits / 21667 lookups); 195773 more read by the GPU over PCIe or from another GPU (90.0% of all 217440 routed)
+strata serve: expert tiers: GPU 21667 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 132.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 123.0 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5060000): [1]=1704475 [2]=1337537 [3]=800027 [4]=474310 [5]=270826 [6]=160545 [7]=82964 [8]=42978 [9]=22882 [10]=10547 [11]=4542 [12]=2056 [13]=1080 [14]=766 [15]=307
+Maxwell STAT jobs/layer histogram (n=5080000): [1]=1712462 [2]=1343358 [3]=803000 [4]=475830 [5]=271653 [6]=160975 [7]=83186 [8]=43088 [9]=22937 [10]=10573 [11]=4554 [12]=2060 [13]=1083 [14]=773 [15]=309
+Maxwell STAT jobs/layer histogram (n=5100000): [1]=1718123 [2]=1348729 [3]=806546 [4]=478114 [5]=273035 [6]=161814 [7]=83594 [8]=43346 [9]=23071 [10]=10642 [11]=4581 [12]=2062 [13]=1087 [14]=783 [15]=309
+Maxwell STAT jobs/layer histogram (n=5120000): [1]=1725397 [2]=1354337 [3]=809723 [4]=479869 [5]=273990 [6]=162428 [7]=83883 [8]=43492 [9]=23154 [10]=10696 [11]=4597 [12]=2076 [13]=1092 [14]=785 [15]=312
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7928 ms (37.8 tok/s), drafts accepted 158 of 313, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19960 hits / 19960 lookups); 198440 more read by the GPU over PCIe or from another GPU (90.9% of all 218400 routed)
+strata serve: expert tiers: GPU 19960 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 134.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.7 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5140000): [1]=1731874 [2]=1359630 [3]=813242 [4]=481929 [5]=275222 [6]=163121 [7]=84239 [8]=43678 [9]=23260 [10]=10743 [11]=4612 [12]=2082 [13]=1099 [14]=787 [15]=312
+Maxwell STAT jobs/layer histogram (n=5160000): [1]=1739330 [2]=1365216 [3]=816375 [4]=483684 [5]=276210 [6]=163669 [7]=84507 [8]=43809 [9]=23329 [10]=10777 [11]=4628 [12]=2091 [13]=1100 [14]=790 [15]=313
+Maxwell STAT jobs/layer histogram (n=5180000): [1]=1746254 [2]=1370645 [3]=819559 [4]=485602 [5]=277325 [6]=164374 [7]=84844 [8]=44002 [9]=23430 [10]=10820 [11]=4656 [12]=2097 [13]=1109 [14]=791 [15]=316
+Maxwell STAT jobs/layer histogram (n=5200000): [1]=1752347 [2]=1375949 [3]=822959 [4]=487763 [5]=278623 [6]=165190 [7]=85302 [8]=44216 [9]=23565 [10]=10880 [11]=4686 [12]=2108 [13]=1115 [14]=792 [15]=321
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7918 ms (37.9 tok/s), drafts accepted 158 of 296, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (17956 hits / 17956 lookups); 193724 more read by the GPU over PCIe or from another GPU (91.5% of all 211680 routed)
+strata serve: expert tiers: GPU 17956 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 216.4 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.6 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5220000): [1]=1758812 [2]=1381466 [3]=826283 [4]=489963 [5]=279800 [6]=165846 [7]=85636 [8]=44379 [9]=23651 [10]=10920 [11]=4706 [12]=2115 [13]=1122 [14]=795 [15]=321
+Maxwell STAT jobs/layer histogram (n=5240000): [1]=1766156 [2]=1386785 [3]=829386 [4]=491744 [5]=280848 [6]=166520 [7]=85975 [8]=44571 [9]=23748 [10]=10966 [11]=4730 [12]=2130 [13]=1130 [14]=798 [15]=325
+Maxwell STAT jobs/layer histogram (n=5260000): [1]=1772716 [2]=1392073 [3]=832616 [4]=493677 [5]=282050 [6]=167326 [7]=86425 [8]=44821 [9]=23903 [10]=11030 [11]=4757 [12]=2142 [13]=1135 [14]=804 [15]=327
+Maxwell STAT jobs/layer histogram (n=5280000): [1]=1779468 [2]=1397356 [3]=835830 [4]=495578 [5]=283194 [6]=168092 [7]=86859 [8]=45048 [9]=24046 [10]=11094 [11]=4794 [12]=2159 [13]=1145 [14]=808 [15]=329
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7767 ms (38.6 tok/s), drafts accepted 163 of 300, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21628 hits / 21628 lookups); 190052 more read by the GPU over PCIe or from another GPU (89.8% of all 211680 routed)
+strata serve: expert tiers: GPU 21628 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 27.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 377 tokens in 122.4 ms; parked=4 bytes=2607315460 evictions=1 snapshot_bytes=240838320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5300000): [1]=1785893 [2]=1402570 [3]=839282 [4]=497764 [5]=284517 [6]=168794 [7]=87214 [8]=45232 [9]=24134 [10]=11138 [11]=4807 [12]=2162 [13]=1149 [14]=814 [15]=329
+Maxwell STAT jobs/layer histogram (n=5320000): [1]=1794020 [2]=1408328 [3]=842190 [4]=499200 [5]=285243 [6]=169298 [7]=87466 [8]=45365 [9]=24220 [10]=11170 [11]=4823 [12]=2171 [13]=1155 [14]=820 [15]=329
+Maxwell STAT jobs/layer histogram (n=5340000): [1]=1799693 [2]=1413318 [3]=845639 [4]=501486 [5]=286722 [6]=170269 [7]=88001 [8]=45664 [9]=24380 [10]=11241 [11]=4866 [12]=2186 [13]=1167 [14]=822 [15]=335
+strata serve: prompt 74 tokens = 69 reused + 5 read in 203 ms (24.6 tok/s), 300 generated in 8167 ms (36.7 tok/s), drafts accepted 156 of 318, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21041 hits / 21041 lookups); 202159 more read by the GPU over PCIe or from another GPU (90.6% of all 223200 routed)
+strata serve: expert tiers: GPU 21041 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 54.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 15 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 123.1 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5360000): [1]=1806275 [2]=1418710 [3]=849102 [4]=503517 [5]=287773 [6]=170959 [7]=88360 [8]=45877 [9]=24481 [10]=11298 [11]=4896 [12]=2200 [13]=1175 [14]=823 [15]=339
+Maxwell STAT jobs/layer histogram (n=5380000): [1]=1812963 [2]=1424005 [3]=852568 [4]=505592 [5]=289002 [6]=171597 [7]=88669 [8]=46039 [9]=24560 [10]=11334 [11]=4909 [12]=2202 [13]=1178 [14]=826 [15]=340
+Maxwell STAT jobs/layer histogram (n=5400000): [1]=1820599 [2]=1429699 [3]=855550 [4]=507157 [5]=289934 [6]=172149 [7]=88957 [8]=46208 [9]=24652 [10]=11381 [11]=4924 [12]=2217 [13]=1182 [14]=827 [15]=343
+Maxwell STAT jobs/layer histogram (n=5420000): [1]=1827669 [2]=1435111 [3]=858785 [4]=508884 [5]=290953 [6]=172864 [7]=89326 [8]=46416 [9]=24782 [10]=11443 [11]=4949 [12]=2227 [13]=1186 [14]=831 [15]=346
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8138 ms (36.9 tok/s), drafts accepted 150 of 291, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21237 hits / 21237 lookups); 192843 more read by the GPU over PCIe or from another GPU (90.1% of all 214080 routed)
+strata serve: expert tiers: GPU 21237 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 42.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 122.6 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5440000): [1]=1835473 [2]=1440709 [3]=861859 [4]=510538 [5]=291776 [6]=173336 [7]=89606 [8]=46561 [9]=24858 [10]=11480 [11]=4966 [12]=2239 [13]=1191 [14]=832 [15]=347
+Maxwell STAT jobs/layer histogram (n=5460000): [1]=1842396 [2]=1445919 [3]=865123 [4]=512479 [5]=293022 [6]=174008 [7]=89980 [8]=46742 [9]=24950 [10]=11530 [11]=4990 [12]=2248 [13]=1195 [14]=838 [15]=349
+Maxwell STAT jobs/layer histogram (n=5480000): [1]=1850196 [2]=1451925 [3]=868055 [4]=513920 [5]=293809 [6]=174523 [7]=90225 [8]=46877 [9]=25029 [10]=11560 [11]=5005 [12]=2256 [13]=1197 [14]=839 [15]=350
+Maxwell STAT jobs/layer histogram (n=5500000): [1]=1856569 [2]=1457476 [3]=871435 [4]=515963 [5]=294962 [6]=175258 [7]=90590 [8]=47066 [9]=25138 [10]=11615 [11]=5018 [12]=2273 [13]=1205 [14]=842 [15]=351
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8058 ms (37.2 tok/s), drafts accepted 156 of 301, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20180 hits / 20180 lookups); 195820 more read by the GPU over PCIe or from another GPU (90.7% of all 216000 routed)
+strata serve: expert tiers: GPU 20180 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 148.2 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 122.5 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5520000): [1]=1863562 [2]=1463020 [3]=874803 [4]=517877 [5]=295967 [6]=175821 [7]=90891 [8]=47215 [9]=25229 [10]=11652 [11]=5038 [12]=2286 [13]=1206 [14]=843 [15]=351
+Maxwell STAT jobs/layer histogram (n=5540000): [1]=1869893 [2]=1468155 [3]=878211 [4]=520151 [5]=297287 [6]=176592 [7]=91283 [8]=47408 [9]=25325 [10]=11695 [11]=5056 [12]=2295 [13]=1208 [14]=848 [15]=353
+Maxwell STAT jobs/layer histogram (n=5560000): [1]=1877233 [2]=1473785 [3]=881217 [4]=521931 [5]=298235 [6]=177230 [7]=91576 [8]=47579 [9]=25433 [10]=11732 [11]=5080 [12]=2306 [13]=1214 [14]=851 [15]=354
+Maxwell STAT jobs/layer histogram (n=5580000): [1]=1883935 [2]=1479187 [3]=884432 [4]=523887 [5]=299338 [6]=177978 [7]=91993 [8]=47784 [9]=25569 [10]=11785 [11]=5109 [12]=2319 [13]=1218 [14]=858 [15]=357
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7965 ms (37.7 tok/s), drafts accepted 153 of 301, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21565 hits / 21565 lookups); 193475 more read by the GPU over PCIe or from another GPU (90.0% of all 215040 routed)
+strata serve: expert tiers: GPU 21565 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 57.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 3 windows, 13 of 17 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.9 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5600000): [1]=1890618 [2]=1484639 [3]=887804 [4]=525885 [5]=300502 [6]=178624 [7]=92341 [8]=47951 [9]=25662 [10]=11828 [11]=5130 [12]=2327 [13]=1223 [14]=858 [15]=357
+Maxwell STAT jobs/layer histogram (n=5620000): [1]=1897780 [2]=1489930 [3]=891033 [4]=527769 [5]=301653 [6]=179239 [7]=92663 [8]=48132 [9]=25744 [10]=11867 [11]=5147 [12]=2337 [13]=1228 [14]=867 [15]=358
+Maxwell STAT jobs/layer histogram (n=5640000): [1]=1906177 [2]=1495775 [3]=893878 [4]=529040 [5]=302343 [6]=179684 [7]=92883 [8]=48259 [9]=25834 [10]=11900 [11]=5158 [12]=2348 [13]=1236 [14]=869 [15]=358
+Maxwell STAT jobs/layer histogram (n=5660000): [1]=1912806 [2]=1501408 [3]=897209 [4]=530999 [5]=303385 [6]=180368 [7]=93244 [8]=48435 [9]=25926 [10]=11954 [11]=5175 [12]=2357 [13]=1243 [14]=871 [15]=358
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7815 ms (38.4 tok/s), drafts accepted 151 of 279, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20076 hits / 20076 lookups); 185364 more read by the GPU over PCIe or from another GPU (90.2% of all 205440 routed)
+strata serve: expert tiers: GPU 20076 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 33.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.5 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5680000): [1]=1919503 [2]=1506677 [3]=900604 [4]=532973 [5]=304564 [6]=181071 [7]=93620 [8]=48644 [9]=26036 [10]=12001 [11]=5193 [12]=2372 [13]=1248 [14]=873 [15]=358
+Maxwell STAT jobs/layer histogram (n=5700000): [1]=1927500 [2]=1512362 [3]=903570 [4]=534551 [5]=305408 [6]=181536 [7]=93856 [8]=48762 [9]=26091 [10]=12029 [11]=5205 [12]=2379 [13]=1249 [14]=877 [15]=359
+Maxwell STAT jobs/layer histogram (n=5720000): [1]=1934822 [2]=1518259 [3]=906650 [4]=536201 [5]=306301 [6]=182117 [7]=94114 [8]=48929 [9]=26171 [10]=12063 [11]=5226 [12]=2388 [13]=1252 [14]=879 [15]=360
+Maxwell STAT jobs/layer histogram (n=5740000): [1]=1941371 [2]=1524019 [3]=909980 [4]=538191 [5]=307344 [6]=182809 [7]=94426 [8]=49080 [9]=26267 [10]=12099 [11]=5240 [12]=2402 [13]=1259 [14]=880 [15]=361
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8109 ms (37.0 tok/s), drafts accepted 155 of 305, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20704 hits / 20704 lookups); 197696 more read by the GPU over PCIe or from another GPU (90.5% of all 218400 routed)
+strata serve: expert tiers: GPU 20704 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 50.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 123.0 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5760000): [1]=1947946 [2]=1529137 [3]=913297 [4]=540263 [5]=308577 [6]=183575 [7]=94856 [8]=49309 [9]=26412 [10]=12160 [11]=5268 [12]=2418 [13]=1266 [14]=882 [15]=361
+Maxwell STAT jobs/layer histogram (n=5780000): [1]=1955384 [2]=1534638 [3]=916447 [4]=542007 [5]=309639 [6]=184105 [7]=95141 [8]=49458 [9]=26485 [10]=12190 [11]=5284 [12]=2424 [13]=1273 [14]=891 [15]=361
+Maxwell STAT jobs/layer histogram (n=5800000): [1]=1963534 [2]=1540702 [3]=919480 [4]=543467 [5]=310289 [6]=184459 [7]=95282 [8]=49534 [9]=26520 [10]=12208 [11]=5294 [12]=2430 [13]=1275 [14]=892 [15]=361
+Maxwell STAT jobs/layer histogram (n=5820000): [1]=1969990 [2]=1546281 [3]=922846 [4]=545511 [5]=311367 [6]=185202 [7]=95616 [8]=49738 [9]=26598 [10]=12272 [11]=5324 [12]=2440 [13]=1278 [14]=894 [15]=366
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7893 ms (38.0 tok/s), drafts accepted 158 of 293, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (22136 hits / 22136 lookups); 189064 more read by the GPU over PCIe or from another GPU (89.5% of all 211200 routed)
+strata serve: expert tiers: GPU 22136 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 168.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 378 tokens in 122.7 ms; parked=4 bytes=2607315464 evictions=1 snapshot_bytes=240838324 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5840000): [1]=1975701 [2]=1551158 [3]=926368 [4]=547964 [5]=312901 [6]=186085 [7]=96134 [8]=49977 [9]=26732 [10]=12349 [11]=5352 [12]=2453 [13]=1286 [14]=896 [15]=366
+Maxwell STAT jobs/layer histogram (n=5860000): [1]=1982839 [2]=1556708 [3]=929566 [4]=549800 [5]=313958 [6]=186692 [7]=96428 [8]=50147 [9]=26803 [10]=12385 [11]=5373 [12]=2464 [13]=1290 [14]=900 [15]=367
+Maxwell STAT jobs/layer histogram (n=5880000): [1]=1989614 [2]=1562352 [3]=932794 [4]=551794 [5]=315022 [6]=187363 [7]=96731 [8]=50304 [9]=26889 [10]=12430 [11]=5385 [12]=2473 [13]=1292 [14]=904 [15]=371
+Maxwell STAT jobs/layer histogram (n=5900000): [1]=1996715 [2]=1567982 [3]=935912 [4]=553575 [5]=316036 [6]=188023 [7]=97063 [8]=50468 [9]=26987 [10]=12484 [11]=5408 [12]=2481 [13]=1300 [14]=906 [15]=373
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7813 ms (38.4 tok/s), drafts accepted 157 of 298, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19894 hits / 19894 lookups); 191786 more read by the GPU over PCIe or from another GPU (90.6% of all 211680 routed)
+strata serve: expert tiers: GPU 19894 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 183.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 3 windows, 15 of 17 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.4 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=5920000): [1]=2002793 [2]=1573145 [3]=939503 [4]=555881 [5]=317394 [6]=188731 [7]=97478 [8]=50656 [9]=27097 [10]=12535 [11]=5422 [12]=2491 [13]=1305 [14]=908 [15]=373
+Maxwell STAT jobs/layer histogram (n=5940000): [1]=2010139 [2]=1578395 [3]=942584 [4]=557673 [5]=318465 [6]=189414 [7]=97844 [8]=50850 [9]=27213 [10]=12581 [11]=5440 [12]=2504 [13]=1314 [14]=920 [15]=374
+Maxwell STAT jobs/layer histogram (n=5960000): [1]=2017091 [2]=1584079 [3]=945700 [4]=559643 [5]=319484 [6]=190029 [7]=98170 [8]=51002 [9]=27299 [10]=12618 [11]=5466 [12]=2510 [13]=1317 [14]=921 [15]=376
+Maxwell STAT jobs/layer histogram (n=5980000): [1]=2024192 [2]=1589861 [3]=948819 [4]=561476 [5]=320449 [6]=190591 [7]=98477 [8]=51156 [9]=27395 [10]=12662 [11]=5479 [12]=2518 [13]=1323 [14]=925 [15]=378
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7998 ms (37.5 tok/s), drafts accepted 154 of 310, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20473 hits / 20473 lookups); 198407 more read by the GPU over PCIe or from another GPU (90.6% of all 218880 routed)
+strata serve: expert tiers: GPU 20473 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 65.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 27 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 123.0 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6000000): [1]=2030576 [2]=1595025 [3]=952265 [4]=563738 [5]=321755 [6]=191271 [7]=98853 [8]=51350 [9]=27502 [10]=12703 [11]=5501 [12]=2527 [13]=1329 [14]=927 [15]=378
+Maxwell STAT jobs/layer histogram (n=6020000): [1]=2038191 [2]=1600436 [3]=955385 [4]=565376 [5]=322704 [6]=191859 [7]=99185 [8]=51512 [9]=27591 [10]=12750 [11]=5519 [12]=2538 [13]=1336 [14]=936 [15]=380
+Maxwell STAT jobs/layer histogram (n=6040000): [1]=2044571 [2]=1605712 [3]=958571 [4]=567365 [5]=323978 [6]=192706 [7]=99677 [8]=51771 [9]=27756 [10]=12814 [11]=5556 [12]=2546 [13]=1343 [14]=938 [15]=385
+Maxwell STAT jobs/layer histogram (n=6060000): [1]=2050643 [2]=1611119 [3]=962094 [4]=569541 [5]=325207 [6]=193488 [7]=100066 [8]=51975 [9]=27857 [10]=12875 [11]=5579 [12]=2564 [13]=1347 [14]=944 [15]=387
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7950 ms (37.7 tok/s), drafts accepted 160 of 323, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19901 hits / 19901 lookups); 202339 more read by the GPU over PCIe or from another GPU (91.0% of all 222240 routed)
+strata serve: expert tiers: GPU 19901 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 120.7 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.6 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6080000): [1]=2056726 [2]=1616130 [3]=965528 [4]=571855 [5]=326660 [6]=194312 [7]=100500 [8]=52207 [9]=27974 [10]=12930 [11]=5599 [12]=2579 [13]=1352 [14]=945 [15]=389
+Maxwell STAT jobs/layer histogram (n=6100000): [1]=2064667 [2]=1621740 [3]=968477 [4]=573341 [5]=327507 [6]=194856 [7]=100779 [8]=52362 [9]=28072 [10]=12974 [11]=5612 [12]=2591 [13]=1361 [14]=955 [15]=390
+Maxwell STAT jobs/layer histogram (n=6120000): [1]=2071391 [2]=1627156 [3]=971799 [4]=575173 [5]=328632 [6]=195606 [7]=101170 [8]=52572 [9]=28210 [10]=13016 [11]=5633 [12]=2601 [13]=1370 [14]=958 [15]=391
+Maxwell STAT jobs/layer histogram (n=6140000): [1]=2077943 [2]=1632673 [3]=975148 [4]=577160 [5]=329790 [6]=196280 [7]=101528 [8]=52754 [9]=28308 [10]=13089 [11]=5657 [12]=2614 [13]=1375 [14]=960 [15]=391
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8165 ms (36.7 tok/s), drafts accepted 154 of 322, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20721 hits / 20721 lookups); 204399 more read by the GPU over PCIe or from another GPU (90.8% of all 225120 routed)
+strata serve: expert tiers: GPU 20721 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 108.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 16 of 28 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 123.0 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6160000): [1]=2084278 [2]=1637719 [3]=978611 [4]=579340 [5]=331159 [6]=197034 [7]=101960 [8]=52962 [9]=28424 [10]=13142 [11]=5683 [12]=2621 [13]=1383 [14]=962 [15]=391
+Maxwell STAT jobs/layer histogram (n=6180000): [1]=2091977 [2]=1643385 [3]=981647 [4]=580966 [5]=332022 [6]=197543 [7]=102234 [8]=53127 [9]=28506 [10]=13181 [11]=5699 [12]=2629 [13]=1386 [14]=974 [15]=391
+Maxwell STAT jobs/layer histogram (n=6200000): [1]=2098845 [2]=1648864 [3]=984739 [4]=582806 [5]=333127 [6]=198280 [7]=102645 [8]=53342 [9]=28645 [10]=13235 [11]=5731 [12]=2637 [13]=1395 [14]=978 [15]=391
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 7693 ms (39.0 tok/s), drafts accepted 160 of 287, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20846 hits / 20846 lookups); 185554 more read by the GPU over PCIe or from another GPU (89.9% of all 206400 routed)
+strata serve: expert tiers: GPU 20846 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 38.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 27 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 376 tokens in 122.7 ms; parked=4 bytes=2607272064 evictions=1 snapshot_bytes=240794924 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6220000): [1]=2106157 [2]=1654449 [3]=987942 [4]=584575 [5]=334019 [6]=198865 [7]=102957 [8]=53508 [9]=28730 [10]=13283 [11]=5754 [12]=2649 [13]=1399 [14]=979 [15]=393
+Maxwell STAT jobs/layer histogram (n=6240000): [1]=2113180 [2]=1659810 [3]=991243 [4]=586506 [5]=335159 [6]=199470 [7]=103291 [8]=53663 [9]=28814 [10]=13320 [11]=5767 [12]=2655 [13]=1402 [14]=982 [15]=395
+Maxwell STAT jobs/layer histogram (n=6260000): [1]=2120646 [2]=1665718 [3]=994302 [4]=588182 [5]=336038 [6]=199976 [7]=103527 [8]=53792 [9]=28886 [10]=13362 [11]=5781 [12]=2660 [13]=1405 [14]=982 [15]=397
+Maxwell STAT jobs/layer histogram (n=6280000): [1]=2127648 [2]=1671248 [3]=997401 [4]=589961 [5]=337023 [6]=200691 [7]=103933 [8]=54025 [9]=29001 [10]=13437 [11]=5807 [12]=2671 [13]=1411 [14]=986 [15]=403
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7882 ms (38.1 tok/s), drafts accepted 153 of 285, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19496 hits / 19496 lookups); 188344 more read by the GPU over PCIe or from another GPU (90.6% of all 207840 routed)
+strata serve: expert tiers: GPU 19496 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 190.6 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.9 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6300000): [1]=2134748 [2]=1676816 [3]=1000733 [4]=591859 [5]=338066 [6]=201217 [7]=104198 [8]=54157 [9]=29075 [10]=13473 [11]=5818 [12]=2681 [13]=1413 [14]=989 [15]=403
+Maxwell STAT jobs/layer histogram (n=6320000): [1]=2141146 [2]=1681890 [3]=1004112 [4]=594037 [5]=339458 [6]=201983 [7]=104601 [8]=54371 [9]=29178 [10]=13519 [11]=5837 [12]=2691 [13]=1418 [14]=1000 [15]=404
+Maxwell STAT jobs/layer histogram (n=6340000): [1]=2148383 [2]=1687489 [3]=1007282 [4]=595852 [5]=340389 [6]=202593 [7]=104911 [8]=54518 [9]=29279 [10]=13559 [11]=5854 [12]=2698 [13]=1425 [14]=1005 [15]=404
+Maxwell STAT jobs/layer histogram (n=6360000): [1]=2154531 [2]=1692880 [3]=1010690 [4]=597971 [5]=341654 [6]=203387 [7]=105330 [8]=54741 [9]=29393 [10]=13623 [11]=5886 [12]=2703 [13]=1428 [14]=1012 [15]=406
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8042 ms (37.3 tok/s), drafts accepted 152 of 305, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20242 hits / 20242 lookups); 197198 more read by the GPU over PCIe or from another GPU (90.7% of all 217440 routed)
+strata serve: expert tiers: GPU 20242 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 34.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.5 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6380000): [1]=2163122 [2]=1698679 [3]=1013646 [4]=599349 [5]=342258 [6]=203722 [7]=105510 [8]=54824 [9]=29433 [10]=13641 [11]=5891 [12]=2711 [13]=1431 [14]=1012 [15]=406
+Maxwell STAT jobs/layer histogram (n=6400000): [1]=2170439 [2]=1704129 [3]=1016742 [4]=601177 [5]=343347 [6]=204310 [7]=105812 [8]=54989 [9]=29518 [10]=13685 [11]=5906 [12]=2717 [13]=1437 [14]=1016 [15]=408
+Maxwell STAT jobs/layer histogram (n=6420000): [1]=2177990 [2]=1709646 [3]=1019761 [4]=602777 [5]=344339 [6]=204907 [7]=106140 [8]=55157 [9]=29649 [10]=13733 [11]=5930 [12]=2722 [13]=1444 [14]=1022 [15]=411
+Maxwell STAT jobs/layer histogram (n=6440000): [1]=2184374 [2]=1715026 [3]=1023084 [4]=604724 [5]=345531 [6]=205740 [7]=106574 [8]=55402 [9]=29782 [10]=13791 [11]=5968 [12]=2732 [13]=1453 [14]=1025 [15]=417
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7779 ms (38.6 tok/s), drafts accepted 159 of 282, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18955 hits / 18955 lookups); 186005 more read by the GPU over PCIe or from another GPU (90.8% of all 204960 routed)
+strata serve: expert tiers: GPU 18955 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 103.0 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 377 tokens in 122.4 ms; parked=4 bytes=2607315460 evictions=1 snapshot_bytes=240838320 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6460000): [1]=2191073 [2]=1720454 [3]=1026358 [4]=606740 [5]=346671 [6]=206424 [7]=106929 [8]=55596 [9]=29893 [10]=13849 [11]=5991 [12]=2741 [13]=1459 [14]=1027 [15]=417
+Maxwell STAT jobs/layer histogram (n=6480000): [1]=2198869 [2]=1725924 [3]=1029474 [4]=608427 [5]=347616 [6]=206908 [7]=107179 [8]=55728 [9]=29956 [10]=13879 [11]=5997 [12]=2748 [13]=1464 [14]=1034 [15]=419
+Maxwell STAT jobs/layer histogram (n=6500000): [1]=2205954 [2]=1731450 [3]=1032657 [4]=610190 [5]=348654 [6]=207597 [7]=107527 [8]=55892 [9]=30076 [10]=13919 [11]=6018 [12]=2752 [13]=1473 [14]=1039 [15]=420
+Maxwell STAT jobs/layer histogram (n=6520000): [1]=2211514 [2]=1736647 [3]=1036250 [4]=612488 [5]=350012 [6]=208528 [7]=108018 [8]=56157 [9]=30221 [10]=14001 [11]=6053 [12]=2771 [13]=1482 [14]=1041 [15]=427
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 8082 ms (37.1 tok/s), drafts accepted 157 of 318, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20526 hits / 20526 lookups); 201714 more read by the GPU over PCIe or from another GPU (90.8% of all 222240 routed)
+strata serve: expert tiers: GPU 20526 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 39.3 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 122.7 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6540000): [1]=2218512 [2]=1741917 [3]=1039520 [4]=614413 [5]=351116 [6]=209177 [7]=108395 [8]=56360 [9]=30335 [10]=14046 [11]=6079 [12]=2781 [13]=1489 [14]=1042 [15]=427
+Maxwell STAT jobs/layer histogram (n=6560000): [1]=2226790 [2]=1747569 [3]=1042440 [4]=615867 [5]=351921 [6]=209612 [7]=108614 [8]=56487 [9]=30388 [10]=14073 [11]=6093 [12]=2786 [13]=1493 [14]=1046 [15]=428
+Maxwell STAT jobs/layer histogram (n=6580000): [1]=2234198 [2]=1753386 [3]=1045647 [4]=617605 [5]=352731 [6]=210126 [7]=108850 [8]=56617 [9]=30459 [10]=14111 [11]=6108 [12]=2792 [13]=1497 [14]=1047 [15]=430
+Maxwell STAT jobs/layer histogram (n=6600000): [1]=2241471 [2]=1759349 [3]=1048798 [4]=619405 [5]=353592 [6]=210631 [7]=109058 [8]=56746 [9]=30524 [10]=14132 [11]=6120 [12]=2799 [13]=1500 [14]=1047 [15]=430
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7658 ms (39.2 tok/s), drafts accepted 153 of 267, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (18890 hits / 18890 lookups); 179830 more read by the GPU over PCIe or from another GPU (90.5% of all 198720 routed)
+strata serve: expert tiers: GPU 18890 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 111.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.7 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6620000): [1]=2248406 [2]=1764713 [3]=1052088 [4]=621348 [5]=354697 [6]=211288 [7]=109413 [8]=56924 [9]=30620 [10]=14177 [11]=6138 [12]=2804 [13]=1506 [14]=1049 [15]=430
+Maxwell STAT jobs/layer histogram (n=6640000): [1]=2255794 [2]=1770371 [3]=1055209 [4]=623136 [5]=355668 [6]=211837 [7]=109670 [8]=57065 [9]=30685 [10]=14210 [11]=6152 [12]=2811 [13]=1507 [14]=1052 [15]=432
+Maxwell STAT jobs/layer histogram (n=6660000): [1]=2263194 [2]=1776091 [3]=1058323 [4]=624926 [5]=356592 [6]=212386 [7]=109907 [8]=57190 [9]=30753 [10]=14250 [11]=6169 [12]=2822 [13]=1508 [14]=1053 [15]=434
+Maxwell STAT jobs/layer histogram (n=6680000): [1]=2268686 [2]=1781165 [3]=1061741 [4]=627277 [5]=358065 [6]=213420 [7]=110460 [8]=57478 [9]=30911 [10]=14327 [11]=6209 [12]=2839 [13]=1515 [14]=1057 [15]=440
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 8706 ms (34.5 tok/s), drafts accepted 140 of 318, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (20956 hits / 20956 lookups); 209444 more read by the GPU over PCIe or from another GPU (90.9% of all 230400 routed)
+strata serve: expert tiers: GPU 20956 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 128.5 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 375 tokens in 123.0 ms; parked=4 bytes=2607265916 evictions=1 snapshot_bytes=240788776 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6700000): [1]=2275870 [2]=1786619 [3]=1064986 [4]=629081 [5]=359093 [6]=213997 [7]=110824 [8]=57641 [9]=31017 [10]=14364 [11]=6229 [12]=2847 [13]=1522 [14]=1059 [15]=440
+Maxwell STAT jobs/layer histogram (n=6720000): [1]=2283087 [2]=1792152 [3]=1068156 [4]=630968 [5]=360171 [6]=214549 [7]=111107 [8]=57795 [9]=31081 [10]=14394 [11]=6241 [12]=2855 [13]=1525 [14]=1067 [15]=440
+Maxwell STAT jobs/layer histogram (n=6740000): [1]=2290062 [2]=1797663 [3]=1071356 [4]=632843 [5]=361221 [6]=215250 [7]=111442 [8]=57959 [9]=31187 [10]=14428 [11]=6269 [12]=2860 [13]=1534 [14]=1072 [15]=440
+Maxwell STAT jobs/layer histogram (n=6760000): [1]=2296174 [2]=1802964 [3]=1074741 [4]=634945 [5]=362540 [6]=216084 [7]=111895 [8]=58199 [9]=31316 [10]=14499 [11]=6294 [12]=2867 [13]=1537 [14]=1079 [15]=444
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8179 ms (36.7 tok/s), drafts accepted 154 of 323, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21516 hits / 21516 lookups); 204084 more read by the GPU over PCIe or from another GPU (90.5% of all 225600 routed)
+strata serve: expert tiers: GPU 21516 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 48.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 123.2 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6780000): [1]=2302743 [2]=1808162 [3]=1078171 [4]=636988 [5]=363763 [6]=216804 [7]=112295 [8]=58399 [9]=31438 [10]=14552 [11]=6314 [12]=2878 [13]=1545 [14]=1081 [15]=444
+Maxwell STAT jobs/layer histogram (n=6800000): [1]=2309992 [2]=1813637 [3]=1081416 [4]=638874 [5]=364821 [6]=217359 [7]=112558 [8]=58547 [9]=31495 [10]=14576 [11]=6333 [12]=2885 [13]=1548 [14]=1089 [15]=446
+Maxwell STAT jobs/layer histogram (n=6820000): [1]=2317479 [2]=1819287 [3]=1084485 [4]=640547 [5]=365749 [6]=217921 [7]=112854 [8]=58709 [9]=31590 [10]=14615 [11]=6349 [12]=2895 [13]=1554 [14]=1090 [15]=448
+Maxwell STAT jobs/layer histogram (n=6840000): [1]=2324677 [2]=1824942 [3]=1087674 [4]=642244 [5]=366696 [6]=218536 [7]=113202 [8]=58872 [9]=31689 [10]=14659 [11]=6371 [12]=2902 [13]=1562 [14]=1094 [15]=448
+strata serve: prompt 74 tokens = 69 reused + 5 read in 205 ms (24.4 tok/s), 300 generated in 8213 ms (36.5 tok/s), drafts accepted 146 of 298, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (21249 hits / 21249 lookups); 196191 more read by the GPU over PCIe or from another GPU (90.2% of all 217440 routed)
+strata serve: expert tiers: GPU 21249 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 38.8 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 16 of 23 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 374 tokens in 122.7 ms; parked=4 bytes=2607265912 evictions=1 snapshot_bytes=240788772 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6860000): [1]=2331320 [2]=1830019 [3]=1090935 [4]=644276 [5]=367950 [6]=219311 [7]=113628 [8]=59146 [9]=31825 [10]=14720 [11]=6403 [12]=2919 [13]=1569 [14]=1097 [15]=448
+Maxwell STAT jobs/layer histogram (n=6880000): [1]=2338661 [2]=1835416 [3]=1094155 [4]=646149 [5]=369001 [6]=219884 [7]=113891 [8]=59299 [9]=31885 [10]=14754 [11]=6421 [12]=2927 [13]=1571 [14]=1101 [15]=449
+Maxwell STAT jobs/layer histogram (n=6900000): [1]=2345839 [2]=1841134 [3]=1097285 [4]=648034 [5]=369960 [6]=220441 [7]=114177 [8]=59424 [9]=31973 [10]=14790 [11]=6439 [12]=2936 [13]=1576 [14]=1105 [15]=450
+Maxwell STAT jobs/layer histogram (n=6920000): [1]=2352493 [2]=1846570 [3]=1100550 [4]=649982 [5]=371073 [6]=221189 [7]=114578 [8]=59629 [9]=32095 [10]=14840 [11]=6463 [12]=2951 [13]=1580 [14]=1108 [15]=455
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.5 tok/s), 300 generated in 7886 ms (38.0 tok/s), drafts accepted 150 of 279, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19251 hits / 19251 lookups); 186669 more read by the GPU over PCIe or from another GPU (90.7% of all 205920 routed)
+strata serve: expert tiers: GPU 19251 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 151.4 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 4 windows, 14 of 20 drafts accepted
+strata serve: conversation cache: dropped 1 superseded copy of this conversation; parked=3
+strata serve: conversation cache: parked 373 tokens in 122.8 ms; parked=4 bytes=2607265908 evictions=1 snapshot_bytes=240788768 reused_kv_bytes=0
+Maxwell STAT jobs/layer histogram (n=6940000): [1]=2360281 [2]=1852076 [3]=1103676 [4]=651612 [5]=371979 [6]=221664 [7]=114858 [8]=59764 [9]=32181 [10]=14874 [11]=6484 [12]=2956 [13]=1586 [14]=1109 [15]=455
+Maxwell STAT jobs/layer histogram (n=6960000): [1]=2368223 [2]=1857799 [3]=1106716 [4]=653231 [5]=372789 [6]=222093 [7]=115091 [8]=59868 [9]=32236 [10]=14894 [11]=6496 [12]=2960 [13]=1588 [14]=1115 [15]=455
+Maxwell STAT jobs/layer histogram (n=6980000): [1]=2373934 [2]=1862966 [3]=1110154 [4]=655478 [5]=374226 [6]=223070 [7]=115552 [8]=60176 [9]=32379 [10]=14945 [11]=6531 [12]=2967 [13]=1594 [14]=1120 [15]=457
+Maxwell STAT jobs/layer histogram (n=7000000): [1]=2379929 [2]=1868314 [3]=1113546 [4]=657666 [5]=375488 [6]=223926 [7]=115971 [8]=60426 [9]=32519 [10]=15027 [11]=6563 [12]=2985 [13]=1594 [14]=1127 [15]=461
+strata serve: prompt 74 tokens = 69 reused + 5 read in 204 ms (24.6 tok/s), 300 generated in 8392 ms (35.7 tok/s), drafts accepted 149 of 324, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (19389 hits / 19389 lookups); 209091 more read by the GPU over PCIe or from another GPU (91.5% of all 228480 routed)
+strata serve: expert tiers: GPU 19389 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 76.9 MB from storage (0 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 5 windows, 17 of 23 drafts accepted

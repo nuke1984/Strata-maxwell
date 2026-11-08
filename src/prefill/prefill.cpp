@@ -960,7 +960,7 @@ struct Prefill::Impl {
     bool cpu_gate = false;   // the median ratio is below 1: the layers that share are the cheaper ones
     // Maxwell (sm_50) tiers: their experts are computed THERE for the prompt chunk (not read from the arena),
     // and written into the grouped Dm rows before the combine.  on_mw marks them per expert for the layer.
-    core::MaxwellExperts* mw[4] = {};
+    core::MaxwellExperts* mw[8] = {};
     core::MaxwellMetaTier* meta = nullptr;
     int mw_count = 0;
     std::vector<char> on_mw;
@@ -2232,7 +2232,7 @@ bool Prefill::set_maxwell(core::MaxwellExperts** tiers, int count, std::string& 
     Impl& m = *impl_;
     m.mw_count = 0;
     if (tiers == nullptr || count <= 0) return true;
-    if (count > 4) count = 4;
+    if (count > 8) count = 8;
     if (!mmq_plan().any) { err = "prefill maxwell: needs the MMQ prompt path"; return false; }
     for (int i = 0; i < count; ++i) {
         if (tiers[i] == nullptr || !tiers[i]->valid()) continue;
@@ -4241,7 +4241,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                                       const char* e = std::getenv("STRATA_MW_REV");
                                       return e != nullptr && std::atoi(e) != 0;
                                   }();
-                                  // STRATA_MW_FASTCOMPLETE (2026-10-25, the ordering-debt campaign's decoupling arm): the four
+                                  // STRATA_MW_FASTCOMPLETE (2026-10-25, the ordering-debt campaign's decoupling arm): the
                                    // completes run CONCURRENTLY - one thread per card, each [wait own AD2H event ->
                                    // scatter own rows].  ROW-SPLIT SAFETY: the cards' row sets are DISJOINT (each entry
                                    // owned by exactly one card; no accumulate), so the scatters are independent writes

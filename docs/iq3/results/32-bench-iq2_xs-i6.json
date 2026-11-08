@@ -1,0 +1,116 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 0,
+   "read": 74,
+   "prefill_ms": 1025,
+   "prefill_tps": 72.2,
+   "generated": 600,
+   "decode_ms": 11712,
+   "decode_tps": 51.2,
+   "drafts_accepted": 360,
+   "drafts_total": 593
+  },
+  "seconds": 12.75,
+  "generated": 600,
+  "client_tps": 47.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150. Let's draft Italian ~150 words. Need ensure around 150. Let's count. Draft:\n\n\"Firenze, capitale della Toscana, è una città di grande valore storico e artistico. Nata come colonia romana e sviluppatasi nel Medioevo, divenne nel Rinascimento uno dei centri culturali più importanti d’Europa, grazie alla famiglia Medici e a figure come Dante, Giotto, Brunelleschi, Michelangelo e Leonardo. La sua arte si esprime nei palazzi, nelle chiese e nelle piazze: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, il Palazzo Vecchio e il Ponte Vecchio. Da visitare anche Santa Maria del Fiore, Santa Croce, la Galleria dell’Accademia, il David di Michelangelo e il Piazzale Michelangelo, da cui si ammira la città. Firenze unisce storia, arte e vita quotidiana, offrendo un patrimonio UNESCO e un’atmosfera elegante, ideale per passeggiate tra botteghe, caffè e monumenti.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 di8 grande9 valore10 storico11 e12 artistico13. Nata14 come15 colonia16 romana17 e18 sviluppatasi19 nel20 Medioevo21, divenne22 nel23 Rinascimento24 uno25 dei26 centri27 culturali28 più29 importanti30 d’Europa31, grazie32 alla33 famiglia34 Medici35 e36 a37 figure38 come39 Dante40, Giotto41, Brunelleschi42, Michelangelo43 e44 Leonardo45. La46 sua47 arte48 si49 esprime50 nei51 palazzi52, nelle53 chiese54 e55 nelle56 piazze57: il58 Duomo59 con60 la61 cupola62 di63 Brunelleschi64, il65 Battistero66, la67 Galleria68 degli69 Uffizi70, il71 Palazzo72 Vecchio73 e74 il75 Ponte76 Vecchio77. Da78 visitare79 anche80 Santa81 Maria82 del83 Fiore84, Santa85 Croce86, la87 Galleria88 dell’Accademia89, il90 David91 di92 Michelangelo9"
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 224,
+   "prefill_tps": 22.3,
+   "generated": 600,
+   "decode_ms": 11064,
+   "decode_tps": 54.2,
+   "drafts_accepted": 372,
+   "drafts_total": 592
+  },
+  "seconds": 11.29,
+  "generated": 600,
+  "client_tps": 53.1,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need maybe count around 150. Let's draft Italian ~150 words. Need ensure approx. Count words. Draft:\n\n\"Firenze, capitale del Rinascimento, è una città italiana ricca di storia e arte. Fondata dai Romani come Florentia, nel Medioevo divenne un importante centro commerciale e politico, soprattutto grazie alla famiglia Medici, che promossero cultura e architettura. La sua arte è celebre in tutto il mondo: la Galleria degli Uffizi conserva capolavori di Botticelli, Leonardo e Caravaggio, mentre il Duomo di Santa Maria del Fiore, con la cupola di Brunelleschi, è un simbolo della città. Da visitare anche Palazzo Vecchio, Ponte Vecchio, Santa Croce e la Galleria dell'Accademia, dove si trova il David di Michelangelo. Passeggiare tra le sue piazze, chiese e palazzi significa immergersi in un patrimonio storico e artistico unico, tra monumenti, giardini e panorami sulla Toscana.\"\n\nCount: Firenze(1) capitale2 del3 Rinascimento4 è5 una6 città7 italiana8 ricca9 di10 storia11 e12 arte13. Fondata14 dai15 Romani16 come17 Florentia18 nel19 Medioevo20 divenne21 un22 importante23 centro24 commerciale25 e26 politico27 soprattutto28 grazie29 alla30 famiglia31 Medici32 che33 promossero34 cultura35 e36 architettura37. La38 sua39 arte40 è41 celebre42 in43 tutto44 il45 mondo46: la47 Galleria48 degli49 Uffizi50 conserva51 capolavori52 di53 Botticelli54 Leonardo55 e56 Caravaggio57 mentre58 il59 Duomo60 di61 Santa62 Maria63 del64 Fiore65 con66 la67 cupola68 di69 Brunelleschi70 è71 un72 simbolo73 della74 città75. Da76 visitare77 anche78 Palazzo79 Vecchio80 Ponte81 Vecchio82 Santa83 Croce84 e85 la86 Galleria87 dell'Accademia88 dove89 si90 trova91 il92 David93 di94 Michelangelo95. Passeggiare96 tra97 le98 sue99 piazze100 chiese101 e1"
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 191,
+   "prefill_tps": 26.2,
+   "generated": 600,
+   "decode_ms": 11004,
+   "decode_tps": 54.5,
+   "drafts_accepted": 368,
+   "drafts_total": 577
+  },
+  "seconds": 11.2,
+  "generated": 600,
+  "client_tps": 53.6,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need likely concise. Need ensure around 150 words. Let's draft Italian ~150 words. Count words. Need maybe exactly approx. Let's count carefully.\n\nDraft:\n\"Firenze, capitale del Rinascimento, è una città italiana ricca di storia e arte. Fondata dai Romani come Florentia, nel Medioevo divenne un importante centro commerciale e politico, soprattutto grazie alla famiglia Medici. Qui nacquero Dante, Giotto, Brunelleschi, Michelangelo e Leonardo, e la città conserva capolavori di Botticelli, Caravaggio e altri. Il centro storico, patrimonio UNESCO, offre monumenti come il Duomo con la cupola di Brunelleschi, il Battistero, Santa Maria Novella, Palazzo Vecchio e la Galleria degli Uffizi. Da visitare anche Ponte Vecchio, Piazza della Signoria, Santa Croce e il Piazzale Michelangelo, da cui si ammira la città. Firenze unisce cultura, architettura e vita quotidiana, con mercati, caffè e tradizioni toscane.\"\n\nCount words: Firenze(1), capitale2 del3 Rinascimento4 è5 una6 città7 italiana8 ricca9 di10 storia11 e12 arte13. Fondata14 dai15 Romani16 come17 Florentia18 nel19 Medioevo20 divenne21 un22 importante23 centro24 commerciale25 e26 politico27 soprattutto28 grazie29 alla30 famiglia31 Medici32. Qui33 nacquero34 Dante35 Giotto36 Brunelleschi37 Michelangelo38 e39 Leonardo40 e41 la42 città43 conserva44 capolavori45 di46 Botticelli47 Caravaggio48 e49 altri50. Il51 centro52 storico53 patrimonio54 UNESCO55 offre56 monumenti57 come58 il59 Duomo60 con61 la62 cupola63 di64 Brunelleschi65 il66 Battistero67 Santa68 Maria69 Novella70 Palazzo71 Vecchio72 e73 la74 Galleria75 degli76 Uffizi77. Da78 visitare79 anche80 Ponte81 Vecchio82 Piazza83 della84 Signoria85 Santa86 Croce87 e88 il89 Piazzale90 Michelangelo91 da92 cui93 si94 ammira95 la96 città97. Firenze98 unisce99 cultura1"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 0,
+   "read": 117,
+   "prefill_ms": 975,
+   "prefill_tps": 120.0,
+   "generated": 600,
+   "decode_ms": 9636,
+   "decode_tps": 62.3,
+   "drafts_accepted": 407,
+   "drafts_total": 582
+  },
+  "seconds": 10.62,
+  "generated": 600,
+  "client_tps": 56.5,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final answer likely code. Need ensure about 40 lines. Could include function, type hints, docstring, tests. Need maybe use typing List, Tuple. Need handle intervals as list [start,end] or tuple? Type hint could Sequence[Sequence[int]] -> List[List[int]]. Need sort, merge overlapping or adjacent. Adjacent means [1,2] and [2,3] merge to [1,3]. Need maybe validate start <= end? Could include. About 40 lines. Need two test cases. Could include doctest? \"due casi di test\" maybe simple asserts. Need final in Italian. Need maybe code block. Ensure around 40 lines. Let's craft with comments. Count lines? Need about 40. Let's draft:\n\nfrom typing import List, Sequence\n\ndef merge_intervals(intervals: Sequence[Sequence[int]]) -> List[List[int]]:\n    \"\"\"\n    Unisce intervalli sovrapposti o adiacenti.\n\n    Args:\n        intervals: lista di intervalli [inizio, fine].\n\n    Returns:\n        Lista ordinata di intervalli uniti.\n\n    Raises:\n        ValueError: se un intervallo ha inizio > fine.\n    \"\"\"\n    if not intervals:\n        return []\n\n    normalized = []\n    for interval in intervals:\n        start, end = interval\n        if start > end:\n            raise ValueError(\"L'inizio deve essere <= fine\")\n        normalized.append([start, end])\n\n    normalized.sort(key=lambda x: (x[0], x[1]))\n\n    merged: List[List[int]] = []\n    current_start, current_end = normalized[0]\n\n    for start, end in normalized[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n\n    merged.append([current_start, current_end])\n    return merged\n\nif __name__ == \"__main__\":\n    assert merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]]) == [[1, 6], [8, 10], [15, 18]]\n    assert merge_intervals([[1, 4], [4, 5], [6, 7]]) == [[1, 5], [6, 7"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 112,
+   "read": 5,
+   "prefill_ms": 225,
+   "prefill_tps": 22.2,
+   "generated": 600,
+   "decode_ms": 9876,
+   "decode_tps": 60.8,
+   "drafts_accepted": 395,
+   "drafts_total": 563
+  },
+  "seconds": 10.11,
+  "generated": 600,
+  "client_tps": 59.4,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final answer likely code. Need ensure about 40 lines. Could include function, type hints, docstring, tests. Need maybe use List[List[int]] or Sequence. Need handle invalid intervals? Could validate. Need adjacent intervals: [1,2] and [2,3] merge to [1,3]. Sorted output. Need two test cases. Could include doctest? \"due casi di test\" maybe simple asserts. Need around 40 lines. Let's craft concise but enough. Need maybe include from typing import List, Tuple. Function:\n\nfrom typing import List\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"...\"\"\"\n    if not intervals:\n        return []\n    normalized = []\n    for start, end in intervals:\n        if start > end:\n            start, end = end, start\n        normalized.append([start, end])\n    normalized.sort(key=lambda x: (x[0], x[1]))\n    merged: List[List[int]] = []\n    for start, end in normalized:\n        if not merged:\n            merged.append([start, end])\n        elif start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n\nif __name__ == \"__main__\":\n    assert merge_intervals([[1,3],[2,6],[8,10],[15,18]]) == [[1,6],[8,10],[15,18]]\n    assert merge_intervals([[1,4],[4,5],[6,7]]) == [[1,5],[6,7]]\n\nLine count? Let's count: import 1, def 1, docstring maybe 4, if not 2, normalized 1, for 1, if 2, append 1, sort 1, merged 1, for 1, if not 2, elif 2, else 2, return 1, if main 1, asserts 2. Total ~24. Need about 40 lines. Could add more robust validation, type hints, tests. Maybe include exceptions. Need exactly? \"circa 40 righe\" so can be ~40. Let's make ~40 lines. Include docstring with examples? Could be longer. Need two cases of test. Could include do"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 112,
+   "read": 5,
+   "prefill_ms": 193,
+   "prefill_tps": 25.9,
+   "generated": 600,
+   "decode_ms": 9997,
+   "decode_tps": 60.0,
+   "drafts_accepted": 395,
+   "drafts_total": 562
+  },
+  "seconds": 10.19,
+  "generated": 600,
+  "client_tps": 58.9,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final answer likely code block. Need ensure about 40 lines? Could be around 40 lines including docstring, type hints, tests. Need maybe include function and tests. Need think about requirements: intervals [start, end], merge overlapping or adjacent, return sorted list. Type hints. Two test cases. Could include doctest? \"due casi di test\" maybe simple asserts. Need maybe exactly around 40 lines. Let's craft concise but around 40 lines. Need maybe Python code.\n\nPotential implementation:\nfrom typing import List, Tuple\n\nInterval = List[int]\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"...\"\"\"\n    if not intervals:\n        return []\n    sorted_intervals = sorted(intervals, key=lambda x: (x[0], x[1]))\n    merged: List[List[int]] = []\n    current_start, current_end = sorted_intervals[0]\n    for start, end in sorted_intervals[1:]:\n        if start <= current_end:\n            current_end = max(current_end, end)\n        else:\n            merged.append([current_start, current_end])\n            current_start, current_end = start, end\n    merged.append([current_start, current_end])\n    return merged\n\nif __name__ == \"__main__\":\n    assert merge_intervals([[1,3],[2,6],[8,10]]) == [[1,6],[8,10]]\n    assert merge_intervals([[1,4],[4,5]]) == [[1,5]]\n\nLine count? Let's count: import 1, Interval? maybe not. def line 1, docstring lines maybe 5, code lines ~12, tests ~4. Total maybe 25. User says circa 40 righe. Could add more docstring lines and comments to reach ~40. Need not exactly. Could include type hints. Maybe use Tuple? Intervals as list. Could include tests as doctest? \"due casi di test\" maybe include assert. Need maybe around 40 lines. Let's make code with docstring and comments, maybe 40 lines. Need ensure no syntax errors.\n\nCould include:\nfrom typing import List\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"\n    Merge overlapping or adjacent intervals.\n\n    Args:\n        intervals: List of intervals, each as [start, end]."
+ }
+]

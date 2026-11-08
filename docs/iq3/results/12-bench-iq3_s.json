@@ -1,0 +1,173 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 0,
+   "read": 74,
+   "prefill_ms": 983,
+   "prefill_tps": 75.3,
+   "generated": 600,
+   "decode_ms": 13719,
+   "decode_tps": 43.7,
+   "drafts_accepted": 370,
+   "drafts_total": 578
+  },
+  "seconds": 14.71,
+  "generated": 600,
+  "client_tps": 40.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo. La sua arte si respira ovunque: nella cupola del Duomo, nel Campanile di Giotto, nel Battistero e nei musei. Da visitare: la Galleria degli Uffizi, con capolavori di Botticelli e Caravaggio; Palazzo Pitti e i Giardini di Boboli; Ponte Vecchio, la Galleria dell'Accademia con il David di Michelangelo, Santa Croce e Piazza della Signoria. Passeggiare tra i suoi palazzi, chiese e lungarni significa entrare in un museo a cielo aperto, dove storia, arte e bellezza convivono in modo unico.\"\n\nCount words: Firenze,(1) capitale2 della3 Toscana,4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea.13 Fondata14 dai15 Romani16 come17 Florentia,18 nel19 Medioevo20 divenne21 un22 potente23 comune24 mercantile25 e,26 tra27 Trecento28 e29 Cinquecento,30 il31 cuore32 del33 Rinascimento34 grazie35 alla36 famiglia37 Medici.38 Qui39 nacquero40 Dante,41 Petrarca42 e43 Boccaccio,44 e45 lavorarono46 Brunelleschi,47 Michelangelo,48 Botticelli49 e50 Leonardo.51 La52 sua53 arte54 si55 respira56 ovunque:57 nella58 cupola59 del60 Duomo,61 nel62 Campanile63 di64 Giotto,65 nel66 Battistero67 e68 nei69 musei.70 Da71 visitare:72 la73 Galleria74 degli75 Uffizi,76 con77 capolavori78 di79 Botticelli80 e8"
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 244,
+   "prefill_tps": 20.5,
+   "generated": 600,
+   "decode_ms": 13907,
+   "decode_tps": 43.1,
+   "drafts_accepted": 371,
+   "drafts_total": 612
+  },
+  "seconds": 14.16,
+  "generated": 600,
+  "client_tps": 42.4,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need include storia, arte, cosa visitare. Let's count carefully.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile e, tra Trecento e Cinquecento, il cuore del Rinascimento grazie alla famiglia Medici. Qui nacquero Dante, Petrarca e Boccaccio, e lavorarono Brunelleschi, Michelangelo, Botticelli e Leonardo. La sua arte si respira ovunque: nella cupola del Duomo, nel Battistero, in Palazzo Vecchio e negli Uffizi, che custodiscono capolavori come la Venere di Botticelli e il David di Michelangelo. Da visitare anche Ponte Vecchio, Santa Croce, Piazza della Signoria, il Giardino di Boboli e il Piazzale Michelangelo, da cui si ammira il panorama. Passeggiare tra le sue strade significa entrare in un museo a cielo aperto, dove storia, cultura e bellezza convivono in modo unico.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4, è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13. Fondata14 dai15 Romani16 come17 Florentia18, nel19 Medioevo20 divenne21 un22 potente23 comune24 mercantile25 e26, tra27 Trecento28 e29 Cinquecento30, il31 cuore32 del33 Rinascimento34 grazie35 alla36 famiglia37 Medici38. Qui39 nacquero40 Dante41, Petrarca42 e43 Boccaccio44, e45 lavorarono46 Brunelleschi47, Michelangelo48, Botticelli49 e50 Leonardo51. La52 sua53 arte54 si55 respira56 ovunque57: nella58 cupola59 del60 Duomo61, nel62 Battistero63, in64 Palazzo65 Vecchio66 e67 negli68 Uffizi69, che70 custodiscono71 capolavori72 come73 la74 Venere75 di76 Botticelli77 e78 il79 David80 di81 Michelangelo82. Da83 visitare84 anche"
+ },
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 74,
+   "reused": 69,
+   "read": 5,
+   "prefill_ms": 202,
+   "prefill_tps": 24.8,
+   "generated": 600,
+   "decode_ms": 13200,
+   "decode_tps": 45.5,
+   "drafts_accepted": 379,
+   "drafts_total": 585
+  },
+  "seconds": 13.41,
+  "generated": 600,
+  "client_tps": 44.8,
+  "text": "We need answer in Italian. User asks: \"Descrivi la città di Firenze in circa 150 parole: storia, arte e cosa visitare.\" Need produce about 150 words. Need final only. Need count approx 150 words. Let's draft Italian around 150 words. Need ensure about 150. Let's count.\n\nDraft:\n\"Firenze, capitale della Toscana, è una città che ha segnato la storia europea come culla del Rinascimento. Fondata dai Romani come Florentia, nel Medioevo divenne un potente comune mercantile, arricchito da banchieri, mercanti e famiglie come i Medici, che promossero cultura e politica. La sua arte è leggendaria: qui lavorarono Giotto, Brunelleschi, Donatello, Botticelli, Michelangelo e Leonardo. Il centro storico, patrimonio UNESCO, conserva capolavori a ogni angolo. Da visitare: il Duomo con la cupola di Brunelleschi, il Battistero, la Galleria degli Uffizi, Palazzo Pitti, Ponte Vecchio, Santa Croce e Piazzale Michelangelo per il panorama. Passeggiare tra chiese, palazzi e mercati significa respirare secoli di bellezza, umanismo e creatività, in un equilibrio raro tra memoria e vita quotidiana.\"\n\nCount words: Firenze(1), capitale2 della3 Toscana4 è5 una6 città7 che8 ha9 segnato10 la11 storia12 europea13 come14 culla15 del16 Rinascimento17. Fondata18 dai19 Romani20 come21 Florentia22, nel23 Medioevo24 divenne25 un26 potente27 comune28 mercantile29, arricchito30 da31 banchieri32, mercanti33 e34 famiglie35 come36 i37 Medici38, che39 promossero40 cultura41 e42 politica43. La44 sua45 arte46 è47 leggendaria48: qui49 lavorarono50 Giotto51, Brunelleschi52, Donatello53, Botticelli54, Michelangelo55 e56 Leonardo57. Il58 centro59 storico60, patrimonio61 UNESCO62, conserva63 capolavori64 a65 ogni66 angolo67. Da68 visitare69: il70 Duomo71 con72 la73 cupola74 di75 Brunelleschi76, il77 Battistero78, la79 Galleria80 degli81 Uffizi82, Palazzo83 Pitti84, Ponte85 Vecchio86, Santa87"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 0,
+   "read": 117,
+   "prefill_ms": 985,
+   "prefill_tps": 118.8,
+   "generated": 600,
+   "decode_ms": 11738,
+   "decode_tps": 51.1,
+   "drafts_accepted": 423,
+   "drafts_total": 596
+  },
+  "seconds": 12.73,
+  "generated": 600,
+  "client_tps": 47.1,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final with code about 40 lines? Need likely include function, docstring, type hints, two test cases. Could include doctest or assert. Need ensure about 40 lines. Let's craft concise but around 40 lines. Need maybe intervals list of list[int,int]. Adjacent means [1,2] and [2,3] merge to [1,3]. Overlapping too. Sort by start then end. Iterate.\n\nNeed count lines? \"circa 40 righe\" maybe code block around 40 lines. Let's draft:\n\nfrom typing import List, Tuple\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"\n    Unisce intervalli sovrapposti o adiacenti.\n\n    Args:\n        intervals: lista di intervalli [inizio, fine].\n\n    Returns:\n        lista ordinata di intervalli non sovrapposti.\n    \"\"\"\n    if not intervals:\n        return []\n\n    sorted_intervals = sorted(intervals, key=lambda interval: (interval[0], interval[1]))\n    merged: List[List[int]] = []\n\n    for start, end in sorted_intervals:\n        if not merged:\n            merged.append([start, end])\n            continue\n\n        last_start, last_end = merged[-1]\n\n        if start <= last_end + 1:\n            merged[-1][1] = max(last_end, end)\n        else:\n            merged.append([start, end])\n\n    return merged\n\nif __name__ == \"__main__\":\n    assert merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]]) == [[1, 6], [8, 10], [15, 18]]\n    assert merge_intervals([[1, 4], [4, 5]]) == [[1, 5]]\n\nCount lines: 1 import, 2 blank? Let's count code block lines:\n1 from typing import List, Tuple\n2 blank\n3 def merge_intervals...\n4     \"\"\"\n5     Unisce...\n6 blank\n7     Args:\n8         intervals...\n9 blank\n10     Returns:\n11         lista...\n12     \"\"\"\n13     if not intervals:\n14         return []\n15 blank\n16     sorted_intervals = ...\n17     merged"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 112,
+   "read": 5,
+   "prefill_ms": 246,
+   "prefill_tps": 20.3,
+   "generated": 600,
+   "decode_ms": 12789,
+   "decode_tps": 46.9,
+   "drafts_accepted": 368,
+   "drafts_total": 526
+  },
+  "seconds": 13.04,
+  "generated": 600,
+  "client_tps": 46.0,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final with code about 40 lines? Need likely include function, docstring, type hints, two test cases. Could include doctest or assert. Need ensure about 40 lines. Need maybe intervals list of list[int,int]. Merge overlapping or adjacent: if start <= current_end (adjacent if start == current_end? Actually adjacent intervals [1,2] and [2,3] should merge if adiacenti. If inclusive intervals, adjacent means start <= current_end + 1? Need interpret. \"sovrapposti o adiacenti\" in interval merging often adjacent if end == start (touching). If integer intervals [1,2] and [3,4] are adjacent? In continuous intervals, [1,2] and [2,3] touch at point 2, adjacent. If integer discrete, [1,2] and [3,4] adjacent? Usually LeetCode merge intervals: overlapping if start <= end, adjacent if start == end? They say sovrapposti o adiacenti likely [1,2] and [2,3] merge. Could also merge [1,2] and [3,4] if integer adjacent? Need decide. \"adiacenti\" could mean intervals that touch: [1,2] and [2,3]. If they want [1,2] and [3,4] maybe not. We can mention condition start <= current_end or start == current_end + 1? But if continuous, [1,2] and [3,4] not adjacent. If integer, adjacent means no gap: next_start <= current_end + 1. Which is safer? The phrase \"sovrapposti o adiacenti\" in Italian: intervals [1,2] and [2,3] are adjacent (touching). [1,2] and [3,4] are also adjacent? In everyday, consecutive integer intervals maybe adjacent. But typical merge intervals: merge if start <= end (overlap or touch). If they want adjacent as touching, condition start <= current_end. If they want no gap for integer, condition start <= current_end + 1. Need maybe implement with parameter? But user asks simple. Could choose condition start <= current_end or start == current_end + 1? That merges [1,2] and [3,4]. But if continuous, [1,2] and [3,4] have gap (2,3), not adjacent. Hmm.\n\nNeed about 40 lines. Could include"
+ },
+ {
+  "label": "code",
+  "engine": {
+   "prompt_tokens": 117,
+   "reused": 112,
+   "read": 5,
+   "prefill_ms": 201,
+   "prefill_tps": 24.9,
+   "generated": 600,
+   "decode_ms": 11861,
+   "decode_tps": 50.6,
+   "drafts_accepted": 416,
+   "drafts_total": 596
+  },
+  "seconds": 12.07,
+  "generated": 600,
+  "client_tps": 49.7,
+  "text": "We need answer in Italian. User asks: \"Scrivi una funzione Python di circa 40 righe chiamata merge_intervals che, data una lista di intervalli [inizio, fine], unisca quelli sovrapposti o adiacenti e restituisca la lista ordinata. Includi il docstring, i type hint e due casi di test.\"\n\nNeed produce final with code about 40 lines? Need likely include function, docstring, type hints, two test cases. Could include doctest or assert. Need ensure about 40 lines. Let's craft concise but around 40 lines. Need maybe intervals list of list[int,int] or tuple. Adjacent means [1,2] and [2,3] merge to [1,3]. Overlapping too. Sort by start then end. Iterate.\n\nNeed count lines? \"circa 40 righe\" maybe code block around 40 lines. Let's draft:\n\nfrom typing import List, Tuple\n\ndef merge_intervals(intervals: List[List[int]]) -> List[List[int]]:\n    \"\"\"\n    Unisce intervalli sovrapposti o adiacenti.\n\n    Args:\n        intervals: lista di intervalli [inizio, fine].\n\n    Returns:\n        lista ordinata di intervalli non sovrapposti.\n\n    Raises:\n        ValueError: se un intervallo ha inizio > fine.\n    \"\"\"\n    if not intervals:\n        return []\n\n    for start, end in intervals:\n        if start > end:\n            raise ValueError(\"L'inizio non può essere maggiore della fine\")\n\n    sorted_intervals = sorted(intervals, key=lambda interval: (interval[0], interval[1]))\n    merged: List[List[int]] = []\n\n    for start, end in sorted_intervals:\n        if not merged:\n            merged.append([start, end])\n            continue\n\n        last_start, last_end = merged[-1]\n\n        if start <= last_end + 1:\n            merged[-1][1] = max(last_end, end)\n        else:\n            merged.append([start, end])\n\n    return merged\n\nif __name__ == \"__main__\":\n    assert merge_intervals([[1, 3], [2, 6], [8, 10], [15, 18]]) == [[1, 6], [8, 10], [15, 18]]\n    assert merge_intervals([[1, 2], [2, 3], [4, 5]]) == [[1, 3], [4, 5]]\n\nCount lines: 1 import, 2 blank? Let's count code block lines:\n1 from typing import List, Tuple\n2 blank\n3 def merge_intervals...\n4 \"\"\"\n5 Unisce...\n6 blank"
+ },
+ {
+  "label": "prose",
+  "engine": {
+   "prompt_tokens": 84,
+   "reused": 0,
+   "read": 84,
+   "prefill_ms": 785,
+   "prefill_tps": 107.1,
+   "generated": 600,
+   "decode_ms": 13712,
+   "decode_tps": 43.8,
+   "drafts_accepted": 316,
+   "drafts_total": 444
+  },
+  "seconds": 14.5,
+  "generated": 600,
+  "client_tps": 41.4,
+  "text": "We need answer user in Italian. Need produce 200 different ways to describe a sunset, one per line, verbose and detailed, no repeats. Need ensure 200 lines. Need likely numbered? User says uno per riga, senza ripeterti. Could number each line? That's one per line. Need 200 unique descriptions. Need be prolisso e dettagliato. Need avoid repetition. Need count exactly 200. Need maybe each line a phrase/sentence. Need ensure no repeated exact phrases? Need variety. Need Italian. Need maybe not too long? 200 detailed lines could be long but manageable. Need count. We can generate numbered 1-200. Need ensure each line unique. Need maybe avoid repeated words? \"senza ripeterti\" likely no repeated descriptions, not necessarily no repeated words. But to be safe vary. Need produce 200 lines. Need count carefully. Could use numbered list. Need maybe each line one description. Need ensure 200. Let's craft with numbering. Need maybe each line sufficiently detailed. Could be long. Need avoid duplicates. Need maybe use different metaphors: colors, emotions, landscapes, seasons, times, sensory, abstract. Need 200. Need count. Let's plan structure: 1-200 numbered. Each line: \"1. ...\" etc. Need ensure no line blank? Could have blank? Better no blank except maybe final? User wants one per line. Numbered lines okay. Need maybe no extra intro? Could just list. But maybe include short intro? To satisfy, maybe only list. Need 200 lines. Need count. Let's generate carefully. Could use categories: 1-20 sea, 21-40 mountains, 41-60 city, 61-80 forest, 81-100 desert, 101-120 winter, 121-140 spring, 141-160 autumn, 161-180 emotional/abstract, 181-200 poetic/sensory. Need unique. Need detailed. Need avoid exact repeated phrases. Need maybe each line around 10-20 words. 200 lines maybe 3000-5000 words. Acceptable. Need ensure count. Let's produce with numbers. Need verify count. I can manually enumerate. Need maybe use a table? No, one per line. Numbering helps count. Need ensure no duplicate numbers. Need maybe line 200. Let's craft. Need be careful with Italian grammar. Need maybe \"tramonto\" variations: sole, disco, astro, luce, orizzonte, cielo, crepuscolo. Need not repeat too much. Need detailed. Let's start.\n\nNeed maybe use"
+ },
+ {
+  "label": "prose",
+  "engine": {
+   "prompt_tokens": 84,
+   "reused": 79,
+   "read": 5,
+   "prefill_ms": 246,
+   "prefill_tps": 20.3,
+   "generated": 600,
+   "decode_ms": 14120,
+   "decode_tps": 42.5,
+   "drafts_accepted": 320,
+   "drafts_total": 508
+  },
+  "seconds": 14.37,
+  "generated": 600,
+  "client_tps": 41.8,
+  "text": "We need answer user in Italian. Need produce 200 diverse ways to describe a sunset, one per line, no repeats. User asks \"Elenca in modo prolisso e dettagliato 200 modi diversi di descrivere un tramonto, uno per riga, senza ripeterti.\" Need likely exactly 200 lines? \"uno per riga\" means each description on a line. Need prolisso e dettagliato: verbose and detailed. Need avoid repetition. Need ensure 200 distinct descriptions. Could number them? If numbered, each line includes number and description. That's okay one per line. Need 200 lines. Need be careful not to repeat phrases too much. Need Italian. Need maybe no extra intro? Could just list 1-200. Need ensure count. Need generate 200 detailed descriptions. This is long. Need maybe use varied imagery: colors, emotions, metaphors, settings, times, weather, seasons, landscapes, urban, sea, mountains, desert, forest, city, river, snow, rain, clouds, birds, light, shadows, etc. Need avoid exact repeats. Need maybe each line a sentence. Need count exactly 200. Need maybe use numbered list to verify. Need ensure no duplicate descriptions. Need \"prolisso e dettagliato\" so each line fairly long. But 200 long lines huge. Need manageable. Could make each line 10-20 words. Need 200 lines. Need avoid repetition of key words? Some repetition inevitable but no repeated full lines. Need maybe use varied verbs and nouns. Need maybe not use same opening too much. Need produce final only list. Need count. Let's design 200 numbered lines. Need ensure 1-200. Could generate systematically with categories. Need maybe use a script mentally? We can produce 200 lines. Need count carefully. Let's plan categories:\n1-20: colors and sky\n21-40: sea/coast\n41-60: mountains/hills\n61-80: city/urban\n81-100: forest/nature\n101-120: seasons/weather\n121-140: emotions/memories\n141-160: metaphors/art/music\n161-180: animals/objects\n181-200: abstract/philosophical.\nNeed each line unique. Need maybe avoid repeated \"Il tramonto\" too much. Use varied subjects: \"Il sole calante...\", \"La luce...\", \"Il cielo...\", \"L'orizzonte...\", etc.\nNeed ensure no exact repeats. Could use numbered list. Need maybe line length not too long but detailed. Need 200 lines. Let's craft carefully. Need count"
+ },
+ {
+  "label": "prose",
+  "engine": {
+   "prompt_tokens": 84,
+   "reused": 79,
+   "read": 5,
+   "prefill_ms": 200,
+   "prefill_tps": 25.1,
+   "generated": 600,
+   "decode_ms": 13768,
+   "decode_tps": 43.6,
+   "drafts_accepted": 309,
+   "drafts_total": 429
+  },
+  "seconds": 13.97,
+  "generated": 600,
+  "client_tps": 42.9,
+  "text": "We need answer user in Italian. Need produce 200 different ways to describe a sunset, one per line, verbose and detailed, no repeats. Need ensure 200 lines. Need likely numbered? User says uno per riga, senza ripeterti. Could number each line? That's one per line. Need 200 unique descriptions. Need be prolisso e dettagliato. Need avoid repetition. Need count exactly 200. Need maybe each line a phrase/sentence. Need Italian. Need ensure no duplicate words? \"senza ripeterti\" likely no repeated descriptions, not necessarily no repeated words. But should vary. Need produce 200 lines. Need count. Could generate numbered 1-200. Need ensure each line unique. Need detailed. Need maybe each line around 10-20 words. 200 lines long. Need be careful count. Could use structured generation mentally? Need produce final with 200 numbered lines. Need ensure no accidental duplicates. Need maybe use categories: colors, metaphors, emotions, landscapes, times, weather, seasons, senses, etc. Need 200 unique. Need count. Let's design with numbering 1-200. Need maybe each line starts with number. That's okay. Need no repeats. Need detailed. Need avoid too similar. Need maybe use varied subjects: cielo, sole, nuvole, mare, montagna, città, campagna, deserto, foresta, lago, neve, pioggia, vento, uccelli, ombre, luce, colori, emozioni, tempo, memoria, poesia, scienza, miti, ecc. Need 200. Need ensure each line is a description of sunset. Could be poetic. Need \"prolisso e dettagliato\" so each line not too short. But 200 lines long. Need maybe 12-25 words each. Need count. Let's create list with numbers. Need verify 200. Could generate in blocks of 20. Need ensure no duplicate phrases. Let's plan.\n\nNeed maybe final only list. Could include intro? User asks list. Better just list. Need 200 lines. Numbering helps count. Need ensure each line one per line. Need no blank lines? Could have blank lines? Better no blank lines except line breaks. Numbered lines.\n\nNeed produce 200 unique. Let's craft carefully. Need maybe use semicolons? Each line one description. Need avoid repeated exact phrases. Some words can repeat but not too much. Need maybe use varied adjectives. Need ensure no line identical. Need maybe use different metaphors.\n\nLet's generate 200. I'll number 1-200. Need count. I'll create in blocks of 20 and check.\n\nBlock 1 (1-20):\n1."
+ }
+]

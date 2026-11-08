@@ -1,0 +1,53 @@
+# Iteration 7 baseline: the IQ4_NL down kernels' memory instructions BEFORE the planar layout.
+# object: /root/Strata-iq3/build-iq3/CMakeFiles/strata_maxwell.dir/src/kernels/cuda/expert_maxwell.cu.o
+# built from: 43c84922 iq3: iteration 6 measured - the cost is the down IQ4_NL, and SwPowerCap does not discriminate
+# tool: cuobjdump -sass (nvcc 12.9, sm_50), counts of LDG/LDS mnemonics per kernel.
+# What it pins: the code path reads its 16 code bytes with EIGHT LDG.E.CI.U16 per loop body
+# (that is get_int_b2 four times, two half-words each), NOT with an LDG.128. The U16 count is the
+# design's whole premise, and it is measured here rather than argued.
+
+=== _ZN6strata7kernels4cuda20expert_iq4nl_down_mtILi2ELi128ELi4EEEvPKhmmmPKiS6_PKNS1_50_GLOBAL
+    instructions: 804
+      LDG.E.CI          13
+      LDG.E.CI.128      31
+      LDG.E.CI.U16       8
+      LDG.E.CI.U8        4
+      LDS.U.128          9
+      LDS.U.32          12
+      STG.E              4
+      STS                5
+      STS.128           31
+      STS.U8             2
+
+=== _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb1EEEvPKhmmmPKNS1_50_GLOBAL__N__29ae
+    instructions: 564
+      LDG.E.CI           3
+      LDG.E.CI.128      29
+      LDG.E.CI.U16       8
+      LDG.E.CI.U8        3
+      LDS.U.128          3
+      LDS.U.32           3
+      STG.E.U16          1
+      STS                2
+      STS.128           29
+      STS.U8             1
+
+=== _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb0EEEvPKhmmmPKNS1_50_GLOBAL__N__29ae
+    instructions: 540
+      LDG.E.CI           3
+      LDG.E.CI.128      29
+      LDG.E.CI.U16       8
+      LDG.E.CI.U8        3
+      LDS.U.128          3
+      LDS.U.32           3
+      STG.E              1
+      STS                2
+      STS.128           29
+      STS.U8             1
+
+=== the loop arithmetic, from the source (kIq4nlBlocks = 20, SPLIT = 2) ===
+8 U16 per inlined iq4nl_load_block call site
+x 10 iterations per thread (20 blocks / SPLIT 2)
+x 2 threads per row (SPLIT 2)
+= 160 U16 loads per down row, today.
+With the planar form: 1 LDG.128 per iteration -> 20 per row (8x fewer instructions, same bytes).

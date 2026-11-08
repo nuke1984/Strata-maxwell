@@ -1,0 +1,165 @@
+[strata] 2026-11-07 18:30:12 engine started: /root/Strata-iq3/build-iq3/strata --serve --pack /root/Strata-data/packs/iq3_s --native /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf --ple-gguf /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf --expert-profile /root/Strata-maxwell/data/expert-profile.bin --expert-cache auto --prefill auto --spec 6 --spec-min-p 0.5 --mtp /root/Strata-data/mtp/rt --max-context 128000 --kv k8v4 --mmap-experts --maxwell-devices 1,2,3,4,5,6,7,8 --maxwell-reserve-mib 250 --spec-split
+strata generate: memory guard: limit 24.0 GiB (source: meminfo), current 0.5 GiB, reclaimable cache credited 0.0 GiB; available 23.5 GiB (MemAvailable 23.5 GiB), floor 2560 MiB
+strata generate: PCIe probe: 11.3 GB/s host->device (best of 11.3 11.2 11.2 11.2) -> pcie_frac 0.31 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: /root/Strata-data/packs/iq3_s experts (largest blob 2.66 MB), token embedding IQ4_XS in VRAM (322 MiB, 0.5 s)
+strata generate: 1466 MiB of weights loaded from /root/Strata-data/packs/iq3_s in 0.9 s (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 2018.88 MiB of weights, in 3.4 s
+strata generate: WARNING: --ple-io direct measures slow here (11512 rows/s, about 47 MB/s of random 4 KiB reads): a prompt can spend minutes reading layer 1 and trip the stall watchdog (#1425, #1629). --ple-io mmap was 40-100x faster on some DRAM-less NVMe drives but 7x slower on a SATA SSD (#2040), so it is not chosen for you; --ple-io ram needs the RAM for the table (kept direct: pass --ple-io mmap or --ple-io ram to change it; in a config file's "args" they are two entries: "--ple-io", "mmap")
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: profile /root/Strata-maxwell/data/expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: PLE on, table 320001536 rows of /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf
+strata mtp: draft layer loaded, 948 MiB of VRAM (experts 675, dense 111), files read in 0.55 s (1418 MiB/s)
+strata generate: experimental native Q5_K head, 521472000 bytes, in 0.9 s
+strata generate: GPU 0: NVIDIA GeForce RTX 3060, compute capability 8.6
+strata generate: experts via mmap (--mmap-experts; the A/B arm of R2.1)
+strata generate: file tier (experts.bin): io prefetch stays off by default here: the page cache has room for 50% of the experts (it helps from 55%: 32 GB-class RAM, decode +20..34% measured); STRATA_IO_PREFETCH=1 turns it on anyway
+strata generate: GPU host-callback thread started before host-core pinning
+strata generate: CPU pool tasks/phase: 12 (automatic), participating threads: 4
+strata generate: CPU pool: 3 workers by default (4 physical cores, 8 logical processors; bounded by every physical core but the host's)
+strata generate: 3 pool workers on logical processors 1,2,3, the host thread on 0 (draining too) (--host-core first)
+strata generate: CPU workers on logical processors 1,2,3 (3 workers, one per physical core; host on 0)
+strata aux cpus: threads that are neither pool workers nor the host go to CPUs 4 (off at start; a request's aux_cpus=1 turns it on)
+strata generate: expert cache auto: 4.59 GiB free, 700 MiB reserved (+220 MiB for the draft head) -> 1357 slots
+strata generate: expert cache 1749 slots, 3.36 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: the profile fill asks for 256 pairs ahead (STRATA_FILL_AHEAD)
+strata generate: pre-filled 1749 of 1749 slots from the profile in 5.8 s (628 MB/s); slot 0 verified
+strata maxwell: sub-batch window 256 tokens (STRATA_MW_NTM; 64 is the default)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA1): round-trip gate layer 46 expert 239 (iq3_xxs): rel 1.23e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 9 expert 245 (iq2_s): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 27 expert 402 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 13 expert 334 (iq2_s): rel 1.19e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 12 expert 218 (iq3_xxs): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 21 expert 48 (iq3_s): rel 1.07e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate layer 47 expert 272 (iq4_xs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA1): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 1: 2854 experts, 5.45 GiB (filled in 22.8 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA2): round-trip gate layer 1 expert 229 (iq2_s): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 11 expert 207 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 27 expert 449 (iq3_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 38 expert 414 (iq3_xxs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 12 expert 432 (iq3_xxs): rel 1.07e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 47 expert 416 (iq4_xs): rel 1.26e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate layer 21 expert 298 (iq3_s): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA2): round-trip gate PASSED (worst rel 1.26e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 2: 2854 experts, 5.44 GiB (filled in 23.4 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA3): round-trip gate layer 3 expert 289 (iq2_s): rel 1.04e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 12 expert 127 (iq3_xxs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 29 expert 427 (iq3_s): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 38 expert 273 (iq3_xxs): rel 1.01e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 10 expert 378 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 21 expert 56 (iq3_s): rel 1.00e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate layer 47 expert 55 (iq4_xs): rel 1.26e-02 vs the float reference
+MaxwellExperts (CUDA3): round-trip gate PASSED (worst rel 1.27e-02, 2854 blobs converted)
+strata generate: Maxwell GPU 3: 2854 experts, 5.43 GiB (filled in 23.2 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA4): round-trip gate layer 3 expert 408 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 17 expert 499 (iq3_s): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 16 expert 332 (iq3_xxs): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 12 expert 98 (iq3_xxs): rel 1.05e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 10 expert 328 (iq2_s): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 47 expert 27 (iq4_xs): rel 1.15e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate layer 21 expert 150 (iq3_s): rel 1.19e-02 vs the float reference
+MaxwellExperts (CUDA4): round-trip gate PASSED (worst rel 1.19e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 4: 2853 experts, 5.44 GiB (filled in 23.7 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA5): round-trip gate layer 4 expert 257 (iq2_s): rel 1.06e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 20 expert 95 (iq3_xxs): rel 1.13e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 45 expert 324 (iq3_s): rel 9.29e-03 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 41 expert 145 (iq3_xxs): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 21 expert 115 (iq3_s): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 47 expert 269 (iq4_xs): rel 1.03e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate layer 13 expert 318 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA5): round-trip gate PASSED (worst rel 1.18e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 5: 2853 experts, 5.43 GiB (filled in 23.2 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA6): round-trip gate layer 4 expert 414 (iq2_s): rel 1.20e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 20 expert 436 (iq3_xxs): rel 1.11e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 37 expert 88 (iq3_xxs): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 35 expert 24 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 8 expert 204 (iq2_s): rel 1.09e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 47 expert 281 (iq4_xs): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate layer 21 expert 369 (iq3_s): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA6): round-trip gate PASSED (worst rel 1.20e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 6: 2853 experts, 5.43 GiB (filled in 23.5 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA7): round-trip gate layer 5 expert 297 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 37 expert 168 (iq3_xxs): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 35 expert 127 (iq3_s): rel 1.12e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 8 expert 414 (iq2_s): rel 1.21e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 47 expert 349 (iq4_xs): rel 1.20e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 30 expert 203 (iq3_xxs): rel 1.27e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate layer 21 expert 100 (iq3_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA7): round-trip gate PASSED (worst rel 1.27e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 7: 2853 experts, 5.43 GiB (filled in 23.9 s)
+strata maxwell: prefill async D2H completes (STRATA_MW_AD2H)
+MaxwellExperts (CUDA8): round-trip gate layer 6 expert 281 (iq2_s): rel 1.16e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 27 expert 103 (iq3_s): rel 1.14e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 37 expert 340 (iq3_xxs): rel 1.28e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 8 expert 292 (iq2_s): rel 1.10e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 47 expert 407 (iq4_xs): rel 1.18e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 30 expert 241 (iq3_xxs): rel 1.21e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate layer 21 expert 54 (iq3_s): rel 1.09e-02 vs the float reference
+MaxwellExperts (CUDA8): round-trip gate PASSED (worst rel 1.28e-02, 2853 blobs converted)
+strata generate: Maxwell GPU 8: 2853 experts, 5.42 GiB (filled in 24.1 s)
+strata generate: Maxwell pairs in the 3060 cache: 0 of 22827
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 3 expert-pool workers + the host thread (created on the first CPU expert batch)
+strata generate: session is up (engine 0.1.51)
+strata generate: token graph hit path: 1749 resident experts, decided on the device
+strata: the CPU prefill share is not armed by default: the experts it would read are 43.5 GiB of file pages and only 22.9 GiB of RAM is free to keep them. STRATA_PREFILL_CPU_SHARE=auto turns it on anyway
+strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+strata prefill: 8 Maxwell tier(s) compute their experts' rows of every prompt chunk (the arena is not read for them)
+strata serve: arena release skipped: release_arena is not supported by this expert source
+strata serve: expert file cache not dropped: FileExpertSource: no mapped experts
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 8 tokens, 86.6 MiB of device buffers
+strata mtp: draft head over 106299 tokens (212.9 MiB)
+strata serve: conversation cache sized from the free RAM: 7424 MiB for up to 4 parked conversations, so an agent's next turn reuses its prompt (--conversation-cache-mib N sets it, 0 turns it off)
+strata serve: STRATA_ROUTE_TAIL_SKIP=7 is ON (default): a missed expert that every token of a verify window routes at rank 7 or lower is skipped (+10..20% decode on 12-16 GB cards that miss experts, answers differ slightly from 0.1.41); STRATA_ROUTE_TAIL_SKIP=0 turns it off
+strata serve: adaptive overlap: off: the adaptive tier is off
+strata serve: 396 MiB of VRAM free with everything loaded
+strata serve: WARNING: only 396 MiB of VRAM free at the start of this request (below 512 MiB): when the card is this full the driver can page GPU memory to system RAM, decode falls to a few tok/s and a window may never finish (#2065). Add --vram-reserve-mib 832 to the config's args, or lower --max-context / --batch
+strata verify: capturing the 8-token window (396 MiB of VRAM free)
+strata verify: captured the 8-token window (upload no error, sync no error)
+strata maxwell: multi-token prefill gup (STRATA_MW_MT)
+strata verify: capturing the 6-token window (358 MiB of VRAM free)
+strata verify: captured the 6-token window (upload no error, sync no error)
+strata verify: capturing the 4-token window (316 MiB of VRAM free)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: capturing the 1-token window (278 MiB of VRAM free)
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata verify: capturing the 2-token window (256 MiB of VRAM free)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata verify: capturing the 3-token window (214 MiB of VRAM free)
+strata verify: captured the 3-token window (upload no error, sync no error)
+strata verify: capturing the 5-token window (174 MiB of VRAM free)
+strata verify: captured the 5-token window (upload no error, sync no error)
+Maxwell STAT jobs/layer histogram (n=20000): [1]=5604 [2]=4770 [3]=3192 [4]=2289 [5]=1525 [6]=1013 [7]=619 [8]=411 [9]=243 [10]=166 [11]=64 [12]=51 [13]=28 [14]=11 [15]=6
+strata serve: prompt 67 tokens = 0 reused + 67 read in 1110 ms (60.4 tok/s), 147 generated in 3728 ms (39.4 tok/s), drafts accepted 88 of 158, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (13538 hits / 13538 lookups); 91582 more read by the GPU over PCIe or from another GPU (87.1% of all 105120 routed)
+strata serve: expert tiers: GPU 13538 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 111754.3 MB from storage (13060580 major faults) for 50408.5 MB of expert reads
+strata serve: suffix drafts: 7 windows, 26 of 37 drafts accepted
+strata serve: WARNING: only 134 MiB of VRAM free at the start of this request (below 512 MiB): when the card is this full the driver can page GPU memory to system RAM, decode falls to a few tok/s and a window may never finish (#2065). Add --vram-reserve-mib 1088 to the config's args, or lower --max-context / --batch
+strata serve: conversation cache: parked 215 tokens in 182.4 ms; parked=1 bytes=238806668 evictions=0 snapshot_bytes=238806668 reused_kv_bytes=0
+strata maxwell: two-phase prefill finish (STRATA_MW_TWOPHASE)
+Maxwell STAT jobs/layer histogram (n=40000): [1]=10889 [2]=9618 [3]=6628 [4]=4711 [5]=3028 [6]=1925 [7]=1138 [8]=707 [9]=420 [10]=260 [11]=111 [12]=81 [13]=42 [14]=22 [15]=12
+Maxwell STAT jobs/layer histogram (n=60000): [1]=16635 [2]=14694 [3]=10332 [4]=7049 [5]=4434 [6]=2763 [7]=1582 [8]=949 [9]=522 [10]=318 [11]=132 [12]=93 [13]=49 [14]=27 [15]=13
+Maxwell STAT jobs/layer histogram (n=80000): [1]=26031 [2]=20221 [3]=12933 [4]=8373 [5]=5080 [6]=3064 [7]=1716 [8]=1000 [9]=531 [10]=325 [11]=133 [12]=96 [13]=49 [14]=27 [15]=13
+Maxwell STAT jobs/layer histogram (n=100000): [1]=35414 [2]=26150 [3]=15634 [4]=9492 [5]=5583 [6]=3288 [7]=1800 [8]=1038 [9]=546 [10]=327 [11]=134 [12]=97 [13]=49 [14]=27 [15]=13
+Maxwell STAT jobs/layer histogram (n=120000): [1]=45268 [2]=31782 [3]=18031 [4]=10633 [5]=6141 [6]=3524 [7]=1905 [8]=1092 [9]=553 [10]=335 [11]=137 [12]=98 [13]=53 [14]=27 [15]=13
+Maxwell STAT jobs/layer histogram (n=140000): [1]=54074 [2]=37376 [3]=20693 [4]=12039 [5]=6848 [6]=3959 [7]=2090 [8]=1195 [9]=609 [10]=356 [11]=147 [12]=102 [13]=58 [14]=29 [15]=13
+Maxwell STAT jobs/layer histogram (n=160000): [1]=60950 [2]=42497 [3]=23965 [4]=14170 [5]=8122 [6]=4624 [7]=2430 [8]=1378 [9]=679 [10]=392 [11]=160 [12]=111 [13]=67 [14]=29 [15]=14
+strata serve: prompt 84 tokens = 0 reused + 84 read in 996 ms (84.3 tok/s), 600 generated in 13995 ms (42.9 tok/s), drafts accepted 322 of 504, 1 checkpoints
+strata serve: decode expert cache hit rate: 100.0% (86112 hits / 86112 lookups); 289248 more read by the GPU over PCIe or from another GPU (77.1% of all 375360 routed)
+strata serve: expert tiers: GPU 86112 hits this request; since the start RAM 0 blobs, files 0 blobs 50408.5 MB read
+strata serve: file tier I/O this request: the OS read 1942.8 MB from storage (1391 major faults) for 0.0 MB of expert reads
+strata serve: suffix drafts: 12 windows, 28 of 54 drafts accepted

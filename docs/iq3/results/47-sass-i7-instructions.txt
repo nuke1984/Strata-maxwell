@@ -1,0 +1,140 @@
+# Iteration 7 - instruction mix of the three IQ4_NL down kernels, before and after the planar layout.
+# Same objects and flags as 46-sass-i7-compare.txt; counts are cuobjdump -sass mnemonics, predicate
+# guards stripped.
+#
+# THE CONTRACT, declared before measuring (LOG.md): on the codes path the 8 LDG.U16 must become 0,
+# and one LDG.128 must take their place.  Both are shown below, and the second section proves the
+# 128-bit load sits WHERE THE EIGHT U16 USED TO BE - same program position, same region - so it is
+# the codes load and not the activation staging (whose LDG.128s predate this change).
+
+==========================================================================
+batch (f32)
+==========================================================================
+op                       HEAD    NEW    delta
+------------------------------------------------
+IADD                       17     21       +4
+IADD.X                     16     18       +2
+IADD3.X                     0      1       +1
+ISCADD                      3      4       +1
+LDG.E.CI                    3      3       +0
+LDG.E.CI.128               29     30       +1
+LDG.E.CI.U16                8      0       -8
+LDG.E.CI.U8                 3      3       +0
+LDS.U.128                   3      3       +0
+LDS.U.32                    3      3       +0
+MOV32I                     14     16       +2
+SHR                         8     10       +2
+SHR.U32                     6     10       +4
+STG.E                       1      1       +0
+STS                         2      2       +0
+STS.128                    29     29       +0
+STS.U8                      1      1       +0
+XMAD.CHI                    2      3       +1
+XMAD.MRG                    8      5       -3
+XMAD.PSL                    6      7       +1
+XMAD.PSL.CBCC               8      5       -3
+XMAD.PSL.CLO                4      0       -4
+XMAD.S16.S16.CSFU           6      5       -1
+XMAD.S16.U16                0      2       +2
+XMAD.S16.U16.CHI            6      5       -1
+XMAD.U16.S16                6      5       -1
+TOTAL instructions        540    540       +0
+
+==========================================================================
+batch (f16)
+==========================================================================
+op                       HEAD    NEW    delta
+------------------------------------------------
+IADD                       18     22       +4
+IADD.X                     16     18       +2
+IADD3.X                     0      1       +1
+ISCADD                      4      5       +1
+LDG.E.CI                    3      3       +0
+LDG.E.CI.128               29     30       +1
+LDG.E.CI.U16                8      0       -8
+LDG.E.CI.U8                 3      3       +0
+LDS.U.128                   3      3       +0
+LDS.U.32                    3      3       +0
+MOV32I                     14     16       +2
+SHR                         8     10       +2
+SHR.U32                     8     12       +4
+STG.E.U16                   1      1       +0
+STS                         2      2       +0
+STS.128                    29     29       +0
+STS.U8                      1      1       +0
+XMAD.CHI                    2      3       +1
+XMAD.MRG                    8      5       -3
+XMAD.PSL                    6      7       +1
+XMAD.PSL.CBCC               8      5       -3
+XMAD.PSL.CLO                4      0       -4
+XMAD.S16.S16.CSFU           6      5       -1
+XMAD.S16.U16                0      2       +2
+XMAD.S16.U16.CHI            6      5       -1
+XMAD.U16.S16                6      5       -1
+TOTAL instructions        564    564       +0
+
+==========================================================================
+MT (run table)
+==========================================================================
+op                       HEAD    NEW    delta
+------------------------------------------------
+DEPBAR.LE                   8     13       +5
+IADD                       24     28       +4
+IADD.X                     22     24       +2
+IADD3.X                     1      2       +1
+ISCADD                      9     10       +1
+LDG.E.CI                   13     13       +0
+LDG.E.CI.128               31     32       +1
+LDG.E.CI.U16                8      0       -8
+LDG.E.CI.U8                 4      4       +0
+LDS.U.128                   9      9       +0
+LDS.U.32                   12     12       +0
+MOV32I                     23     25       +2
+NOP                         6      8       +2
+SHR                         8     10       +2
+SHR.U32                    10     14       +4
+STG.E                       4      4       +0
+STS                         5      5       +0
+STS.128                    31     31       +0
+STS.U8                      2      2       +0
+XMAD                       46     45       -1
+XMAD.CHI                    4      5       +1
+XMAD.MRG                   12      9       -3
+XMAD.PSL                   11     12       +1
+XMAD.PSL.CBCC              12      9       -3
+XMAD.PSL.CLO                4      0       -4
+XMAD.S16.S16.CSFU          11     10       -1
+XMAD.S16.U16                0      2       +2
+XMAD.S16.U16.CHI           11     10       -1
+XMAD.U16.S16               11     10       -1
+TOTAL instructions        804    810       +6
+
+==========================================================================
+WHERE the 128-bit codes load is: batch (f32), the LDG sequence of the weight body
+==========================================================================
+HEAD
+  0ec8  LDG.E.CI.U16 R8, [R16+0x2]
+  0ed0  LDG.E.CI.U16 R9, [R16+0x4]
+  0ed8  LDG.E.CI.U16 R13, [R16+0x6]
+  0ee8  LDG.E.CI.U16 R12, [R16+0x8]
+  1098  LDG.E.CI.U16 R22, [R16+0xa]
+  10b0  LDG.E.CI.U16 R12, [R16+0xc]
+  10d8  LDG.E.CI.U16 R9, [R16+0xe]
+  10f0  LDG.E.CI.U16 R8, [R16+0x10]
+NEW
+  0ee8  LDG.E.CI.128 R8, [R8]
+  0f18  LDG.E.CI.U8 R27, [R18]
+  0f28  LDG.E.CI.U8 R26, [R18+0x1]
+
+The eight LDG.E.CI.U16 at 0x0ec8..0x10f0 in HEAD are the raw block's code bytes, read as
+16-bit halves because the raw form is only 2-byte aligned (2 + b*18).  In NEW that whole run is
+gone and a single LDG.E.CI.128 sits at 0x0ee8 - the same place in the program, the same region
+of the row.  The two LDG.E.CI.U8 that remain in both are read_scale reading the block's fp16
+scale byte by byte; they are NOT on the codes path and the planar layout does not move them.
+
+WHAT IS PROVEN DIRECTLY, AND WHAT IS INFERRED.  For batch (f32) the position above is the proof:
+the eight U16 are gone and one LDG.128 is at 0x0ee8, inside the same address window.  For batch (f16)
+and MT the same placement is inferred from the counts: their LDG.128 totals move by exactly +1
+(29->30 and 30->31) while their U16 totals drop by exactly 8 (8->0), which is this same substitution
+and nothing else - the activation and shared-memory staging loads are present identically in both
+objects and do not change.  Marked as inference, not as a second measurement.

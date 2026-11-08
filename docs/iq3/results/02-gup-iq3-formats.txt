@@ -1,0 +1,111 @@
+# Iterazione 2 - gate/up IQ3_XXS (18), IQ3_S (21), IQ4_XS (23) sul tier Maxwell
+# data: 2026-11-07  host: aidrogen  worktree: /root/Strata-iq3 (detached 8b15183e + patch Iterazione 2)
+# build: cmake --build build-iq3 --target strata / maxwell_iq_parity, 0 errori, 0 warning nuovi
+# GPU: RTX 3060 (CUDA0, riferimento) + 8x Tesla M10 (CUDA1-8); nessun CUDA_VISIBLE_DEVICES
+
+## 1. Parity sintetica (pesi casuali quantizzati da ggml) - TUTTI PASSATI
+
+maxwell_iq_parity: M10 is device 1, the reference card is device 0
+synthetic iq3_xxs/q2_0: iq3_xxs gate/up, 3 tokens
+          (0) ActQ-derived q8_1 vs device quantizer: 0 of 240 differ
+          (1) M10 kernel vs the 3060's production dots: rel 1.77e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920, fasc max rel 5.91e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 9.34e-03
+synthetic iq3_s/q2_0: iq3_s gate/up, 3 tokens
+          (0) 0 of 240 differ
+          (1) rel 1.76e-07 (gate 1e-5)
+          (2) faq flips 0 of 1920, fasc max rel 5.91e-07
+          (3) rel 8.06e-03
+synthetic iq4_xs/q2_0: iq4_xs gate/up, 3 tokens
+          (0) 0 of 240 differ
+          (1) rel 1.68e-07 (gate 1e-5)
+          (2) faq flips 0 of 1920, fasc max rel 4.35e-07
+          (3) rel 8.60e-03
+synthetic iq2_s/q2_0 (CONTROLLO, percorso di produzione): iq2_s gate/up, 3 tokens
+          (0) 0 of 240 differ
+          (1) rel 1.77e-07 (gate 1e-5)
+          (2) faq flips 0 of 1920, fasc max rel 6.34e-07
+          (3) rel 8.53e-03
+maxwell_iq_parity: 0 failures
+
+## 2. Parity su pesi reali - 9 layer IQ3_S con down 42 (gli unici che il tier accetta oggi)
+
+shard: /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf
+layer 1   iq2_s     (1) rel 1.74e-07  (2) faq 0/1920, fasc 7.25e-07  (3) rel 9.03e-03
+layer 8   iq2_s     (1) rel 1.72e-07  (2) faq 0/1920, fasc 4.20e-07  (3) rel 8.40e-03
+layer 10  iq2_s     (1) rel 1.74e-07  (2) faq 0/1920, fasc 4.25e-07  (3) rel 8.34e-03
+layer 12  iq3_xxs   (1) rel 1.76e-07  (2) faq 0/1920, fasc 4.61e-07  (3) rel 8.92e-03
+layer 13  iq2_s     (1) rel 1.71e-07  (2) faq 0/1920, fasc 4.66e-07  (3) rel 8.12e-03
+layer 20  iq3_xxs   (1) rel 1.65e-07  (2) faq 0/1920, fasc 4.52e-07  (3) rel 8.47e-03
+layer 21  iq3_s     (1) rel 1.73e-07  (2) faq 0/1920, fasc 5.09e-07  (3) rel 8.86e-03
+layer 30  iq3_xxs   (1) rel 1.66e-07  (2) faq 0/1920, fasc 3.72e-07  (3) rel 8.51e-03
+layer 36  iq2_s     (1) rel 1.75e-07  (2) faq 0/1920, fasc 4.13e-07  (3) rel 8.18e-03
+maxwell_iq_parity: 0 failures
+
+Nota: i 5 layer 22/42 sono gate/up gia' coperti dall'Iterazione 0 (controllo di non regressione
+sugli stessi pesi reali); i 3 layer 18/42 e l'unico 21/42 sono i casi nuovi.
+23 (IQ4_XS) NON ha layer reali con down 42 nel pack: layer 47 e' 23/20, quindi 23 e' verificato
+solo su pesi sintetici finche' non esiste il down IQ4_NL (Iterazione 3).
+
+## 3. Controllo IQ2_XS (percorso di produzione)
+
+shard: /mnt/backup/strata-iq2_xs/models/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf
+layer 0  iq2_s    (1) rel 1.78e-07  (2) faq 0/1920, fasc 6.02e-07  (3) rel 8.55e-03
+layer 1  iq2_xxs  (1) rel 1.67e-07  (2) faq 0/1920, fasc 7.20e-07  (3) rel 8.84e-03
+layer 8  iq1_m    (1) rel 1.74e-07  (2) faq 0/1920, fasc 3.09e-07  (3) rel 8.38e-03
+maxwell_iq_parity: 0 failures
+
+## 4. Prova piu' forte sull'invarianza del percorso di produzione: SASS
+
+Confronto del modulo sm_50 compilato da HEAD (8b15183e) e dalla build modificata, per ogni
+istanziazione dei kernel del tier (stessi flag: -O3 -std=c++20 -arch=compute_50,code=[compute_50,sm_50]).
+
+  kernel totali HEAD: 84      kernel totali NEW: 150
+  famiglie di istanziazione: HEAD 66, NEW 132
+  istanziazioni perse: 0
+  istanziazioni nuove: 66, tutte con TY in {18, 21, 23}
+  istanze condivise bit-identiche: 66 su 66 (SASS identico, istruzione per istruzione)
+
+  tipo 22 (IQ2_S):   22 istanziazioni, tutte identiche
+  tipo 16 (IQ2_XXS): 22 istanziazioni, tutte identiche
+  tipo 29 (IQ1_M):   22 istanziazioni, tutte identiche
+
+Il kernel persistente e' l'unica funzione non coperta da quella garanzia (il suo switch e' cambiato):
+
+  HEAD:  REG:95 STACK:0 SHARED:11204 LOCAL:0   -> 5 blocchi/SM (65536 / (95*128) = 5.39)
+  primo tentativo: REG:120 -> 4 blocchi/SM (-20% di occupazione), nessuno spill
+  dopo __launch_bounds__(THREADS, 5): REG:96 STACK:0 SHARED:11204 LOCAL:0 -> 5 blocchi/SM
+
+La produzione NON arma STRATA_MW_PERSIST (chiavi env del config di produzione:
+CUDA_DEVICE_ORDER, CUDA_VISIBLE_DEVICES, STRATA_EMBED_VRAM, STRATA_MW_AD2H, STRATA_MW_MT,
+STRATA_MW_MT_T, STRATA_MW_NTM, STRATA_MW_TWOPHASE), quindi il persistente non e' sul percorso
+caldo; il fix e' comunque applicato per non lasciare una regressione latente.
+
+## 5. Footprint di shared memory per formato (IqV2qSmem, H=2560, FF=640)
+
+  TY  split/thr   sact   sx    grid   total
+  22  4/128       5760   128   8192   14080
+  16  4/128       5760   128   2048    7936
+  29  4/128       5760   128   8192   14080
+  18  4/128       5760   128   1024    6912
+  21  4/128       5760   128   2048    7936
+  23  4/128       5760   128     16    5904
+
+Il persistente mantiene l'unione a max(22, 29) = 14080 + S2 down, con static_assert che copre
+16/18/21/23: nessun formato nuovo supera i due formati gia' presenti.
+
+## 6. AER (osservazione, nessuna indagine)
+
+  0000:09:11.0 (porta downstream PLX 8747, figlio 0d:00.0 = M10 #8): TOTAL_ERR_COR 3
+  prima del test 2026-11-07T15:45:21Z -> 3
+  dopo il test  2026-11-07T15:46:11Z -> 3
+  Tutte le altre GPU: 0. Nessun evento nuovo durante l'Iterazione 2.
+
+## 7. Cosa NON e' stato verificato in questa iterazione
+
+- Il pack IQ3_S non carica ancora: 39/48 layer hanno down 20 (IQ4_NL), che e' l'Iterazione 3.
+  Il guard in maxwell_experts.cpp (~riga 173) e' intenzionalmente invariato.
+- Nessuna misura di decode o prefill su IQ3_S: impossibile senza il down nativo.
+- 23 (IQ4_XS) su pesi reali: nessun layer 23/42 nel pack.
+- Le geometrie non-default (STRATA_MW_IQ_T256, STRATA_MW_IQ_MR != 1, STRATA_MW_IQ_SPLIT != 4)
+  sono compilate e presenti, ma la parity le esercita solo alla geometria di default.

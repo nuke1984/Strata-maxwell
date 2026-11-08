@@ -25,6 +25,9 @@ __pycache__/
 *.occ1
 td.log
 
+# IQ3 campaign: local launch configs may contain api_key; never commit them.
+strata*.json
+
 # created by setup.py on the user's machine
 /.venv/
 /build/

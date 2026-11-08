@@ -1,0 +1,61 @@
+# Iterazione 3 - parity su pesi reali: i layer 18/20, 21/20, 22/20, 23/20 e i controlli 18/42, 21/42, 22/42
+# data: 2026-11-07T17:01:26Z  host: strata  kernel: 6.17.13-21-pve
+# engine: 6dcaa8e2 docs(iq3): revise Iteration 3 design after operator review
+# sorgente: /root/Strata-data/models/IQ3_S/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf
+
+## le quattro combinazioni NUOVE (down 20)
+maxwell_iq_parity: M10 is device 0, the reference card is device 4
+layer 0: iq3_xxs gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.66e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 4.78e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.27e-03
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.53e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.01e-04
+layer 17: iq3_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.79e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 5.19e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.33e-03
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.12e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.07e-04
+layer 2: iq2_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.65e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 5.21e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 9.02e-03
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.59e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.17e-04
+layer 47: iq4_xs gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.82e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 4.73e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.86e-03
+          (4) down IQ4_NL: the M10 iq4nl kernel vs the 3060's iq_mmvq(type 20): rel 9.46e-08 (gate 1e-5)
+          (4b) the three forms: MT vs batch 0 of 7680 differ, f16 vs round(batch) 0 of 7680 differ (both must be 0)
+          (5) down vs the float reference (raw acts, reported): rel 2.10e-04
+maxwell_iq_parity: 0 failures
+=== exit 0 ===
+
+## i controlli con down 42 (Iterazione 2, devono restare invariati)
+maxwell_iq_parity: M10 is device 0, the reference card is device 4
+layer 12: iq3_xxs gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.76e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 4.61e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.92e-03
+layer 21: iq3_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.73e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 5.09e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 8.86e-03
+layer 1: iq2_s gate/up, 3 tokens
+          (0) the M10's ActQ-derived q8_1 blocks vs the device quantizer's: 0 of 240 differ
+          (1) the M10 kernel vs the 3060's production dots: rel 1.74e-07 (gate 1e-5)
+          (2) epilogue image: faq flips 0 of 1920 (<= 0.1%, all within one quantum), fasc max rel 7.25e-07 (gate 1e-5)
+          (3) vs the float reference (raw acts, reported): rel 9.03e-03
+maxwell_iq_parity: 0 failures
+=== exit 0 ===

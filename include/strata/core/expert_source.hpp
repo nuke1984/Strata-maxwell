@@ -667,10 +667,10 @@ struct ExpertDispatch {
     /// Multi-GPU: the second GPU's tier.  Its experts are computed there instead of on the CPU (kind 2).
     PeerExperts* peer = nullptr;
     int64_t peer_entries = 0;      ///< routed entries the peer served in verify windows
-    /// Maxwell (sm_50, e.g. Tesla M10) tiers: up to 4 devices holding fixed expert subsets.  Their experts
+    /// Maxwell (sm_50, e.g. Tesla M10) tiers: up to 8 devices holding fixed expert subsets.  Their experts
     /// are computed there instead of on the CPU (kind 3).  Like the peer, but static (no adaptive swaps)
     /// and with the scalar Maxwell kernel instead of moe_grouped_s2.
-    class MaxwellExperts* maxwell[4] = {};
+    class MaxwellExperts* maxwell[8] = {};
     class MaxwellMetaTier* maxwell_meta = nullptr;   ///< one opaque routed-expert device; no rank orchestration here
     int maxwell_count = 0;
     int64_t maxwell_entries = 0;   ///< routed entries the Maxwell tier served
@@ -679,7 +679,7 @@ struct ExpertDispatch {
     /// `mw_partial` area and the verifier assembles (rank-ordered sum) after the E1 flags.  `mw_tp_row`
     /// are the double-buffered per-entry tier bitmaps (picked by the upcoming ring's parity); the
     /// dispatch writes them, the assembly kernel reads them.  Inert while null.
-    float* mw_partial[4] = {};
+    float* mw_partial[8] = {};
     int32_t* mw_tp_row[2] = {};   ///< [count, e0, ...] entry lists, double-buffered by ring parity
     /// Set when `dispatch` could not produce an answer.  The loop itself has no error channel, so this is
     /// where a source failure surfaces: the driver checks it after `session_loop` returns rather than the

@@ -1,0 +1,382 @@
+# Iteration 7 step 4(b) - the power window of the two benches, read by iq3_power.py
+# window: 2026-11-08, same window as 51/52; the two CSVs are 54 (IQ3_S planar) and 55 (IQ2_XS)
+# limits untouched: M10 30.00 W, 3060 120.00 W (see the CSV's own power.limit column)
+# NOTE on the 3060: SwPowerCap 64-66% of the active samples in BOTH engines. That is the card's
+# own 120 W limit doing its job and it is identical in the two arms, so it cannot explain a
+# difference between them. Reported, not acted on: the limit is the operator's.
+
+====================================================================================================
+# IQ3_S planar - docs/iq3/results/54-power-i7-planar-bench.csv
+====================================================================================================
+# docs/iq3/results/54-power-i7-planar-bench.csv: 0 plain samples, 5666 deep samples
+
+GPU 0: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.3 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 1: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.8 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 2: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  28.1 max  33.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 3: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.8 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 1%
+GPU 4: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap        10%
+    temp gpu       mean  47.0 max  67.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            mean   7.2 max  44.0 %
+    aggregate mask: GpuIdle 84%, SwPowerCap 10%, none 6%
+GPU 5: 629 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  32.0 max  38.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 6: 629 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  30.5 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 7: 629 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.3 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+GPU 8: 629 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.9 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 16%, none 2%
+
+--- the same, GpuIdle excluded ---
+GPU 0: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  35.0 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 1: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  35.5 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 2: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.4 max  33.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 3: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  33.5 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 92%, none 8%
+GPU 4: 98 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap        64%
+    temp gpu       mean  60.1 max  67.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            mean  36.8 max  44.0 %
+    aggregate mask: SwPowerCap 64%, none 36%
+GPU 5: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  35.9 max  38.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 6: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  34.5 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 7: 108 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  33.3 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 8: 109 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  34.1 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 90%, none 10%
+
+====================================================================================================
+# IQ2_XS reference - docs/iq3/results/55-power-i7-iq2_xs-bench.csv
+====================================================================================================
+# docs/iq3/results/55-power-i7-iq2_xs-bench.csv: 0 plain samples, 5671 deep samples
+
+GPU 0: 631 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  30.8 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 1: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.5 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 2: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  27.9 max  33.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 3: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.6 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 4: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap        10%
+    temp gpu       mean  47.1 max  69.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            mean   7.5 max  48.0 %
+    aggregate mask: GpuIdle 85%, SwPowerCap 10%, none 5%
+GPU 5: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.6 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 6: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  30.2 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 7: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.1 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+GPU 8: 630 samples
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  29.8 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: GpuIdle 83%, ApplicationsClocksSetting 15%, none 2%
+
+--- the same, GpuIdle excluded ---
+GPU 0: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  34.0 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 1: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  34.6 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 2: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  31.2 max  33.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 3: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  32.8 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 4: 97 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap        66%
+    temp gpu       mean  60.5 max  69.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            mean  39.5 max  48.0 %
+    aggregate mask: SwPowerCap 66%, none 34%
+GPU 5: 105 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  35.3 max  37.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 90%, none 10%
+GPU 6: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  33.9 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 7: 107 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  32.7 max  35.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%
+GPU 8: 106 samples (GpuIdle excluded)
+    HwSlowdown         0%
+    HwPowerBrake       0%
+    HwThermal          0%
+    SwThermal          0%
+    SwPowerCap         0%
+    temp gpu       mean  34.0 max  36.0 C
+    temp mem       not exposed by this driver (N/A on every sample)
+    fan            not exposed by this driver (N/A on every sample)
+    aggregate mask: ApplicationsClocksSetting 91%, none 9%

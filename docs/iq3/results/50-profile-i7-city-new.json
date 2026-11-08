@@ -1,0 +1,21 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 0,
+   "read": 34,
+   "prefill_ms": 557,
+   "prefill_tps": 61.0,
+   "generated": 225,
+   "decode_ms": 6361,
+   "decode_tps": 35.4,
+   "drafts_accepted": 94,
+   "drafts_total": 217
+  },
+  "seconds": 6.93,
+  "generated": 225,
+  "client_tps": 32.5,
+  "text": "Firenze, culla del Rinascimento italiano, è una città dove storia e arte si fondono in un equilibrio armonioso. Fondata dai Romani come *Florentia*, ha raggiunto il suo apice nel XV secolo sotto la guida della famiglia Medici, diventando centro nevralgico di cultura, finanza e innovazione artistica.\n\nIl patrimonio artistico è immenso: la Galleria degli Uffizi ospita capolavori di Botticelli, Leonardo e Michelangelo, mentre la Galleria dell’Accademia custodisce il celebre David. Non si può visitare Firenze senza ammirare la Cattedrale di Santa Maria del Fiore con la sua iconica cupola brunelleschiana e il Campanile di Giotto. Passeggiando per le vie del centro storico, patrimonio UNESCO, si incontrano Ponte Vecchio, Piazza della Signoria e Palazzo Pitti. Ogni angolo racconta secoli di storia, offrendo un’esperienza immersiva unica tra architettura medievale, rinascimentale e barocca, rendendo la città un museo a cielo aperto indimenticabile."
+ }
+]

@@ -1,0 +1,358 @@
+# Physical slots, bus topology, PCIe links and software stack — measured 2026-11-08
+
+Read-only session on the production host (`strata`). One 600-token city request was used for the
+"under load" arm, plus one host-to-device bandwidth probe per device; everything else is a sysfs /
+lspci / NVML read. No serial numbers, no addresses, no keys.
+
+Why this file exists: docs/iq3/README.md's hardware table and link section quote numbers from
+here. Two of them are easy to misread, so they are measured twice and stated together:
+
+- the **endpoint** links (die → PLX port) do train to 8 GT/s under load, and NVML's
+  `pcie.link.gen.max` is 3 on every GPU — that is the *capability*, not the effective link;
+- the **uplinks** (slot → PLX switch) never leave 2.5 GT/s, and the measured host-to-device
+  bandwidth per die is Gen1-class (1.58 and 3.14 GB/s). The uplink is the cap.
+
+The brief's premise ("the M10 slots are forced to PCIe Gen1 in the BIOS") is therefore
+**confirmed** by measurement, and quantified. The engine's `PCIe probe: 11.3 GB/s` line is the
+**3060's** link, not the M10's (independently measured here at 12.05 GB/s on CUDA0).
+
+## 1. Host and software stack
+
+```
+kernel:    6.17.13-21-pve
+cmdline:   initrd=\EFI\proxmox\6.17.13-21-pve\initrd.img-6.17.13-21-pve root=ZFS=rpool/ROOT/pve-1 boot=zfs nomodeset pci=realloc
+os:        Debian GNU/Linux 12 (bookworm), inside an LXC container
+virt:      lxc  (/dev/nvidia0, /dev/nvidiactl present; cap_sys_rawio, cap_sys_module, cap_mac_admin)
+driver:    580.196.07  (NVRM version: NVIDIA UNIX x86_64 Kernel Module  580.196.07)
+cuda:      Cuda compilation tools, release 12.9, V12.9.86
+cmake:     system 3.25.1 / /opt/cmake-venv 4.4.4
+cpu:       Intel(R) Xeon(R) CPU E5-1620 v4 @ 3.50GHz, 4 cores / 8 threads, 1 socket, 1 NUMA node
+memory:    24 GiB total, 19 GiB available
+rootfs:    rpool/data/subvol-101-disk-0, 220G total, 72G free
+backup:    916G total, 685G free, mounted on /mnt/backup
+```
+
+Notes on the two items that are easy to get wrong:
+
+- `pci=realloc` is on the **host** kernel command line, read from `/proc/cmdline` inside the
+  container. It is what makes the BARs of two 4-die PLX switches fit; without it the second
+  switch does not enumerate.
+- `/opt/cmake-venv/bin/cmake` is 4.4.4. The system cmake is 3.25.1, which does not understand
+  the CUDA20 dialect that nvcc 12.9 emits. The build puts `/opt/cmake-venv/bin` first on PATH.
+
+The Proxmox VE version (9) is declared in the brief. It is **not** readable from inside the
+container (`pveversion` absent, `/etc/pve` not mounted); what is measured here is the `-pve`
+kernel and the ZFS root dataset.
+
+## 2. Physical slots: SMBIOS (`dmidecode -t slot`)
+
+```
+  Designation: SLOT 1
+  Type: x1 PCI Express 2 x4
+  Current Usage: Available
+  Bus Address: 0000:0f:00.0
+  Designation: SLOT 2
+  Type: x16 PCI Express 3
+  Current Usage: In Use
+  Bus Address: 0000:07:00.0
+  Designation: SLOT 3
+  Type: x4 PCI Express 2 x8
+  Current Usage: In Use
+  Bus Address: 0000:12:00.0
+  Designation: SLOT 4
+  Type: x8 PCI Express 3
+  Current Usage: In Use
+  Bus Address: 0000:01:00.0
+  Designation: SLOT 5
+  Type: x16 PCI Express 3
+  Current Usage: In Use
+  Bus Address: 0000:08:00.0
+  Designation: SLOT 6
+  Type: 32-bit PCI
+  Current Usage: Available
+  Bus Address: 0000:11:00.0
+```
+
+SMBIOS names the slot **and** gives the bus address of the device in it, so the
+slot-to-card correspondence is measured, not declared. The GPU-bearing slots are 2, 4 and 5;
+slot 3 holds the NVMe SSD; slots 1 and 6 are free.
+
+## 3. Slot number declared by each root port (`lspci -vv`, SltCap)
+
+```
+00:01.0   Slot #4, PowerLimit 75W; Interlock- NoCompl-
+00:02.0   Slot #2, PowerLimit 75W; Interlock- NoCompl-
+00:03.0   Slot #5, PowerLimit 75W; Interlock- NoCompl-
+```
+
+An independent reading that agrees with SMBIOS. The same block gives the width the platform
+wired to each slot:
+
+```
+00:01.0   LnkCap: Port #1, Speed 8GT/s, Width x8
+00:02.0   LnkCap: Port #3, Speed 8GT/s, Width x16
+00:03.0   LnkCap: Port #7, Speed 8GT/s, Width x16
+```
+
+Slot 4 is physically an **x8** slot; slot 5 is x16. That is wiring, not a BIOS setting.
+
+## 4. sysfs slots (`/sys/bus/pci/slots`)
+
+```
+  slot 1  address=0000:00:1c cur=Unknown      max=Unknown
+  slot 2  address=0000:07:00 cur=2.5 GT/s PCIe max=8.0 GT/s PCIe
+  slot 4  address=0000:01:00 cur=2.5 GT/s PCIe max=8.0 GT/s PCIe
+  slot 5  address=0000:08:00 cur=2.5 GT/s PCIe max=8.0 GT/s PCIe
+```
+
+## 5. Bus topology (`lspci -tv`, GPUs and the bridges above them)
+
+```
+-+-[0000:00]-+-00.0  Intel Corporation Xeon E7 v4/Xeon E5 v4/Xeon E3 v4/Xeon D DMI2
+ |           +-01.0-[01-06]----00.0-[02-06]--+-08.0-[03]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               +-09.0-[04]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               +-10.0-[05]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               \-11.0-[06]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           +-02.0-[07]--+-00.0  NVIDIA Corporation GA106 [GeForce RTX 3060]
+ |           |            \-00.1  NVIDIA Corporation GA106 High Definition Audio Controller
+ |           +-03.0-[08-0d]----00.0-[09-0d]--+-08.0-[0a]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               +-09.0-[0b]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               +-10.0-[0c]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           |                               \-11.0-[0d]----00.0  NVIDIA Corporation GM107GL [Tesla M10]
+ |           +-1c.4-[12]----00.0  Samsung Electronics Co Ltd NVMe SSD Controller SM951/PM951
+```
+
+Each M10 is a **PLX PEX 8747 48-lane, 5-port switch** with four GM107 dies behind it:
+
+- slot 4 → root port `00:01.0` → PLX `01:00.0` → downstream ports `02:08/09/10/11.0` → dies at
+  `03:00.0`, `04:00.0`, `05:00.0`, `06:00.0`;
+- slot 5 → root port `00:03.0` → PLX `08:00.0` → downstream ports `09:08/09/10/11.0` → dies at
+  `0A:00.0`, `0B:00.0`, `0C:00.0`, `0D:00.0`;
+- slot 2 → root port `00:02.0` → the 3060 directly at `07:00.0`.
+
+## 6. GPUs as the driver sees them
+
+```
+  0, Tesla M10, 00000000:03:00.0
+  1, Tesla M10, 00000000:04:00.0
+  2, Tesla M10, 00000000:05:00.0
+  3, Tesla M10, 00000000:06:00.0
+  4, NVIDIA GeForce RTX 3060, 00000000:07:00.0
+  5, Tesla M10, 00000000:0A:00.0
+  6, Tesla M10, 00000000:0B:00.0
+  7, Tesla M10, 00000000:0C:00.0
+  8, Tesla M10, 00000000:0D:00.0
+```
+
+`CUDA_DEVICE_ORDER=PCI_BUS_ID` plus `CUDA_VISIBLE_DEVICES=4,0,1,2,3,5,6,7,8` puts the 3060 at
+CUDA0 and the eight dies at CUDA1..CUDA8, slot-4-then-slot-5, bus-ascending.
+
+## 7. Link state, idle
+
+NVML (`index, gen.current, gen.max, width.current, width.max`):
+
+```
+0, 1, 3, 8, 16
+1, 1, 3, 8, 16
+2, 1, 3, 8, 16
+3, 1, 3, 8, 16
+4, 1, 3, 16, 16
+5, 1, 3, 8, 16
+6, 1, 3, 8, 16
+7, 1, 3, 8, 16
+8, 1, 3, 8, 16
+```
+
+Every endpoint declares Gen3 x16 in `LnkCap`; at idle all nine sit at 2.5 GT/s (NVIDIA link
+power management).
+
+```
+03:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+04:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+05:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+06:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+07:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x16               LnkCap: Speed 8GT/s, Width x16
+0a:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+0b:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+0c:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+0d:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)   LnkCap: Speed 8GT/s, Width x16
+```
+
+Bridges on the paths:
+
+```
+00:01.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+00:02.0   LnkCap: Speed 8GT/s, Width x16   LnkSta: Speed 2.5GT/s, Width x16
+00:03.0   LnkCap: Speed 8GT/s, Width x16   LnkSta: Speed 2.5GT/s, Width x16
+01:00.0   LnkCap: Speed 8GT/s, Width x16   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)
+08:00.0   LnkCap: Speed 8GT/s, Width x16   LnkSta: Speed 2.5GT/s (downgraded), Width x16
+02:08.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+02:09.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+02:10.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+02:11.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+09:08.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+09:09.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+09:10.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+09:11.0   LnkCap: Speed 8GT/s, Width x8    LnkSta: Speed 2.5GT/s, Width x8
+```
+
+## 8. Link state under load
+
+One 600-token city request on the production service. NVML
+(`index, gen.current, width.current, utilization`):
+
+```
+0, 3, 8, 26 %
+1, 3, 8, 28 %
+2, 3, 8, 32 %
+3, 3, 8, 35 %
+4, 3, 16, 98 %
+5, 3, 8, 29 %
+6, 3, 8, 28 %
+7, 3, 8, 26 %
+8, 3, 8, 30 %
+```
+
+`lspci` LnkSta during generation:
+
+```
+03:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+04:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+05:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+06:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+07:00.0   LnkSta: Speed 8GT/s, Width x16
+0a:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+0b:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+0c:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+0d:00.0   LnkSta: Speed 8GT/s, Width x8 (downgraded)
+```
+
+Bridges during generation — **the two slot-to-switch uplinks stay at 2.5 GT/s**:
+
+```
+00:01.0   LnkSta: Speed 2.5GT/s, Width x8
+00:02.0   LnkSta: Speed 8GT/s, Width x16      <- the 3060's root port does train to Gen3
+00:03.0   LnkSta: Speed 2.5GT/s, Width x16
+01:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x8 (downgraded)
+08:00.0   LnkSta: Speed 2.5GT/s (downgraded), Width x16
+```
+
+## 9. The same links sampled four times under one request
+
+```
+--- idle before  11:26:28Z
+  00:01.0   2.5GT/s, x8      00:02.0   2.5GT/s, x16     00:03.0   2.5GT/s, x16
+  01:00.0   2.5GT/s, x8      08:00.0   2.5GT/s, x16     03:00.0   2.5GT/s, x8
+  07:00.0   2.5GT/s, x16     0a:00.0   2.5GT/s, x8      09:11.0   2.5GT/s, x8
+--- under load t=4s  11:26:32Z
+  00:01.0   2.5GT/s, x8      00:02.0   8GT/s, x16       00:03.0   2.5GT/s, x16
+  01:00.0   2.5GT/s, x8      08:00.0   2.5GT/s, x16     03:00.0   8GT/s, x8
+  07:00.0   8GT/s, x16       0a:00.0   8GT/s, x8        09:11.0   8GT/s, x8
+--- under load t=8s  11:26:36Z   (identical to t=4s)
+--- under load t=12s 11:26:40Z  (identical to t=4s)
+--- idle after  11:26:44Z        (identical to under load: it does not drop back in 4 s)
+```
+
+Three facts, all measured:
+
+1. Every **endpoint** trains to 8 GT/s when there is traffic; NVML `pcie.link.gen.max` = 3 is the
+   capability. The 2.5 GT/s at idle is the NVIDIA link-power-management downshift.
+2. The M10 dies link at **x8** while their `LnkCap` says x16. The x8 comes from the PLX
+   downstream ports, which are wired x8 each, so `(downgraded)` is against the card's x16
+   capability, not against the slot.
+3. The **uplink from the slot to the PLX never leaves 2.5 GT/s**, even while the four dies behind
+   it are at 8 GT/s. Slot 4's switch (`01:00.0`) links **x8**, because slot 4 is an x8 slot.
+   Slot 5's switch (`08:00.0`) links **x16**, at 2.5 GT/s. Section 10 shows what that costs.
+
+## 10. Host-to-device bandwidth, per CUDA device (the decisive measurement)
+
+`cudaMemcpyAsync` from pinned host memory, 256 MiB x 4 bursts, best of four, in the engine's own
+device order (`CUDA_DEVICE_ORDER=PCI_BUS_ID`, `CUDA_VISIBLE_DEVICES=4,0,1,2,3,5,6,7,8`):
+
+```
+cuda device 0  (RTX 3060, 07:00.0)                        best 12.05 GB/s   [12.05, 12.04, 12.03, 12.02]
+cuda device 1  (M10, 03:00.0, slot 4)                     best  1.58 GB/s   [1.58, 1.58, 1.58, 1.58]
+cuda device 2  (M10, 04:00.0, slot 4)                     best  1.58 GB/s   [1.58, 1.58, 1.58, 1.58]
+cuda device 3  (M10, 05:00.0, slot 4)                     best  1.58 GB/s   [1.58, 1.58, 1.58, 1.58]
+cuda device 4  (M10, 06:00.0, slot 4)                     best  1.58 GB/s   [1.58, 1.58, 1.58, 1.58]
+cuda device 5  (M10, 0A:00.0, slot 5)                     best  3.14 GB/s   [3.13, 3.14, 3.13, 3.13]
+cuda device 6  (M10, 0B:00.0, slot 5)                     best  3.13 GB/s   [3.12, 3.13, 3.12, 3.13]
+cuda device 7  (M10, 0C:00.0, slot 5)                     best  3.13 GB/s   [3.13, 3.13, 3.12, 3.13]
+cuda device 8  (M10, 0D:00.0, slot 5)                     best  3.13 GB/s   [3.13, 3.12, 3.13, 3.12]
+```
+
+Read against the Gen1 theoretical figures, with the usual ~80% efficiency of a real copy:
+
+| link | theoretical | 80% | measured | verdict |
+|---|---|---|---|---|
+| Gen3 x16 (3060) | 15.75 GB/s | 12.6 | **12.05** | Gen3 confirmed |
+| Gen1 x8 (slot 4 uplink) | 2.0 GB/s | 1.6 | **1.58** | Gen1 x8 confirmed |
+| Gen1 x16 (slot 5 uplink) | 4.0 GB/s | 3.2 | **3.14** | Gen1 x16 confirmed |
+
+Four samples per device, spread under 1% on every one. This is why the BIOS-forced Gen1 premise
+holds: the dies negotiate Gen3 with their switch, but the switch's uplink to the host is Gen1, and
+the copy runs at Gen1 speed.
+
+The engine's own line, for comparison, comes from CUDA0:
+
+```
+strata generate: PCIe probe: 11.3 GB/s host->device (best of 11.3 11.2 11.3 11.3) -> pcie_frac 0.31 (default 0.55)
+```
+
+11.3 GB/s against the 12.05 measured above: same link. **It is the 3060's figure and says nothing
+about the M10 tier.** The brief quotes it next to the M10 bullet; this file records the correct
+attribution.
+
+## 11. Power limits (read, never written)
+
+`index, power.limit, power.default_limit, power.min_limit, power.max_limit`:
+
+```
+0, 30.00 W, 53.00 W, 26.50 W, 53.00 W       <- M10 die
+1, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+2, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+3, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+4, 120.00 W, 170.00 W, 100.00 W, 180.00 W   <- RTX 3060
+5, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+6, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+7, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+8, 30.00 W, 53.00 W, 26.50 W, 53.00 W
+```
+
+The M10's default and maximum are both 53 W; the tier runs at 30 W. The 3060's default is 170 W
+and its maximum 180 W; it runs at 120 W.
+
+## 12. AER counters
+
+```
+11:24Z   0000:09:11.0   TOTAL_ERR_COR 6      PCIe-bridge
+11:33Z   0000:09:11.0   TOTAL_ERR_COR 7      PCIe-bridge
+11:34Z   0000:09:11.0   RxErr=7  TOTAL_ERR_COR=7
+11:34:31Z .. 11:36:11Z (six readings, 20 s apart)   RxErr=7  TOTAL_ERR_COR=7, unchanged
+--- GPU devices (class 0x0300xx/0x0302xx) with any AER class set ---   (none)
+```
+
+`09:11.0` is the PLX 8747 downstream port in slot 5 whose child is `0D:00.0` (M10, CUDA8) — i.e.
+the **second** M10 card. All nine GPU devices have zero correctable errors, in every reading.
+
+The counter went from **4** at the close of the Iteration 8 window (`results/61`) to **6** at this
+session's first reading, then **7** three minutes later, where it stayed. Every event is a
+correctable `RxErr` (receiver error) on that bridge; none is fatal, non-fatal or uncorrectable, and
+no GPU reports anything. This is an observation, not a diagnosis: the measured load in this session
+was light (three short requests plus two bandwidth probes), so the rise cannot be attributed to
+load. The two events between the I8 close and the first reading were not observed as they happened.
+
+Note on reading it: the sysfs file `aer_dev_correctable` contains both an `RxErr` row and a
+`TOTAL_ERR_COR` row, so summing every row double-counts (it yields 14 here for a true 7). Use the
+`TOTAL_ERR_COR` row, or `/root/aer.sh`, which does.
+
+History: `results/08-window-aer.txt`, `results/60-final-i7-restore-verified.txt`,
+`results/61-final-i8-production-verified.md`.
+
+## 13. Service state at the end of the measurement
+
+```
+active
+{"status": "ok", "max_context": 128000, "model": "qwen3.8-flash-next-iq3_s", "images": false,
+ "api_key": true, "image_generation": false, "loaded": true, "service": "strata"}
+```

@@ -1,0 +1,24 @@
+[
+ {
+  "label": "ctx-64k",
+  "engine": {
+   "prompt_tokens": 62703,
+   "reused": 0,
+   "read": 62703,
+   "prefill_ms": 354954,
+   "prefill_tps": 176.7,
+   "generated": 64,
+   "decode_ms": 1283,
+   "decode_tps": 49.9,
+   "drafts_accepted": 46,
+   "drafts_total": 62
+  },
+  "seconds": 356.35,
+  "generated": 64,
+  "client_tps": 0.2,
+  "text": "We need answer user's request: \"What is the secret code word mentioned in the text above? Reply with the code word only.\" Need identify secret code word in provided docs. In AMD_HIP.md: \"The secret code word for this text is: meadow-copper-504. Remember it.\"",
+  "target": "64k",
+  "needle": "meadow-copper-504",
+  "found": true
+ }
+]

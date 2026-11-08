@@ -13,7 +13,7 @@
 // to the CPU.  The M10s serve the experts they hold.  A fixed assignment is correct because an M10 never
 // needs to evict: it holds what fits, the CPU takes the rest.
 //
-// MULTI-DEVICE: one MaxwellExperts instance per M10 (up to 4).  Each holds a disjoint subset of
+// MULTI-DEVICE: one MaxwellExperts instance per M10 (up to 8).  Each holds a disjoint subset of
 // (layer, expert) pairs.  Expert computation is embarrassingly parallel (no cross-expert dependencies),
 // so the split needs no synchronisation between devices.
 //
@@ -110,7 +110,7 @@ public:
                    std::string& err, bool accumulate = false);
     /// The two-phase prefill's launch half (2026-10-23): launch THIS card's down now (cheap, async);
     /// the caller then finish_to()s the cards in rank order, whose sync/D2H/scatter-add order - and
-    /// so the accumulated block - is bit-identical to the single-phase form.  The four cards' downs
+    /// so the accumulated block - is bit-identical to the single-phase form.  The cards' downs
     /// overlap like their gups instead of serialising behind each other's finishes.
     bool prefill_launch_down(std::string& err);
     /// STRATA_MW_DRED (the prefill's device-side reduce): the caller peer-copies this card's down
@@ -150,11 +150,14 @@ private:
 
     // A native pack's per-layer blob geometry (open() builds it): each layer's experts are contiguous
     // in their own region of d_blobs_ (its blobs differ in size from other layers'), the gate/up rows
-    // keep their RAW GGUF block layouts for the IQ kernel (o_gate/o_up/gu_row), and the down rows are
-    // converted to the S2 planar form at d_codes_off/d_scales_off.  Empty = the canonical Q2_0 pack:
-    // the flat store, the compile-time S2 geometry (the 42/s2_ defaults).
+    // keep their RAW GGUF block layouts for the IQ kernel (o_gate/o_up/gu_row).  The down rows are
+    // planar in BOTH formats: Q2_0 (d_type 42, de-interleaved at d_codes_off/d_scales_off, 160 + 20 B
+    // per row) and IQ4_NL (d_type 20, 320 B of codes at d_codes_off then 40 B of fp16 scales per row
+    // from d_scales_off - the same 360 bytes as the raw blocks, permuted at load(), Iteration 7).
+    // Empty = the canonical Q2_0 pack: the flat store, the compile-time S2 geometry (the 42/s2_ defaults).
     struct LayerGeo {
         int gu_type = 42;
+        int d_type = 42;                                        ///< 42 = Q2_0 (S2 planar), 20 = IQ4_NL (planar)
         size_t base = 0;                                        ///< the region's offset inside d_blobs_
         size_t blob_bytes = (size_t) strata::kernels::cuda::expert_maxwell_geo::BLOB;
         size_t o_gate = 0, o_up = 0, gu_row = 0;                ///< the raw GGUF gate/up rows (i-quant layers)
@@ -238,8 +241,17 @@ private:
     cudaEvent_t s0_m_ = nullptr;   // S0 mid-stamp: after gup, before down - which stage eats the span
     double s0_layers_ = 0, s0_jobs_ = 0, s0_distinct_ = 0, s0_mb_ = 0, s0_krn_ms_ = 0, s0_sync_ms_ = 0;
     double s0_gup_ms_ = 0, s0_dn_ms_ = 0;
+    // Iteration 6: the same span split by the layer's DOWN type, so the report can say whether the IQ4_NL down
+    // (d_type 20) or the Q2_0 down (42) carries the cost.  Counters only, like the rest of S0.
+    struct S0Bucket {
+        double layers = 0, jobs = 0, distinct = 0, mb = 0, krn_ms = 0, gup_ms = 0, dn_ms = 0, sync_ms = 0;
+        void clear() { layers = jobs = distinct = mb = krn_ms = gup_ms = dn_ms = sync_ms = 0; }
+    };
+    S0Bucket s0_d20_, s0_d42_;          ///< the same accumulation, per down type
+    bool s0_armed_d20_ = false;         ///< the in-flight span's layer had d_type 20
     bool s0_deferred_ = false;     // E1 mode 2: the span is reaped at the next begin (see begin_chain)
     void s0_report();              // the MWPROF m10 line; prints and resets when 1440 layers accrue
+    void s0_report_one(const char* tag, const S0Bucket& b);
 
     // P3.4 (rev 3, misurato): la catena begin/finish gira INLINE sul thread chiamante.  Il worker persistente
     // per device (condvar nella prima prova, atomic-wait nella seconda) e' stato misurato: i

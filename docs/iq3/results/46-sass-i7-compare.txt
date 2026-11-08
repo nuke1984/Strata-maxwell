@@ -1,0 +1,73 @@
+# Iteration 7 - the SASS comparison: 83580f58 (raw 18-byte blocks) vs 7e6fb01e (planar)
+# date: 2026-11-08T03:54:54Z  host: strata  kernel: 6.17.13-21-pve
+# nvcc 12.9, sm_50, the flags CMake records for strata_maxwell:
+#   -O3 -DNDEBUG -std=c++20 --generate-code=arch=compute_50,code=[compute_50,sm_50]
+#   -DSTRATA_EXPERIMENTAL_SM60=1 -DSTRATA_Q6K_EXPERTS=1 -DSTRATA_VERSION=0.1.51
+# HEAD object: rebuilt from 'git show 83580f58:src/kernels/cuda/expert_maxwell.cu', in a tree with
+#   the same relative paths (the anonymous-namespace hash is path-derived).
+# harness: /root/sass_cmp/sasscmp_i7.py (sasscmp_i3.py, the two object paths swapped)
+#
+# NOTE ON THE HARNESS ITSELF.  The first run of this comparison ended its gate list with the
+# catch-all pattern "expert_iq", which is a SUBSTRING of "expert_iq4nl_down_*" - the three type-20
+# kernels Iteration 7 changes ON PURPOSE.  It therefore printed 'expert_iq 135 instantiations
+# bit-identical = False' on a correct build.  The catch-all was replaced by the exact statement the
+# comparison already proves (every shared kernel that is NOT iq4nl must be bit-identical); the run
+# below is the fixed one.  No object and no measurement changed: 150 identical / 3 differing, as
+# before.  The pattern was a measurement bug, not a regression.
+
+kernels: HEAD 153   NEW 153
+
+shared: 153   only in HEAD: 0   only in NEW: 0
+identical: 150   differing: 3
+
+
+## the three kernels that differ, in full (the IQ4_NL down family, by design)
+DIFFERS _ZN6strata7kernels4cuda20expert_iq4nl_down_mtILi2ELi128ELi4EEEvPKhmmmPKiS6_PKNS1_50ANON6MaxJobEPKaPKfPfii
+  insn 804 vs 810, first diff at 13
+    head: IADD.X R5, R0, c[0x0][0x164]                                 new: IADD.X R5, R0, c[0x0][0x164]
+    head: LDG.E.CI R45, [R4+0x4]                                       new: LDG.E.CI R37, [R4+0x4]
+    head: IADD32I R0, R45, -0x1                                        new: IADD32I R0, R37, -0x1
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+
+DIFFERS _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb0EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+  insn 540 vs 540, first diff at 3
+    head: S2R R0, SR_CTAID.X                                           new: S2R R0, SR_CTAID.X
+    head: XMAD R34, R3.reuse, 0xa00, RZ                                new: XMAD R30, R3.reuse, 0xa00, RZ
+    head: XMAD.PSL R34, R3.H1, 0xa00, R34                              new: XMAD.PSL R30, R3.H1, 0xa00, R30
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+
+DIFFERS _ZN6strata7kernels4cuda23expert_iq4nl_down_batchILi2ELb1EEEvPKhmmmPKNS1_50ANON6MaxJobEiPKaPKfPfii
+  insn 564 vs 564, first diff at 3
+    head: S2R R0, SR_CTAID.X                                           new: S2R R0, SR_CTAID.X
+    head: XMAD R34, R3.reuse, 0xa00, RZ                                new: XMAD R30, R3.reuse, 0xa00, RZ
+    head: XMAD.PSL R34, R3.H1, 0xa00, R34                              new: XMAD.PSL R30, R3.H1, 0xa00, R30
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+    head: <end>                                                        new: <end>
+
+
+## the gates
+=== GATE: the S2 down kernels (production IQ2_XS path) ===
+  expert_s2_stage2_mt_batch            1 instantiations  bit-identical = True
+  expert_s2_stage2_batch_v2            5 instantiations  bit-identical = True
+  expert_s2_stage1                     7 instantiations  bit-identical = True
+  expert_s2_stage2                     8 instantiations  bit-identical = True
+
+=== GATE: the i-quant gate/up families ===
+  expert_iq_stage1_batch_v2q         120 instantiations  bit-identical = True
+  expert_iq_stage1_mt_batch           12 instantiations  bit-identical = True
+  maxwell_persist_kernel               1 instantiations  bit-identical = True
+
+=== GATE: every shared kernel that is NOT IQ4_NL ===
+  non-iq4nl shared kernels: 150  bit-identical = True
+
+=== GATE: every NEW kernel is IQ4_NL (type 20) ===
+  new kernels: 0   not-iq4nl: 0
+
+=== GATE: no type-20 instantiation of the SHARED kernels ===
+  shared kernels mentioning iq4nl: 3
+

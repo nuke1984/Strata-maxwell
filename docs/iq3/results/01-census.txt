@@ -1,0 +1,48 @@
+# Iterazione 1 - censimento delle combinazioni di formato (testo, nessun tool)
+# data: 2026-11-07  host: aidrogen
+# sorgenti: native_experts.txt dei due pack (colonne: layer gu_type d_type offset blob_bytes ...)
+# blob_bytes = byte per esperto (gate+up+down); offset = inizio del layer, 512 esperti per layer.
+
+## IQ3_S  (/root/Strata-data/packs/iq3_s/native_experts.txt, 48 layer, 512 esperti/layer)
+
+  layer  gu/down  n   blob_bytes/esperto
+     14   18/20   14      2.176.000
+      3   18/42    3      1.715.200
+      9   21/20    9      2.329.600
+      1   21/42    1      1.868.800
+     15   22/20   15      1.971.200
+      5   22/42    5      1.510.400
+      1   23/20    1      2.662.400
+   -------------------------------------------------
+     48           48
+
+  Totale gate/up: 18 (17 layer), 21 (10), 22 (20), 23 (1).
+  Totale down:   20 IQ4_NL (39 layer), 42 Q2_0 (9 layer).
+
+## IQ2_XS  (/mnt/backup/strata-iq2_xs/packs/iq2_xs/native_experts.txt, 48 layer, 512 esperti/layer)
+
+  layer  gu/down  n   blob_bytes/esperto
+     11   16/42   11      1.305.600
+     34   22/42   34      1.510.400
+      3   29/42    3      1.177.600
+   -------------------------------------------------
+     48           48
+
+  Verifica richiesta: SI - IQ2_XS usa SOLO 16/22/29 sopra un down 42 (Q2_0).
+  Nessun layer 20: il down IQ4_NL e' esclusivamente nel pack IQ3_S.
+
+## Conseguenze per l'Iterazione 2 (gate/up 18, 21, 23)
+
+- Il down resta 42: i layer con down 42 (9 su 48 nell'IQ3_S) sono gia' coperti dal percorso attuale
+  una volta aggiunti i gate/up mancanti. I 39 layer con down 20 restano bloccati dal guard finche'
+  non arriva il down IQ4_NL nativo (Iterazione 3) - e' la ragione per cui il guard NON si tocca.
+- Dopo l'Iterazione 2 il pack IQ3_S non caricherebbe ancora: 39/48 layer chiedono down 20.
+  La parity 18/42, 21/42, 23/42 e' quindi l'unica verifica possibile del kernel finche' non c'e'
+  il down nativo (Iterazione 3). La parity 18/20, 21/20, 23/20 verifica il kernel con il down
+  ancora dequantizzato a Q2_0 solo nel tool, non nel pack.
+
+## AER (contatore prima del test, ore 16:0x del 2026-11-07)
+
+- 0000:09:11.0 (porta downstream PLX 8747, figlio 0d:00.0 = M10 #8): RxErr 3, TOTAL_ERR_COR 3,
+  fatal 0, nonfatal 0, tutte le altre classi 0.
+- Tutte le 9 GPU (03,04,05,06,07,0a,0b,0c,0d): TOTAL_ERR_COR 0.
