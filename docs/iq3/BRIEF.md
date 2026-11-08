@@ -1,4 +1,4 @@
-> Documento storico: il brief con cui è partita la campagna il 2026-11-07, conservato invariato. Alcune premesse sono state superate durante il lavoro (per esempio il checkout di produzione e la decisione sul criterio dei 55 tok/s): fa fede il LOG. L'operatore citato come BitMakerMan è Craicek.
+> Historical document: the brief the campaign started from on 2026-11-07, kept unchanged. Some premises were superseded during the work; the LOG is authoritative. The operator named BitMakerMan is Craicek.
 
 # BRIEF — Qwen3.8-Flash-Next IQ3_S sul tier Maxwell (Tesla M10) di Strata-maxwell
 
