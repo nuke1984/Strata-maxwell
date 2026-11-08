@@ -2816,10 +2816,11 @@ server a 0600 e non entrano nel repo.
 ## Nota — l'autore del commit `6dcaa8e2`
 
 **Annotato il 2026-11-08.** Il commit `6dcaa8e2` («docs(iq3): revise Iteration 3 design after
-operator review») è l'unico della campagna con l'autore sbagliato: **`nuke1984
-<nuke1984@users.noreply.github.com>`**, cioè l'identità git con cui il checkout del server era
-configurato, invece di **Craicek <bitmaker.industrialcoder@gmail.com>**, l'autore degli altri
-commit del branch. Non è una scelta editoriale: è un errore di configurazione del checkout.
+operator review») è l'unico della campagna con l'autore sbagliato: l'identità git con cui il
+checkout del server era configurato — l'account dell'upstream, non **Craicek** — invece
+dell'autore degli altri commit del branch. Non è una scelta editoriale: è un errore di
+configurazione del checkout. Le due identità complete stanno in `git log --format='%an <%ae>'`,
+non in questo file.
 
 **Non si riscrive la storia, per decisione dell'operatore.** Cambiare l'autore di `6dcaa8e2`
 cambierebbe il suo hash e, a cascata, gli hash di tutti i commit successivi — compreso
@@ -2828,12 +2829,9 @@ del motore in produzione** (`/root/Strata-maxwell/engine-iq3-e1de86e8/`). Il cos
 riscrittura sarebbe più alto del beneficio.
 
 **Cosa è stato fatto invece.** L'identità corretta è ora impostata nel checkout del server
-(`/root/Strata-iq3`, solo `.git/config`, nessuna riscrittura):
-
-```sh
-git config user.name  "Craicek"
-git config user.email "bitmaker.industrialcoder@gmail.com"
-```
+(`/root/Strata-iq3`, solo `.git/config`, nessuna riscrittura): `user.name` è **Craicek** e
+`user.email` è la stessa degli altri commit del branch — si legge con `git config user.email`,
+non è riportata qui.
 
 **Cosa resta.** L'attribuzione di `6dcaa8e2` sarà corretta **nel branch pulito della futura PR**
 verso `nuke1984`, dove la storia viene ricostruita comunque. Fino ad allora questo è il posto in
