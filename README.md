@@ -1,3 +1,14 @@
+> **This fork** — [BitMakerMan/Strata-maxwell](https://github.com/BitMakerMan/Strata-maxwell),
+> branch `iq3`, by **Craicek**. It stands on [nuke1984/Strata-maxwell](https://github.com/nuke1984/Strata-maxwell)
+> by nuke1984 and on [Niko1221/Strata](https://github.com/Niko1221/Strata) by Niko1221 — credit for those is theirs.
+>
+> **What it adds:** up to **8 Tesla M10 dies** (two cards) on the whole-expert path instead of 4;
+> **Qwen3.8-Flash-Next IQ3_S** on the M10 tier, with new Maxwell dot products for IQ3_XXS/IQ3_S/IQ4_XS
+> gate/up and a **native, planar IQ4_NL down** (the down stage cut by 56%). Same binary, same protocol, 6 runs:
+> **54.30 tok/s** vs **60.28** for IQ2_XS — the 55 tok/s gate missed by 0.70, a margin inside the noise.
+>
+> Full guide, hardware, results, reproduction: **[docs/iq3/README.md](docs/iq3/README.md)**.
+
 # Strata-Maxwell
 
 An optimization of **[Strata](https://github.com/Niko1221/Strata)** for a fixed rig: **NVIDIA
