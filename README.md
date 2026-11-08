@@ -11,9 +11,11 @@ slower, in exchange for the highest-quality quantization of the model. In produc
 
 ## The rig
 
-![The rig: an RTX 3060 in slot 2 and two Tesla M10 in slots 4 and 5](docs/iq3/img/rig.jpg)
+![The rig: three cards in orange 3D-printed brackets on an aluminium frame, above the HP Z440 board](docs/iq3/img/rig.jpg)
 
-*One HP Z440: RTX 3060 12 GB in slot 2, two Tesla M10 in slots 4 and 5, NVMe in slot 3.*
+*The rig, open on its aluminium frame: the RTX 3060 and the two Tesla M10 in orange 3D-printed
+brackets, on risers above the HP Z440 board and its Xeon heatsink; the ATX power supply is at the
+far left.*
 
 ## Topology
 
