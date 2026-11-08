@@ -1,0 +1,63 @@
+# Iteration 7 step 4(c) - the 64k control on the planar engine, and the restore - VERIFIED
+# window: 2026-11-08, same approved window.  Engine: /root/Strata-iq3/build-iq3/strata (e1de86e8),
+#   cache 988, thinking ON as in the I6 64k control (that is the form the previous one used).
+# Raw: 53-long-context-i7-planar-64k.json
+#
+#   prompt            62703 tokens (0 reused, all read)
+#   prefill           180.1 tok/s (348149 ms)
+#   decode            50.4 tok/s over 64 generated tokens
+#   needle            meadow-copper-504 -> FOUND, exit 0
+#   VRAM free after   the harness read 1073 MiB on the 3060; the engine itself printed 1192/1154/
+#                     1112 MiB free while capturing the verify windows (results in the log below)
+#   errors            no OOM, no CUDA error, no failed allocation (word-boundary grep, 0 in all)
+#
+# Against the I6 64k control on the same cache (988): prefill 176.7 -> 180.1 tok/s, decode
+#   49.9 -> 50.4 tok/s, needle FOUND in both, 1027 -> 1073 MiB free.  The planar down does not
+#   change the long-context behaviour: same order, same headroom.  The gain is small here because
+#   prefill is PLE/file bound, not down bound - consistent with the profile.
+#
+# THE RESTORE, verified after the window (this is the state the machine is in now):
+#   service       active, NRestarts=0, MainPID 49778
+#   health        qwen3.8-flash-next-iq2_xs, loaded: true (OK after ~125 s from start)
+#   binary        /root/Strata-maxwell/engine-mw8/strata, Nov 5, untouched by this window
+#   tiers         8 Maxwell, 2838/2838/2838/2838/2838/2838/2837/2837 experts, 3.80-3.82 GiB each
+#   cache         1874 slots, pre-filled 1874/1874 in 15.6 s (174 MB/s), slot 0 verified
+#   VRAM          3060 2247 MiB free with everything loaded - identical to the I6 measurement
+#   limits        3060 120.00 W, M10 x 8 30.00 W  (read, never written)
+#   errors        0 out of memory, 0 CUDA error, 0 failed allocations in the whole log
+#
+# A NOTE ON A FALSE ALARM I RAISED ON MYSELF.  A first grep for OOM errors returned "153" in the
+#   production log.  It was case-insensitive 'oom' matching "cache r-OOM".  With word boundaries
+#   the count is 0.  Recorded because the wrong number was printed in this window and would
+#   otherwise look like troubleshooting that never happened.
+#
+# A NOTE ON THE 3060's FREE VRAM, because two numbers disagree by 700 MiB and both are right.
+#   The engine's own line, at load, says "2246 MiB of VRAM free with everything loaded"; nvidia-smi
+#   immediately after the restore said 2955 free, then 2109 after one request, and settled at 1947.
+#   The difference is the decode path's own buffers: they are allocated on first use, and the
+#   engine's number is the pre-allocation figure.  Measured here: 12 consecutive requests at a
+#   fixed 1947 MiB, no drift - so it is a plateau, not a leak.  Reported so the next window does
+#   not read 1947 as a regression against the 2247 of the load line.
+#
+# AER THROUGH THE WHOLE WINDOW.  All correctable, all on the PLX bridge 0000:09:11.0 (RxErr,
+#   Physical Layer, Receiver ID), all 9 GPU devices at 0 correctable the entire time:
+#
+#     uptime s     wall (UTC)   total   what was running
+#     54978        04:17:46        14    window start (phase 0, production loaded)
+#     58330.3      05:13:38        15    PRODUCTION, during 15 short probe requests (vram/leak checks)
+#     59402.1      05:31:30        16    TEST ENGINE, during the IQ3_S thinking arm of the redo
+#     60202.6      05:44:50        16    production restored #2 (final), total unchanged after
+#
+#   Corrected account of what I first wrote in this file: I had placed both events on the test
+#   engine.  The timestamps say otherwise - event 15 fell while the PRODUCTION engine was serving
+#   my own 15 short requests, i.e. while probing the 3060's free VRAM after the restore.  That is
+#   stated as it is: one correctable RxErr on the PLX bridge during production traffic.
+#
+#   Neither event is uncorrectable; there is no GPU-side correctable error, no uncorrectable error,
+#   no Xid.  The bridge has accumulated 16 over ~16.9 h of uptime, against 14 across all previous
+#   windows.  Rate: 11 in the first 10 h, 5 in the last 6.9 h (mean gap 1.06 h) - steady, not a
+#   burst, and it predates this window.  Reported, not acted on - and the distinction between
+#   "on the bridge" and "on a GPU" is the one that matters for the tier.
+#
+# POWER.  Read before, between and after every phase: M10 x 8 at 30.00 W, 3060 at 120.00 W.
+#   Nobody set anything in this window; no -pl was ever run.

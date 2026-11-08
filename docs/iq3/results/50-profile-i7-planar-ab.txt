@@ -1,0 +1,171 @@
+# Iteration 7 step 4(a) - the IQ4_NL down, 83580f58 (raw) vs e1de86e8 (planar), SAME window
+# window: 2026-11-08T04:17:46Z .. 2026-11-08T05:16:16Z   host: strata
+# protocol for BOTH arms, identical: city prompt, 1 run, --no-thinking, 600 max_tokens,
+#   cache 988, STRATA_MW_LAYERPROF=1. Same pack, same model, same args, same env.
+# The two configs differ ONLY in exe and log (verified by diff):
+#   strata-iq3_s-i7p-oldprof.json -> /root/Strata-iq3-old7/build-old7/strata  (83580f58, md5 4d8b2f9a5c4507e1375485b4dc75669d)
+#   strata-iq3_s-i7p-newprof.json -> /root/Strata-iq3/build-iq3/strata        (e1de86e8, md5 0f5effb3d86b2251cd80439079a50575)
+# Identification of the two binaries rests on their source commit and md5, NOT on a symbol grep:
+#   'nm | grep planarize' returns 0 for both, because the conversion is inlined.
+#
+# THE THRESHOLD, applied as declared before measuring:
+#   >~200 us/L on down-20 = stop, do not spend the bench;  <~161 us/L = the bench is made.
+#     OLD down20 = 271 us/L     NEW down20 = 118 us/L      -> 118 < 161, the bench was made.
+#
+# THE CONTROL THAT MAKES THE A/B TRUSTWORTHY.  The down-42 (Q2_0) is untouched code, and it reads
+#   101 us/L in BOTH arms of this window (old 101, new 101): identical to the microsecond.  The
+#   only thing that moved between the two measurements is the IQ4_NL down.
+#   Caveat, and it is the honest one: the MB/L of that group differs by 1.7% between the arms
+#   (3.104 vs 3.157), because the routing gave the group a slightly different span weighting.  So
+#   the us/L control is exact, the us/MB comparison carries +/-1.7%.
+#
+# WHY THE I6 NUMBER (296) IS NOT THE DENOMINATOR.  Against Iteration 6, this window's UNCHANGED
+#   down-42 also reads lower (117 -> 101 us/L, -13.7%), and the unchanged gate/up too.  The whole
+#   window runs faster than the I6 window.  So 296 -> 271 (-8.4%) is a cross-window effect, not a
+#   result of this code, and it is NOT claimed as one.  The result of this iteration is the
+#   within-window 271 -> 118, where the control above guarantees the comparison is clean.
+#
+# In us/MB (the honest unit: the two down groups differ in expert count per layer):
+#   down20 OLD 66.8 us/MB -> NEW 28.8 us/MB (-57.0%, a 2.32x speedup on the stage;
+#                                             15.0 -> 34.8 GB/s)
+#   down42 OLD 32.5 us/MB -> NEW 32.0 us/MB (-1.7%)   the code did not change: that -1.7% is the
+#                                                     measured size of any arm-to-arm drift.
+#   The IQ4_NL down is now FASTER per byte than the Q2_0 down (28.8 vs 32.0).
+#
+# The single-run city numbers of the two arms (they carry LAYERPROF, so they are NOT the bench):
+#   50-profile-i7-city-old.json  city 31.3 tok/s, drafts 106/211
+#   50-profile-i7-city-new.json  city 35.4 tok/s, drafts  94/217
+
+====================================================================================================
+# OLD ENGINE - 83580f58, raw 18-byte blocks
+====================================================================================================
+# pack: 48 expert layers, 39 with down-20 (IQ4_NL) and 9 with down-42 (Q2_0)
+# down-20 layers: [0, 2, 3, 4, 5, 6, 7, 9, 11, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47]
+# down-42 layers: [1, 8, 10, 12, 13, 20, 21, 30, 36]
+
+# /root/Strata-maxwell/strata-iq3_s-i7p-oldprof.log: 48 m10 lines, 96 m10type lines, 6 layer lines, 6 vlayer lines
+
+## per card (MWPROF m10), weighted over the windows each card printed
+ card  windows  layers  jobs/L  dist/L    MB/L   ideal  kernel  slack     gup    down    sync
+    1        6    8640    2.29    1.91   3.710      45     254   5.69     127     128     200
+    2        6    8640    2.39    1.97   3.840      46     306   6.61     133     173      98
+    3        6    8640    2.40    1.98   3.890      47     345   7.36     132     213      56
+    4        6    8640    2.50    2.04   3.974      48     380   7.93     136     244      39
+    5        6    8640    2.48    2.05   3.986      48     399   8.29     133     266      28
+    6        6    8640    2.27    1.86   3.679      44     416   9.38     124     293      18
+    7        6    8640    2.47    2.03   3.911      47     423   8.97     132     291      19
+    8        6    8640    2.50    2.06   4.009      48     438   9.05     136     302      25
+
+mean over the cards: kernel 370 us/L = gup 132 + down 239; sync-wait 60 us/L
+  gup is 35.5% of the kernel span, down 64.4%, ideal (83 GB/s floor) 47 us/L -> slack 7.91x
+  the host waits 60 us/L beyond the card's own span
+
+## per card, split by down type (MWPROF m10type), weighted over the windows
+ card    down  windows  layers    MB/L  kernel     gup down us    sync
+    1  down20        6    7091   3.916     275     129     146     219
+    1  down42        6    1549   2.769     162     119      43     112
+    2  down20        6    7005   4.002     331     132     198     106
+    2  down42        6    1635   3.146     199     136      63      61
+    3  down20        6    7063   4.087     374     133     241      63
+    3  down42        6    1577   3.009     217     130      87      28
+    4  down20        6    6986   4.167     415     137     279      43
+    4  down42        6    1654   3.156     234     134     100      20
+    5  down20        6    6975   4.167     434     132     302      32
+    5  down42        6    1665   3.229     251     135     116      17
+    6  down20        6    7246   3.843     448     125     324      20
+    6  down42        6    1394   2.826     250     119     130      11
+    7  down20        6    6891   4.045     463     130     332      20
+    7  down42        6    1749   3.380     270     142     127      14
+    8  down20        6    6806   4.222     482     134     348      29
+    8  down42        6    1834   3.220     273     139     134      13
+  down20: weighted over 56063 layer-spans and 8 cards -> 4.055 MB/L, kernel 402 us/L (gup 131 + down 271), sync-wait 67 us/L
+  down42: weighted over 13057 layer-spans and 8 cards -> 3.104 MB/L, kernel 233 us/L (gup 132 + down 101), sync-wait 34 us/L
+
+  down stage: down20 271 us/L vs down42 101 us/L (+170); whole span: 402 vs 233 us/L (+169)
+  (per-layer, per-card; the two groups differ in expert COUNT per layer, so read MB/L too)
+
+## dispatch phases (MWPROF layer)
+ windows    plan    actq    jobs     run    span  us/layer
+    1920     3.4   106.9     7.0   433.9   551.2
+    3840     3.0   106.2     6.1   396.2   511.5
+    5760     2.9   106.1     6.0   393.4   508.5
+    7680     3.0   107.5     6.1   401.8   518.4
+    9600     2.9   106.7     5.9   392.8   508.3
+   11520     2.9   107.3     6.0   395.4   511.6
+
+  share of the dispatch span: plan 0.6%, actq 21.0%, jobs 1.2%, run 77.3%
+
+## verifier phases (MWPROF vlayer)
+ windows    ring    pool    post
+    1920    74.3   551.8    22.3
+    3840    83.8   512.0    14.1
+    5760    84.5   509.0    11.1
+    7680    81.8   518.9     9.3
+    9600    78.2   508.8     8.2
+   11520    83.3   512.0     7.7
+
+====================================================================================================
+# NEW ENGINE - e1de86e8, planar
+====================================================================================================
+# pack: 48 expert layers, 39 with down-20 (IQ4_NL) and 9 with down-42 (Q2_0)
+# down-20 layers: [0, 2, 3, 4, 5, 6, 7, 9, 11, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47]
+# down-42 layers: [1, 8, 10, 12, 13, 20, 21, 30, 36]
+
+# /root/Strata-maxwell/strata-iq3_s-i7p-newprof.log: 47 m10 lines, 94 m10type lines, 5 layer lines, 5 vlayer lines
+
+## per card (MWPROF m10), weighted over the windows each card printed
+ card  windows  layers  jobs/L  dist/L    MB/L   ideal  kernel  slack     gup    down    sync
+    1        6    8640    2.33    1.92   3.738      45     182   4.03     129      52     126
+    2        6    8640    2.44    2.00   3.916      47     213   4.51     136      76      57
+    3        6    8640    2.43    1.99   3.921      47     232   4.92     134      99      30
+    4        6    8640    2.55    2.07   4.031      49     256   5.26     138     117      21
+    5        6    8640    2.52    2.07   4.021      48     267   5.51     135     132      17
+    6        6    8640    2.35    1.92   3.790      46     275   6.02     127     147      12
+    7        6    8640    2.49    2.05   3.946      48     281   5.91     134     147      12
+    8        5    7200    2.58    2.08   4.053      49     291   5.95     139     152      16
+
+mean over the cards: kernel 250 us/L = gup 134 + down 115; sync-wait 37 us/L
+  gup is 53.7% of the kernel span, down 46.3%, ideal (83 GB/s floor) 47 us/L -> slack 5.26x
+  the host waits 37 us/L beyond the card's own span
+
+## per card, split by down type (MWPROF m10type), weighted over the windows
+ card    down  windows  layers    MB/L  kernel     gup down us    sync
+    1  down20        6    7057   3.939     185     131      55     129
+    1  down42        6    1583   2.839     165     121      43     115
+    2  down20        6    7029   4.097     215     136      79      57
+    2  down42        6    1611   3.125     201     136      65      58
+    3  down20        6    7051   4.122     236     135     101      30
+    3  down42        6    1589   3.030     217     130      87      26
+    4  down20        6    7003   4.219     260     139     121      22
+    4  down42        6    1637   3.223     235     136      99      20
+    5  down20        6    6999   4.178     270     133     136      17
+    5  down42        6    1641   3.353     257     141     116      19
+    6  down20        6    7223   3.973     278     129     150      12
+    6  down42        6    1417   2.856     256     120     137      11
+    7  down20        6    6885   4.060     283     131     153      12
+    7  down42        6    1755   3.500     273     147     127      14
+    8  down20        5    5672   4.269     295     138     157      18
+    8  down42        5    1528   3.253     275     141     134      12
+  down20: weighted over 54919 layer-spans and 8 cards -> 4.103 MB/L, kernel 252 us/L (gup 134 + down 118), sync-wait 38 us/L
+  down42: weighted over 12761 layer-spans and 8 cards -> 3.157 MB/L, kernel 235 us/L (gup 134 + down 101), sync-wait 34 us/L
+
+  down stage: down20 118 us/L vs down42 101 us/L (+17); whole span: 252 vs 235 us/L (+17)
+  (per-layer, per-card; the two groups differ in expert COUNT per layer, so read MB/L too)
+
+## dispatch phases (MWPROF layer)
+ windows    plan    actq    jobs     run    span  us/layer
+    1920     3.4   106.6     6.7   250.2   366.9
+    3840     3.2   106.2     6.2   240.9   356.5
+    5760     3.1   106.7     6.0   238.0   353.8
+    7680     3.2   108.5     6.4   253.4   371.4
+    9600     3.1   107.5     6.2   247.1   363.8
+
+  share of the dispatch span: plan 0.9%, actq 29.5%, jobs 1.7%, run 67.9%
+
+## verifier phases (MWPROF vlayer)
+ windows    ring    pool    post
+    1920   109.0   367.5    23.0
+    3840   112.8   357.0    15.0
+    5760   116.0   354.3    12.3
+    7680   110.9   372.0    10.5
+    9600   114.7   364.3     9.6

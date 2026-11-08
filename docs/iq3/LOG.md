@@ -2506,3 +2506,182 @@ variabile successiva (la LUT in shared) si misurerà da sola.
 Committati come `91170f33`, push su `iq3`. La produzione non è stata toccata in nessuno dei tre passi.
 
 ---
+
+## Iterazione 7 — passo 4: la finestra di misura, e il divario che scende dal 25% al 10%
+
+**Eseguito 2026-11-08 con l'OK dell'operatore**, che ha autorizzato a fermare la produzione per
+questa finestra. Ordine: (a) profilo A/B del down, (b) banco città+codice contro il criterio,
+(c) contesto 64k di controllo, poi ripristino. **I limiti di potenza non sono stati toccati**:
+3060 a **120,00 W**, otto M10 a **30,00 W** prima, tra e dopo ogni fase. Nessun `-pl` è mai stato
+eseguito.
+
+### (a) Il down IQ4_NL: 271 → 118 µs/L nella stessa finestra
+
+La soglia era dichiarata nel design, prima di misurare: **sopra ~200 µs/L si ferma e non si spende
+il banco; sotto ~161 il banco si fa.** Il vecchio motore è stato ricostruito a `83580f58` in un
+worktree separato (`/root/Strata-iq3-old7/build-old7`, md5 `4d8b2f9a…`) perché il profilo per tipo
+di down (`m10type`) esisteva già lì. Le due config differiscono **solo** in `exe` e `log` — verificato
+con `diff`: stessa cache 988, stesso pack, stessi argomenti, stesso ambiente, stesso prompt.
+
+| down-20 | µs/L | µs/MB | GB/s |
+|---|---|---|---|
+| vecchio (raw, 18 B) | **271** | 66,8 | 15,0 |
+| nuovo (planare) | **118** | 28,8 | 34,8 |
+| **variazione** | **−56,5%** | **−57,0% (2,32×)** | |
+
+**Il controllo che rende l'A/B pulito:** il down-42 (Q2_0) è codice **non toccato** e legge
+**101 µs/L in entrambi i bracci** — identico al microsecondo. L'unica cosa che si è mossa tra le due
+misure è il down IQ4_NL. Il down planare ora è **più veloce per byte del Q2_0** (28,8 contro 32,0 µs/MB).
+
+**Perché il 296 dell'Iterazione 6 non è il denominatore.** In questa finestra anche il down-42
+*non toccato* legge più basso (117 → 101 µs/L, −13,7%), come il gate/up. L'intera finestra gira più
+veloce di quella di I6. Quindi 296 → 271 (−8,4%) è un **effetto di finestra**, non un risultato di
+questo codice, e non viene rivendicato come tale. Il risultato è il **271 → 118 dentro la stessa
+finestra**, dove il controllo sopra garantisce che il confronto sia pulito.
+
+Un dettaglio che vale la pena registrare: **`nm | grep planarize` restituisce 0 su entrambi i
+binari**, perché la conversione è inlinata. L'identificazione dei due motori poggia sul commit di
+sorgente e sull'md5, non su un grep di simboli — che qui avrebbe dato un falso negativo.
+
+### (b) Il banco contro il criterio: 54,3 contro 55
+
+**Prima di tutto un errore mio, perché ha cambiato il numero e va scritto.** Il primo giro del
+banco l'ho fatto con `--no-thinking`. È **sbagliato per questo criterio**: il 55 fu calibrato con
+**thinking attivo e 600 token**, e il LOG lo dice esplicitamente (righe 2055–2060: con
+`--no-thinking` il modello chiude in ~240 token e misura un transitorio, non il carico sostenuto).
+La prova sta nel riferimento stesso: IQ2_XS città **40,3** con `--no-thinking` contro **56,6** con
+thinking, codice **78,6** contro **64,0**. Le due medie coincidevano per caso
+(52,35/59,42 contro 54,30/60,28) perché cambiava la **composizione**, non il protocollo — un caso
+che avrebbe prodotto un numero pubblicato sbagliato con un riferimento dall'aria credibile. Il banco
+è stato **rifatto** nella forma dichiarata; entrambi i giri sono archiviati (`58-`/`59-` il primo,
+`51-`/`52-` quello valido).
+
+| thinking attivo, 600 token, 3 run | città | codice | **media 6 run** | criterio ≥55 |
+|---|---|---|---|---|
+| **IQ3_S planare** | 51,30 (mediana 51,3; primo 50,4) | 57,30 (57,8; 57,8) | **54,30** | **FAIL** |
+| IQ2_XS riferimento | 56,60 (58,0; 52,9) | 63,97 (64,4; 65,4) | 60,28 | PASS |
+| rapporto | 0,91× | 0,90× | **0,90×** | |
+
+**54,30 contro 55: mancano 0,70 tok/s, l'1,3%.** Applico il criterio come dichiarato — **FAIL**,
+perché la media misurata è sotto 55 — e metto il rumore accanto, perché a questa distanza il
+verdetto è al limite della risoluzione dello strumento: con 3 run per etichetta la σ combinata è
+~1,97 tok/s, cioè un errore standard di ~0,80 sul 6 run. **Il divario è dentro il rumore.** Servono
+~120 run per gruppo per risolvere 0,7 tok/s al 95%: questo banco risponde «il guadagno è reale e
+grande, il residuo è ~1%», non «55 contro 54,3».
+
+**Cosa manca, in aritmetica esatta.** A 54,30 tok/s un token costa **18 416 µs**; per 55 ne servono
+**18 182**: **234 µs per token, l'1,27%**. Il down-20 pesa 39 × 118 = **4 602 µs** di quel token
+(il 25,0%), quindi servirebbe il down a **118 → 112,0 µs/L** (−5,1%, 27,3 µs/MB). Per la prima volta
+in questa campagna la distanza dal criterio è **più piccola del rumore del banco**.
+
+**Cosa è migliorato.** Il banco I6 (`results/29`) girava **con LAYERPROF acceso**, che quella
+finestra stessa misurò al **−4,7%**: confrontarlo direttamente col mio braccio senza profilo
+regalerebbe al down planare un costo che pagava il profiler. Quindi due numeri, e vale il secondo:
+
+| confronto | guadagno |
+|---|---|
+| grezzo 54,30 vs 42,68 (mescola i protocolli) | +27,2% |
+| **corretto 54,30 vs 44,69** (I6 × 1/0,953) | **+21,5%** |
+| per etichetta, corretto | città 42,85 → 51,30 (**+19,7%**), codice 46,52 → 57,30 (**+23,2%**) |
+
+**Il numero della campagna è un altro, e non dipende dal protocollo:** il rapporto con IQ2_XS
+passa da **−25,3%** (I6, profilo acceso su entrambi) a **−9,9%** (questa finestra, protocollo
+identico su entrambi). Il divario si è più che dimezzato.
+
+**Dove va ora il token.** Il profilo di questa finestra gira su un braccio diverso (`--no-thinking`,
+52,35 tok/s), quindi le quote descrivono la **struttura**, non il budget esatto di questo banco:
+kernel 48 layer **12 010 µs (62,9%)**, di cui **gate/up 6 432 µs (33,7%)** e **down-20 4 602 µs
+(24,1%, era 49,3% in I6)**. **Il down non è più lo stadio dominante: lo è il gate/up, e non è
+cambiato.**
+
+### (c) Contesto 64k: nessuna regressione
+
+| | I6 (988) | I7 planare |
+|---|---|---|
+| prompt | 62 703 tok | **62 703 tok** |
+| prefill | 176,7 tok/s | **180,1 tok/s** (348 149 ms) |
+| decode | 49,9 tok/s | **50,4 tok/s** |
+| needle | FOUND | **FOUND** (`meadow-copper-504`) |
+| VRAM libera | 1027 MiB | **1073 MiB** (misurata dall'harness) |
+| errori | — | **0** OOM / CUDA / allocazioni |
+
+Il prefill è lento (~180 tok/s) ed è atteso: è PLE/file bound, non down bound — coerente col
+profilo. Il down planare non cambia il comportamento a contesto lungo.
+
+### AER: due eventi correggibili, e uno cade sulla produzione
+
+Tutti correggibili, tutti sul bridge PLX `0000:09:11.0` (`RxErr`, Physical Layer, Receiver ID);
+**tutte e 9 le GPU a 0** per l'intera finestra. Nessun non-correggibile, nessun Xid.
+
+| uptime s | UTC | totale | cosa girava |
+|---|---|---|---|
+| 54 978 | 04:17:46 | **14** | inizio finestra, produzione caricata |
+| 58 330,3 | 05:13:38 | **15** | **produzione**, durante 15 richieste brevi di sondaggio VRAM |
+| 59 402,1 | 05:31:30 | **16** | motore di test, braccio IQ3_S del banco rifatto |
+| 60 202,6 | 05:44:50 | **16** | ripristino produzione, totale invariato dopo |
+
+**Correggo quello che avevo scritto in prima battuta** (in `60-final-…` c'è la versione corretta):
+avevo collocato entrambi gli eventi sul motore di test. I timestamp dicono altro — l'evento **15 è
+caduto mentre serviva la PRODUZIONE**, durante le mie 15 richieste di sondaggio sulla VRAM libera
+dopo il primo ripristino. Va detto così com'è: un `RxErr` correggibile sul bridge PLX durante
+traffico di produzione.
+
+Il bridge ha accumulato **16 eventi in ~16,9 h** di uptime, contro 14 in tutte le finestre
+precedenti: **11 nelle prime 10 h, 5 nelle ultime 6,9** (intervallo medio 1,06 h). È un ritmo
+costante, non un burst, e **precede questa finestra**. Riportato, non agito — e la distinzione tra
+«sul bridge» e «su una GPU» è quella che conta per il tier.
+
+### Un falso allarme mio, e un plateau che sembrava una perdita
+
+1. **Il grep «OOM» ha dato 153.** Era `oom` case-insensitive dentro «cache r**oom**». Con i confini
+   di parola il conteggio è **0**. Registrato perché quel 153 è stato stampato in questa finestra e
+   altrimenti sembrerebbe una diagnosi mai avvenuta.
+2. **La 3060: 2955 → 2109 → 1947 MiB liberi.** Non è una perdita: sono i buffer del percorso di
+   decode, allocati al primo uso. Misurato su **12 richieste consecutive a 1947 MiB fissi, senza
+   deriva**. Il numero del motore all'avvio (2246) è la cifra *pre-allocazione*: chi legge 1947 non
+   deve confrontarlo con 2247 come se fosse una regressione.
+
+### Ripristino produzione — verificato
+
+| controllo | esito |
+|---|---|
+| servizio | `active`, `NRestarts=0`, MainPID 49778 |
+| health | `qwen3.8-flash-next-iq2_xs`, `loaded: true` (OK dopo ~125 s) |
+| binario | `/root/Strata-maxwell/engine-mw8/strata`, 5 novembre, **non toccato** |
+| tier Maxwell | **8**, 2838×6 e 2837×2 esperti, 3,80–3,82 GiB per die |
+| cache | **1874 slot**, pre-filled 1874/1874 in 15,6 s, slot 0 verificato |
+| VRAM 3060 | **2247 MiB** liberi a regime — identico alla misura I6 |
+| limiti | **3060 120,00 W, M10 × 8 30,00 W** |
+| errori | 0 OOM, 0 CUDA, 0 allocazioni fallite in tutto il log |
+
+### Cosa questa finestra dice, e cosa non dice
+
+**Dice** che il down planare è la leva che il design prometteva: **−57% sul down, −9,9% dall'IQ2_XS
+invece di −25,3%**, con il resto del motore bit-identico (passi 1–3). **Dice** che il residuo dal
+criterio è ora **234 µs per token**, cioè il down a 112 µs/L, e che **non è il down il collo di
+bottiglia**: è il gate/up, fermo a 134 µs/L.
+
+**Non dice** che il criterio è raggiunto. **54,30 contro 55 è FAIL**, applicato come dichiarato, e il
+divario è al limite della risoluzione di un banco a 3 run. La variabile successiva (la LUT in shared)
+resta **una variabile separata, non ancora approvata**: misurarla è una decisione dell'operatore, non
+un passaggio automatico di questa iterazione.
+
+### File archiviati
+
+| file | contenuto |
+|---|---|
+| `results/49-quality-i7-planar.md` | testi città e codice, primo run, temperatura 0 |
+| `results/50-profile-i7-planar-ab.txt` | i due profili A/B integri, con la soglia e i due controlli |
+| `results/50-profile-i7-city-old.json` / `-new.json` | i due run città del profilo (31,3 e 35,4 tok/s) |
+| `results/51-bench-i7-planar-thinking.json` | **il banco valido**, IQ3_S planare, 6 run |
+| `results/52-bench-i7-iq2_xs-thinking.json` | **il riferimento valido**, IQ2_XS, 6 run |
+| `results/53-long-context-i7-planar-64k.json` | il controllo 64k, needle trovato |
+| `results/54-…` / `55-…` `.csv` | campionamenti di potenza del **primo** giro (no-thinking), archiviati come tali |
+| `results/56-power-i7-window-summary.txt` | lettura dei due CSV con `iq3_power.py` |
+| `results/57-bench-i7-summary.txt` | il banco valido, l'errore di protocollo, l'aritmetica dei 234 µs |
+| `results/58-…` / `59-…` `.json` | il **primo** giro del banco (no-thinking), tenuto perché l'errore resti agli atti |
+| `results/60-final-i7-restore-verified.txt` | 64k, ripristino verificato, mappatura AER, i due falsi allarmi |
+
+Verificati privi di `api_key`/`Bearer`/materiale della chiave (0 corrispondenze su 14 file).
+
+---

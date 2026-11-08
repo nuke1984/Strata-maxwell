@@ -1,0 +1,21 @@
+[
+ {
+  "label": "city",
+  "engine": {
+   "prompt_tokens": 34,
+   "reused": 0,
+   "read": 34,
+   "prefill_ms": 672,
+   "prefill_tps": 50.6,
+   "generated": 241,
+   "decode_ms": 7698,
+   "decode_tps": 31.3,
+   "drafts_accepted": 106,
+   "drafts_total": 211
+  },
+  "seconds": 8.38,
+  "generated": 241,
+  "client_tps": 28.8,
+  "text": "Firenze, culla del Rinascimento italiano, è una città che incanta per la sua straordinaria fusione di storia, arte e architettura. Fondata dai Romani come *Florentia*, ha raggiunto il suo apice nel XV secolo sotto la potente famiglia dei Medici, diventando un centro nevralgico per artisti geniali come Leonardo da Vinci, Michelangelo e Botticelli.\n\nPer chi visita Firenze, è imperdibile una passeggiata nel centro storico, patrimonio UNESCO. Il Duomo di Santa Maria del Fiore, con la sua maestosa cupola brunelleschiana, domina lo skyline cittadino. A pochi passi si trovano la Galleria degli Uffizi, che custodisce capolavori inestimabili, e Piazza della Signoria, cuore politico medievale con il Palazzo Vecchio. Non si può dimenticare Ponte Vecchio, unico ponte sopravvissuto alla guerra, né salire a Piazzale Michelangelo per ammirare un panorama mozzafiato al tramonto. Firenze non è solo una destinazione turistica, ma un’esperienza sensoriale unica che trasporta i visitatori in un’epoca di bellezza senza tempo e innovazione culturale."
+ }
+]
