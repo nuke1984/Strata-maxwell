@@ -1,15 +1,117 @@
-> **This fork** — [BitMakerMan/Strata-maxwell](https://github.com/BitMakerMan/Strata-maxwell),
-> branch `iq3`, by **Craicek**. It stands on [nuke1984/Strata-maxwell](https://github.com/nuke1984/Strata-maxwell)
-> by nuke1984 and on [Niko1221/Strata](https://github.com/Niko1221/Strata) by Niko1221 — credit for those is theirs.
->
-> **What it adds:** up to **8 Tesla M10 dies** (two cards) on the whole-expert path instead of 4;
-> **Qwen3.8-Flash-Next IQ3_S** on the M10 tier, with new Maxwell dot products for IQ3_XXS/IQ3_S/IQ4_XS
-> gate/up and a **native, planar IQ4_NL down** (the down stage cut by 56%). Same binary and
-> protocol, 6 runs each: it is about 10% slower than IQ2_XS on the same prompts
-> (54.3 vs 60.3 tok/s, thinking on, 600 tokens), in exchange for the highest-quality quantization
-> of the model.
->
-> Full guide, hardware, results, reproduction: **[docs/iq3/README.md](docs/iq3/README.md)**.
+# AIDROGEN — a 125B MoE on a used workstation: RTX 3060 + two Tesla M10
+
+**by [Craicek](https://github.com/BitMakerMan)** · branch `iq3` · November 2026
+
+This is **Qwen3.8-Flash-Next IQ3_S** (125B total, 6B active per token) served from a used HP
+Z440: an RTX 3060 runs the dense path and holds a 1267-slot expert cache, and two Tesla M10 cards
+hold the remaining routed experts across **eight Maxwell dies**. It serves **128k context**, needle
+found at 119,275 tokens, at **54.3 tok/s** against 60.3 for IQ2_XS on the same bench — about 10%
+slower, in exchange for the highest-quality quantization of the model. In production since
+2026-11-08, tag `aidrogen-prod-2026-11-08`; *aidrogen* is the rig's name.
+
+## The rig
+
+![The rig: an RTX 3060 in slot 2 and two Tesla M10 in slots 4 and 5](docs/iq3/img/rig.jpg)
+
+*One HP Z440: RTX 3060 12 GB in slot 2, two Tesla M10 in slots 4 and 5, NVMe in slot 3.*
+
+## Topology
+
+Everything below was measured on this machine; the raw evidence is
+[results/66-pcie-slots-and-links.txt](docs/iq3/results/66-pcie-slots-and-links.txt). Each card is a
+PLX PEX 8747 switch with four GM107 dies behind it, 8 GB each.
+
+```mermaid
+flowchart TB
+    CPU["Xeon E5-1620 v4<br/>PCIe root complex"]
+
+    CPU -->|"slot 2 · root port 00:02.0<br/>Gen3 x16 · 12.05 GB/s"| G3060["RTX 3060 12 GB<br/>07:00.0 · CUDA0<br/>dense path + 1267-slot cache"]
+    CPU -->|"slot 3 · root port 00:1c.4"| NVME["NVMe SSD<br/>Samsung SM951/PM951 · 12:00.0"]
+
+    subgraph S4["Slot 4 — Tesla M10, card 1 · 4 × GM107, 8 GB each · uplink Gen1 x8 · 1.58 GB/s per die"]
+        PLX4["PLX PEX 8747 · 01:00.0"]
+        D1["CUDA1 · 03:00.0"]
+        D2["CUDA2 · 04:00.0"]
+        D3["CUDA3 · 05:00.0"]
+        D4["CUDA4 · 06:00.0"]
+        PLX4 -->|"Gen3 x8"| D1
+        PLX4 -->|"Gen3 x8"| D2
+        PLX4 -->|"Gen3 x8"| D3
+        PLX4 -->|"Gen3 x8"| D4
+    end
+
+    subgraph S5["Slot 5 — Tesla M10, card 2 · 4 × GM107, 8 GB each · uplink Gen1 x16 · 3.14 GB/s per die"]
+        PLX5["PLX PEX 8747 · 08:00.0"]
+        D5["CUDA5 · 0A:00.0"]
+        D6["CUDA6 · 0B:00.0"]
+        D7["CUDA7 · 0C:00.0"]
+        D8["CUDA8 · 0D:00.0"]
+        PLX5 -->|"Gen3 x8"| D5
+        PLX5 -->|"Gen3 x8"| D6
+        PLX5 -->|"Gen3 x8"| D7
+        PLX5 -->|"Gen3 x8"| D8
+    end
+
+    CPU -->|"slot 4 · root port 00:01.0"| S4
+    CPU -->|"slot 5 · root port 00:03.0"| S5
+```
+
+The dies train **Gen3 x8** with their own PLX switch, but both switch uplinks stay at
+**2.5 GT/s (Gen1)** even under load — a BIOS setting from the operator, and the bandwidth
+measurement confirms it: 1.58 GB/s per die through slot 4's x8 uplink, 3.14 GB/s through
+slot 5's x16, against 12.05 GB/s for the 3060. The reason for Gen1 is in the
+[guide](docs/iq3/README.md#2-hardware).
+
+CUDA order: `CUDA_VISIBLE_DEVICES=4,0,1,2,3,5,6,7,8` puts the 3060 at CUDA0 and the eight dies
+at CUDA1–CUDA8; the engine runs with `--maxwell-devices 1,2,3,4,5,6,7,8`.
+
+## Results
+
+| | IQ2_XS (upstream reference) | IQ3_S (this fork) |
+|---|---:|---:|
+| city, 3 runs | 56.60 tok/s | **51.30 tok/s** |
+| code, 3 runs | 63.97 tok/s | **57.30 tok/s** |
+| **mean, 6 runs** | **60.28 tok/s** | **54.30 tok/s** |
+| 128k context, 119,275-token prompt | — | prefill **178.4 tok/s**, decode **44.7 tok/s**, needle found |
+| load to `/health` | 640 s (pack on HDD) | **251 s** (pack on SSD) |
+
+Protocol, in a line: city and code, 3 runs each, thinking on, `--max-tokens 600`, temperature 0,
+same binary `e1de86e8` for both models, layer profiler off
+([results/57](docs/iq3/results/57-bench-i7-summary.txt),
+[128k](docs/iq3/results/62-longctx-i8-128k.json),
+[load](docs/iq3/results/61-final-i8-production-verified.md)); the two load times read different
+storage, so that row is not like-for-like.
+
+**IQ3_S is about 10% slower than IQ2_XS, in exchange for the highest-quality quantization of
+the model** (0.90× on this bench).
+
+At load, production holds: a **1267-slot** expert cache on the 3060 (2.45 GiB, pre-filled in
+4.4 s), **eight** Maxwell tiers of 2914/2913 experts (**5.54–5.56 GiB per die**), **23,309**
+expert blobs round-trip verified (worst relative error 1.18e-02 to 1.29e-02), and 1332 MiB free
+on the 3060 with everything loaded. The whole config is one JSON file, kept at mode 0600 on
+the rig.
+
+## What this fork adds, and what comes from upstream
+
+| Ours — branch `iq3` | Upstream — the credit is theirs |
+|---|---|
+| **Eight M10 dies** on the whole-expert path, two cards instead of one. The E1 and tensor paths stay 4-way by construction and refuse more. | **[Strata](https://github.com/Niko1221/Strata)** by **Niko1221** — the engine, the server, the CUDA backend, the whole architecture. |
+| **IQ3_XXS, IQ3_S and IQ4_XS gate/up kernels** for Maxwell, transcribed from the 3060's IQ dot products and verified against them to 1e-5 relative. | **[Strata-maxwell](https://github.com/nuke1984/Strata-maxwell)** by **nuke1984** — the Maxwell tier this fork extends: whole-expert split, S2/Q2_0 down, IQ2 gate/up kernels, round-trip gate, safety guards, the 4-die implementation. |
+| A **native, planar IQ4_NL down** for the Maxwell tier: the down stage went from 271 to 118 µs/layer (−56%), with a bit-for-bit dump proving the repack is lossless. | **[Qwen](https://github.com/QwenLM)** — the Qwen team, for Qwen3.8-Flash-Next. |
+| A per-layer `(gu_type, d_type)` dispatcher, an extended parity tool, a bench/power/profile toolchain, and the whole campaign in [docs/iq3](docs/iq3/README.md). | **[ISTA-DASLab](https://github.com/ISTA-DASLab)** — the GSQ-RCO quantization and the IQ3_S pack this runs; **[ggml / llama.cpp](https://github.com/ggml-org/llama.cpp)** — the `block_iq*` types, their reference dequantization, and the dot-product layouts the kernels follow. |
+
+## Read more
+
+- **[docs/iq3/README.md](docs/iq3/README.md)** — the full guide: hardware, software, the
+  bench protocol, the measurements, the known limits.
+- **[docs/iq3/LOG.md](docs/iq3/LOG.md)** — the campaign log, one entry per iteration.
+- **[Reproduction](docs/iq3/README.md#5-reproducing-it)** — build, configure, serve and
+  re-measure it.
+- **[LICENSE](LICENSE)** — MIT, as upstream.
+
+---
+
+## Upstream: Strata-Maxwell by nuke1984
 
 # Strata-Maxwell
 
